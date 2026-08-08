@@ -11,7 +11,24 @@
 #ifndef REGRESS_H
 #define REGRESS_H
 
-#define REGRESS_MAX_VARS 32                 /* slopes, not counting b0        */
+/* The term ceiling, and the only number that decides this program's memory.
+ * Override it at build time for a target with a smaller stack:
+ *     make CPPFLAGS=-DREGRESS_MAX_VARS=32
+ *
+ * The fitter holds two square matrices of (p+1)^2 doubles, where p is the
+ * ceiling -- one in struct regress, one as scratch inside regress_solve -- so
+ * the peak is 16*(p+1)^2 bytes plus change, and NOTHING else scales:
+ *
+ *     p = 32    ~ 17 KB      p = 256   ~ 1.1 MB
+ *     p = 64    ~ 68 KB      p = 512   ~ 4.2 MB
+ *     p = 128   ~ 267 KB
+ *
+ * That is the whole memory model. Ten training rows and ten billion cost the
+ * same, because a row is folded in and dropped; only the width of a row, and
+ * this ceiling, are in the formula. */
+#ifndef REGRESS_MAX_VARS
+#define REGRESS_MAX_VARS 256                /* slopes, not counting b0        */
+#endif
 #define REGRESS_MAX_TERMS (REGRESS_MAX_VARS + 1)
 
 struct regress {

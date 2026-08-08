@@ -20,7 +20,11 @@
 
 #include <stddef.h>
 
-#define LOS_MAX_VARS  32        /* terms, excluding the intercept */
+/* The model's own ceiling. It must not exceed the fitter's REGRESS_MAX_VARS,
+ * which process.c asserts at compile time. Override both together. */
+#ifndef LOS_MAX_VARS
+#define LOS_MAX_VARS 256        /* terms, excluding the intercept   */
+#endif
 #define LOS_NAME_MAX  64        /* longest column name we will hold */
 
 /* One case: its group, and one value per term of the current schema. Fixed

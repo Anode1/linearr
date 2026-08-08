@@ -20,6 +20,14 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* The model may not be wider than the fitter. Overriding one ceiling and not
+ * the other would otherwise fail far away from here, as a schema that loads and
+ * then a fit that refuses it, so it fails at compile time instead. */
+typedef char los_fits_in_regress[(LOS_MAX_VARS <= REGRESS_MAX_VARS) ? 1 : -1];
+
+/* A case line has to fit in a CSV line, and its fields in the field array. */
+typedef char case_fits_in_csv[(LOS_MAX_VARS + 2 <= CSV_MAX_FIELDS) ? 1 : -1];
+
 #define DEFAULT_COEF_FILE "conf/coefficients.csv"
 #define DEFAULT_TRIM_FILE "conf/trim_additions.csv"
 #define DEFAULT_PREDICT_SCALE 4

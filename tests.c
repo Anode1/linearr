@@ -179,6 +179,56 @@ static void test_regress(void) {
     CHECK(regress_init(&r, REGRESS_MAX_VARS + 1) == -1, "regress: refuses too many variables");
 }
 
+/* The ceiling is not decoration: fit a model as wide as the build allows and
+ * check every coefficient comes back. 32 terms was a toy bound; a real table is
+ * hundreds of columns wide, and this is the test that says so. */
+static void test_wide_fit(void) {
+    static struct regress r;                     /* ~1 MB at the default ceiling */
+    static double beta[REGRESS_MAX_TERMS];
+    static double x[REGRESS_MAX_VARS];
+    const int p = REGRESS_MAX_VARS;
+    int i, j, ok = 1;
+
+    regress_init(&r, p);
+
+    /* y = 3 + sum(0.25*j * xj). One row per term isolates it; a handful of
+     * combinations afterwards leave residual degrees of freedom behind. */
+    for (i = 0; i < p; i++) x[i] = 0.0;
+    regress_add(&r, x, 3.0);
+    for (j = 0; j < p; j++) {
+        x[j] = 1.0;
+        regress_add(&r, x, 3.0 + 0.25 * (j + 1));
+        x[j] = 0.0;
+    }
+    for (j = 0; j + 1 < p && j < 10; j++) {
+        x[j] = 1.0; x[j + 1] = 1.0;
+        regress_add(&r, x, 3.0 + 0.25 * (j + 1) + 0.25 * (j + 2));
+        x[j] = 0.0; x[j + 1] = 0.0;
+    }
+
+    CHECK(regress_solve(&r, beta) == 0, "wide: a full-width fit is full rank");
+    CHECK(NEAR(beta[0], 3.0), "wide: intercept");
+    for (j = 0; j < p; j++)
+        if (!NEAR(beta[j + 1], 0.25 * (j + 1))) ok = 0;
+    CHECK(ok, "wide: every one of the terms comes back");
+    CHECK(NEAR(regress_r2(&r, beta), 1.0), "wide: R2");
+
+    /* And the schema will carry that many named columns. */
+    {
+        static char  names[LOS_MAX_VARS][LOS_NAME_MAX];
+        static char *namep[LOS_MAX_VARS];
+        for (i = 0; i < LOS_MAX_VARS; i++) {
+            snprintf(names[i], sizeof names[i], "term_%d", i);
+            namep[i] = names[i];
+        }
+        CHECK(los_schema_set(namep, LOS_MAX_VARS) == 0, "wide: a full-width schema");
+        CHECK(los_nvars() == LOS_MAX_VARS, "wide: all of it kept");
+        CHECK(strcmp(los_var_name(LOS_MAX_VARS - 1), names[LOS_MAX_VARS - 1]) == 0,
+              "wide: the last column is named");
+        los_free();
+    }
+}
+
 static void test_los_round(void) {
     /* Half away from zero -- NOT printf's round half to even, which would make
      * these 2 and -2. */
@@ -416,6 +466,7 @@ int main(void) {
     test_params();
     test_csv();
     test_regress();
+    test_wide_fit();
     test_los_round();
     test_los_schema();
     test_los_tables();

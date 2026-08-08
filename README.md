@@ -12,8 +12,9 @@ regression:
   nothing to rebuild.
 - **Memory is a function of the model, not of the data.** Observations are
   accumulated into the normal equations one row at a time and then forgotten, so
-  a training file of ten rows and one of ten million are fitted in the same
-  handful of kilobytes. Nothing on the data path allocates.
+  ten training rows and ten million are fitted in the same memory. Nothing on
+  the data path allocates. There is a script that tries to falsify this and
+  prints the numbers: see [Scale](#scale).
 
 The worked example is hospital length of stay -- a prediction per case-mix
 group, plus that group's *trim point*, the day count past which a stay stops
@@ -71,7 +72,41 @@ code for -- minutes on the road, from distance and stops:
     A,5.0000,2.5000,1.5000
 
 Two terms instead of twenty-four, and the only thing that changed was the file.
-The ceiling is `LOS_MAX_VARS` (32) terms in `los.h`.
+
+## Scale
+
+The default build takes **256 terms** and any number of groups. That ceiling is
+the only number that decides the program's memory, and you set it at build time:
+
+    make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32'    # ~17 KB of fitter
+
+| ceiling | fitter footprint |
+| --- | --- |
+| 32 terms | ~17 KB |
+| 64 | ~68 KB |
+| 128 | ~267 KB |
+| 256 (default) | ~1.1 MB |
+| 512 | ~4.2 MB |
+
+`scripts/scale.sh` exists to falsify the memory claim rather than repeat it: it
+fits the same 200-term model over row counts an order of magnitude apart and
+prints peak RSS for each. If those numbers tracked the data, the claim would be
+wrong and this section would have to change. Measured on the author's machine:
+
+    $ sh scripts/scale.sh 200 500 10000 100000
+
+    FIT -- the same 200-term model, 10000 rows then 100000:
+      rows         seconds  peak RSS (KB)
+      10000        0.50     3072
+      100000       5.70     2816          <- 10x the data, 4 MB -> 40 MB on disk
+
+    SCORE -- 100000 cases against 500 groups:
+      100000       1.42     3072
+
+Time scales with the rows, as it must. Memory does not move. The coefficient
+table is the only thing that grows with the problem -- 500 groups x 201 doubles,
+about 785 KB, held once -- and it is bounded by the number of groups, never by
+the number of cases scored.
 
 ## What it does when the data cannot answer
 
@@ -129,6 +164,8 @@ constants.h       tunable sizes, all of them
 tests.c           in-place unit tests (make ut)
 conf/             the example model (synthetic)
 example/          two training files with different schemas (synthetic)
+scripts/scale.sh  measures the memory claim at 200 terms and 500 groups
+scripts/hooks/    pre-push: the sanitizers, before anything reaches the remote
 Makefile          the build
 ```
 
@@ -140,7 +177,8 @@ Makefile          the build
   locked-down clinical or lab machine, a container you want under a megabyte, a
   build with no package manager;
 - the training file is much larger than the machine's memory, and you would
-  rather stream it once than hold a matrix of it;
+  rather stream it once than hold a matrix of it (a 40 MB file and a 4 MB file
+  fit in the same 3 MB -- see [Scale](#scale));
 - a C or C++ codebase needs a fit without taking on GSL, LAPACK, or a build
   system to go with them;
 - the coefficients are *published* -- a rate, a tariff, an expected value

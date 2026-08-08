@@ -46,10 +46,12 @@ refactor:
 - **Memory is a function of the model, never of the data.** `regress_add` folds
   one observation into the cross-product matrix and forgets it; `process_train`
   streams the file one line at a time; a case is a stack struct. Peak footprint
-  is computable by hand from `REGRESS_MAX_TERMS` and `CSV_LINE_MAX`. Collecting
-  rows into an array to "make it simpler" throws this away, and it is the reason
-  the program exists. Before adding any `malloc`, check it against the one the
-  core sanctions: the coefficient table in `los.c`, bounded by the number of
+  is `16*(REGRESS_MAX_VARS+1)^2` bytes plus the row buffers, and nothing in that
+  formula is a data size. Collecting rows into an array to "make it simpler"
+  throws this away, and it is the reason the program exists. `sh
+  scripts/scale.sh` is the check: fit the same model over 10x the rows and the
+  peak RSS must not move. Before adding any `malloc`, check it against the one
+  the core sanctions: the coefficient table in `los.c`, bounded by the number of
   groups and freed on every path.
 - **The terms come from the file, not from the source.** `los_schema_set` is the
   only place a column list is established, and both loaders feed it from a
