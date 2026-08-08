@@ -150,5 +150,39 @@ set +e
 set -e
 check "missing coefficient file exits nonzero" "$rc" "1"
 
+# --- the build's own claims ------------------------------------------------
+# Twice now this Makefile has said it did something and not done it: the default
+# goal was `modeclean`, so a bare `make` deleted the build and exited 0; and
+# CPPFLAGS was recorded nowhere, so the README's own command for setting the
+# term ceiling printed "Nothing to be done" and left the previous binary in
+# place. Both were silent successes. They are assertions now.
+if command -v make >/dev/null 2>&1; then
+    src=$tmp/src; mkdir -p "$src"
+    cp "$root"/*.c "$root"/*.h "$root"/Makefile "$src"/
+    cp -r "$root/conf" "$root/example" "$src"/ 2>/dev/null || true
+    mkdir -p "$src/tests"; cp "$root/tests/cli.sh" "$src/tests/" 2>/dev/null || true
+
+    (cd "$src" && make clean >/dev/null 2>&1; make >/dev/null 2>&1)
+    if [ -x "$src/linearr" ]; then ok; else no "make (default goal) builds the binary"; fi
+
+    # A changed ceiling must reach the objects. A 32-term build has to refuse a
+    # 100-term table; if CPPFLAGS is ignored, the stale 256-term binary accepts
+    # it and this passes for the wrong reason.
+    awk 'BEGIN{ printf "GROUP,Intercept"; for(i=1;i<=100;i++) printf ",t%d", i; printf "\n";
+                printf "G"; for(i=0;i<=100;i++) printf ",1"; printf "\n" }' > "$src/c100.csv"
+    printf 'coef.file = c100.csv\ntrim.file =\n' > "$src/system.properties"
+
+    (cd "$src" && ./linearr --terms >/dev/null 2>&1) \
+        && ok || no "the default build accepts a 100-term table"
+
+    (cd "$src" && make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32' >/dev/null 2>&1)
+    set +e
+    (cd "$src" && ./linearr --terms >/dev/null 2>&1); rc=$?
+    set -e
+    check "CPPFLAGS reaches the objects (a 32-term build refuses 100 terms)" "$rc" "1"
+else
+    skip=$((skip+3)); echo "  SKIP build-claims (no make)"
+fi
+
 echo "cliut: $pass passed, $fail failed, $skip skipped"
 [ "$fail" -eq 0 ]

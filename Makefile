@@ -36,7 +36,27 @@ release  : CFLAGS = -O2
 
 .SUFFIXES:
 .SUFFIXES: .d .o .h .c
-%.o: %.c
+
+# .build-flags records the flags the objects were compiled with, and every .o
+# depends on it. Without this, `make` then
+#     make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32'
+# -- the exact command the README gives for setting the term ceiling -- printed
+# "Nothing to be done for 'all'", exited 0, and left you the 256-term binary
+# while you believed you had a 32-term one. Nothing in a .o file records the
+# macros it was built with, so make had no way to know. The stamp gives it one.
+#
+# It is done with $(shell) at parse time and NOT with a rule depending on a
+# .PHONY target: writing it that way puts a real target above `all:` and hands
+# the default goal to it, which is precisely the defect this project already
+# fixed once. The stamp is rewritten only when the flags actually change, so an
+# ordinary edit-build loop stays incremental.
+FLAGS_NOW := $(CC) $(PROJ) $(CPPFLAGS) $(CFLAGS)
+FLAGS_WAS := $(shell cat .build-flags 2>/dev/null)
+ifneq ($(FLAGS_NOW),$(FLAGS_WAS))
+$(shell printf '%s' '$(FLAGS_NOW)' > .build-flags)
+endif
+
+%.o: %.c .build-flags
 	$(CC) $(PROJ) $(CPPFLAGS) $(CFLAGS) -MMD -c $< -o $@
 
 .PHONY: all release debug pedantic check ut cliut ut-asan ut-ubsan hooks clean modeclean

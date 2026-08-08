@@ -3,3 +3,4 @@ linearr
 linearr_ut
 *.o
 *.d
+.build-flags
