@@ -13,6 +13,7 @@
 #include "regress.h"
 #include "los.h"
 #include "process.h"
+#include "resolve.h"
 #include "constants.h"
 
 #include <stdio.h>
@@ -27,6 +28,15 @@ static int pass, fail;
 } while (0)
 
 #define NEAR(a, b) (fabs((a) - (b)) < 1e-9)
+
+/* A NULL where a string was expected is a FAIL, not a crash that takes the
+ * whole run down and tells you nothing about the other tests. Use this for
+ * EVERY comparison against a function documented as possibly returning NULL
+ * (los_var_name, process_term_name, params_get, ...) -- a bare strcmp on one of
+ * those is how this suite once turned a wrong return value into a SEGV. */
+static int streq(const char *a, const char *b) {
+    return a && b && strcmp(a, b) == 0;
+}
 
 #define COEF "conf/coefficients.csv"
 #define TRIM "conf/trim_additions.csv"
@@ -72,7 +82,7 @@ static void test_hash(void) {
 
 static void test_params(void) {
     CHECK(params_load("system.properties") == 0, "params load");
-    CHECK(params_get("coef.file") && strcmp(params_get("coef.file"), COEF) == 0,
+    CHECK(streq(params_get("coef.file"), COEF),
           "params dotted key");
     CHECK(params_get("nope") == NULL, "params miss");
     CHECK(params_load("no-such-file") == -1, "params open error");
@@ -223,10 +233,88 @@ static void test_wide_fit(void) {
         }
         CHECK(los_schema_set(namep, LOS_MAX_VARS) == 0, "wide: a full-width schema");
         CHECK(los_nvars() == LOS_MAX_VARS, "wide: all of it kept");
-        CHECK(strcmp(los_var_name(LOS_MAX_VARS - 1), names[LOS_MAX_VARS - 1]) == 0,
+        CHECK(streq(los_var_name(LOS_MAX_VARS - 1), names[LOS_MAX_VARS - 1]),
               "wide: the last column is named");
         los_free();
     }
+}
+
+/* Finding the files: the reason `linearr` used to work only in its own source
+ * directory. g_prog must be set before the first call -- the program directory
+ * is worked out once and remembered. */
+static void test_resolve(void) {
+    char path[RESOLVE_PATH_MAX];
+
+    g_prog = "./linearr_ut";
+    CHECK(streq(resolve_program_dir(), "."),
+          "resolve: the program directory comes off argv[0]");
+
+    CHECK(resolve_file(COEF, path, sizeof path) == 0, "resolve: finds a file in the cwd");
+    CHECK(strcmp(path, COEF) == 0, "resolve: and prefers the cwd copy, unchanged");
+
+    CHECK(resolve_file("/no/such/absolute", path, sizeof path) == -1,
+          "resolve: an absolute path that is not there fails");
+    CHECK(resolve_file("no-such-file-anywhere", path, sizeof path) == -1,
+          "resolve: a name that is nowhere fails");
+    /* The failure is not silent: out says where it looked, for the error. */
+    CHECK(strstr(path, "looked in") != NULL, "resolve: says where it looked");
+}
+
+/* Naming the terms instead of counting commas. */
+static void test_named_case(void) {
+    char out[MAX_OUTPUT], row[MAX_INPUT];
+    char *a[2];
+    int on[2];
+
+    a[0] = (char *)"Cardioversion=1";
+    a[1] = (char *)"icu_indicator=1";
+    CHECK(process_named("001", a, 2, out, sizeof out) == 0, "named: scores");
+
+    /* It must agree with the row form to the character. Two ways of writing the
+     * same case that disagree would be worse than having only one. */
+    CHECK(los_load_both() == 0, "named: schema for the row form");
+    on[0] = 0; on[1] = 16;
+    make_case(row, sizeof row, "001", on, 2);
+    los_free();
+    {
+        char rowout[MAX_OUTPUT];
+        CHECK(process(row, rowout, sizeof rowout) == 0, "named: the row form scores");
+        CHECK(strcmp(out, rowout) == 0, "named: both forms give the same answer");
+    }
+
+    /* Terms nobody mentioned are 0, which is the whole point at 256 columns. */
+    a[0] = (char *)"icu_indicator=0";
+    CHECK(process_named("001", a, 1, out, sizeof out) == 0, "named: one term");
+    CHECK(strstr(out, "prediction=6.4832") != NULL, "named: unmentioned terms are 0");
+
+    /* Case-insensitive, because a column name is a label, not an identifier. */
+    a[0] = (char *)"ICU_INDICATOR=1";
+    CHECK(process_named("001", a, 1, out, sizeof out) == 0, "named: case-insensitive");
+
+    /* Every refusal says which thing was wrong, by name. */
+    a[0] = (char *)"nosuchterm=1";
+    CHECK(process_named("001", a, 1, out, sizeof out) == -1, "named: unknown term refused");
+    CHECK(strstr(process_error(), "nosuchterm") != NULL, "named: and it names the term");
+
+    a[0] = (char *)"icu_indicator=yes";
+    CHECK(process_named("001", a, 1, out, sizeof out) == -1, "named: non-number refused");
+    CHECK(strstr(process_error(), "yes") != NULL, "named: and it quotes the value");
+
+    a[0] = (char *)"icu_indicator";
+    CHECK(process_named("001", a, 1, out, sizeof out) == -1, "named: missing '=' refused");
+
+    CHECK(process_named("nosuchgroup", NULL, 0, out, sizeof out) == -1,
+          "named: unknown group refused");
+    CHECK(strstr(process_error(), "nosuchgroup") != NULL, "named: and it names the group");
+
+    /* The schema is reportable, which is what --terms prints. */
+    CHECK(process_nterms() == 24, "named: term count");
+    CHECK(process_ngroups() == 12, "named: group count");
+    CHECK(streq(process_term_name(16), "icu_indicator"), "named: term by index");
+    CHECK(process_coef_path() && strstr(process_coef_path(), "coefficients.csv") != NULL,
+          "named: the table it opened");
+
+    process_free();
 }
 
 static void test_los_round(void) {
@@ -246,16 +334,19 @@ static void test_los_schema(void) {
 
     CHECK(los_schema_set(names, 2) == 0, "schema: set");
     CHECK(los_nvars() == 2, "schema: term count");
-    CHECK(strcmp(los_var_name(1), "stops") == 0, "schema: names in order");
+    CHECK(streq(los_var_name(1), "stops"), "schema: names in order");
     CHECK(los_var_name(2) == NULL, "schema: nothing past the last term");
     CHECK(los_format_header(header, sizeof header) == 0 &&
           strcmp(header, "GROUP,Intercept,km,stops") == 0, "schema: writes its own header");
+    CHECK(los_var_index("stops") == 1, "schema: term by name");
+    CHECK(los_var_index("STOPS") == 1, "schema: name lookup ignores case");
+    CHECK(los_var_index("nope") == -1, "schema: unknown name");
 
     CHECK(los_schema_set(names, 0) == -1, "schema: refuses no terms");
     CHECK(los_schema_set(names, LOS_MAX_VARS + 1) == -1, "schema: refuses too many terms");
     CHECK(los_schema_set(names, 3) == -1, "schema: refuses an empty column name");
     /* A rejected header must leave the working schema alone, not half-replace it. */
-    CHECK(los_nvars() == 2 && strcmp(los_var_name(0), "km") == 0,
+    CHECK(los_nvars() == 2 && streq(los_var_name(0), "km"),
           "schema: a rejected header changes nothing");
     los_free();
 }
@@ -267,8 +358,8 @@ static void test_los_tables(void) {
     /* The coefficient header defines the model: 24 terms in this example table,
      * two in example/simple-train.csv, and neither is compiled in anywhere. */
     CHECK(los_nvars() == 24, "los: the table's header set the term count");
-    CHECK(strcmp(los_var_name(0), "Cardioversion") == 0, "los: first term named");
-    CHECK(strcmp(los_var_name(16), "icu_indicator") == 0, "los: term 17 named");
+    CHECK(streq(los_var_name(0), "Cardioversion"), "los: first term named");
+    CHECK(streq(los_var_name(16), "icu_indicator"), "los: term 17 named");
 
     m = los_model_get("001");
     CHECK(m != NULL, "los: group 001 is in the table");
@@ -467,6 +558,8 @@ int main(void) {
     test_csv();
     test_regress();
     test_wide_fit();
+    test_resolve();
+    test_named_case();
     test_los_round();
     test_los_schema();
     test_los_tables();

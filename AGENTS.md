@@ -78,6 +78,37 @@ found by reading a claim against the code rather than by running anything:
   against at all. The loader was split (`los_load` / `los_load_trims`) so the
   comment became true.
 
+## Nullable returns, and the segfault this project already had
+
+`los_var_name`, `process_term_name`, `params_get`, `hash_get`, `los_model_get`
+and `resolve_program_dir` are documented as possibly returning NULL, and that is
+the right design: "out of range" and "absent" are real answers. The hazard is
+what a caller does with one.
+
+This suite crashed once, with a SEGV inside `strcmp`, because a test asserted
+`strcmp(process_term_name(16), "icu_indicator") == 0` while a state bug had left
+the schema empty. The assertion was correct to fail; it was written so that
+failing meant dying. Two things came out of it, and both are rules now:
+
+- **In tests, never pass a nullable return straight to a string function.** Use
+  `streq()`. A wrong return value must produce a FAIL naming the check, not a
+  core dump that tells you nothing about the other 144 tests.
+- **In the sources, a guard must be visible above the use.** `main.c`'s
+  `--terms` loop is bounded by `process_nterms()` so the index is always in
+  range, and the line after it is written `n > 0 ? process_term_name(0) : "TERM"`
+  for the same reason. `resolve.c` checks `if (dir)`. Anywhere that is not
+  immediately readable off the surrounding lines, it is a defect.
+
+The state bug underneath was the real lesson: `process.c` trusted a private
+`tables_loaded` flag while the state it described lived in `los.c`, where
+`los_free` could clear it and `process_train` could replace it with a training
+file's schema. A flag that another module can invalidate is not a fact.
+`ensure_tables` now asks `los_nvars() > 0` as well, so it heals instead of
+lying, and `process_train` clears the flag because it repurposes the schema.
+
+Note what did work: `make ut-asan` located it at a file and line on the first
+run. The sanitizers are not a formality.
+
 ## The development loop (test-driven)
 
 Tests are the objective gate. Never trust output you have not verified.

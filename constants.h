@@ -16,5 +16,6 @@
                                   header plus its coefficient row has to fit    */
 #define CSV_MAX_FIELDS   512   /* most fields csv_split() will hand back        */
 #define GROUP_MAX         32   /* longest group code                           */
+#define RESOLVE_PATH_MAX 4096  /* longest path we will build looking for a file */
 
 #endif /* CONSTANTS_H */

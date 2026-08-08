@@ -8,6 +8,7 @@
 #include <stdarg.h>
 
 int g_debug = 0;
+const char *g_prog = NULL;
 
 void die(const char *fmt, ...) {
     va_list ap;

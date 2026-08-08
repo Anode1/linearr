@@ -23,6 +23,17 @@
 static struct hash *models;
 static char         var_name[LOS_MAX_VARS][LOS_NAME_MAX];
 static int          nvars;
+static long         ngroups;
+
+static int ci_equal(const char *a, const char *b) {
+    for (; *a && *b; a++, b++) {
+        int ca = *a, cb = *b;
+        if (ca >= 'A' && ca <= 'Z') ca += 'a' - 'A';
+        if (cb >= 'A' && cb <= 'Z') cb += 'a' - 'A';
+        if (ca != cb) return 0;
+    }
+    return *a == '\0' && *b == '\0';
+}
 
 int los_schema_set(char *const *names, int n) {
     int i;
@@ -51,6 +62,15 @@ int los_nvars(void) { return nvars; }
 const char *los_var_name(int i) {
     return (i >= 0 && i < nvars) ? var_name[i] : NULL;
 }
+
+int los_var_index(const char *name) {
+    int i;
+    for (i = 0; i < nvars; i++)
+        if (ci_equal(var_name[i], name)) return i;
+    return -1;
+}
+
+long los_ngroups(void) { return ngroups; }
 
 /* strtod that refuses what atof would have accepted silently: an empty field,
  * or trailing text after the number. A typo in a table becomes an error rather
@@ -123,6 +143,7 @@ static int load_coefficients(const char *path) {
             }
             m->b[i] = v;
         }
+        if (hash_get(models, group) == NULL) ngroups++;
         free(hash_put(models, group, m));       /* free a duplicate group's row */
         rows++;
     }
@@ -188,6 +209,7 @@ const struct los_model *los_model_get(const char *group) {
 
 void los_free(void) {
     nvars = 0;
+    ngroups = 0;
     if (!models) return;
     hash_call(models, free);                    /* the struct los_model per group */
     hash_delete(models);                        /* keys + table                   */

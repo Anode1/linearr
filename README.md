@@ -56,14 +56,40 @@ should not need a Python installation to multiply them together.
     make hooks      # run the sanitizers before every git push
     make clean
 
-Score a case -- a group, then one value per term:
+Ask what the model expects:
+
+    $ ./linearr --terms
+    24 terms and 12 groups in conf/coefficients.csv
+        1  Cardioversion
+        2  Cell_saver
+      ...
+       17  icu_indicator
+      ...
+
+Score a case by naming the terms that are not zero -- everything else is 0:
+
+    $ ./linearr 001 Cardioversion=1 icu_indicator=1
+    001 prediction=19.9611 trim=46.5
+
+The same case as a row, every term in the table's column order. This is the form
+read from stdin, so a file of cases round trips through a pipeline:
 
     $ ./linearr "001,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0"
     001 prediction=19.9611 trim=46.5
 
-Score a whole file (it is a filter, so it belongs in a pipeline):
-
     $ ./linearr < cases.csv > scored.txt
+
+At two terms the row form is fine. At two hundred it is unusable, which is why
+the named form exists and is what the rest of this README uses.
+
+Files -- `coef.file`, `trim.file`, and `-t`'s argument -- are looked for in the
+current directory first, then beside the program, so an installed `linearr`
+works from anywhere and your own table still wins where you have one.
+
+When something is wrong, the message says what:
+
+    $ ./linearr 001 nosuchterm=1
+    cannot score group '001': no term 'nosuchterm' in conf/coefficients.csv -- run --terms to list them
 
 Fit the coefficients from training data -- rows of `GROUP,VALUE,<the terms>`:
 

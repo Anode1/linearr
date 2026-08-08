@@ -50,6 +50,15 @@ int         los_schema_set(char *const *names, int n);
 int         los_nvars(void);            /* 0 until a schema is set */
 const char *los_var_name(int i);        /* NULL if i is out of range */
 
+/* The index of a term by name, or -1 if the schema has no such column. This is
+ * what lets a case be written as "icu_indicator=1" instead of counting commas
+ * to the seventeenth field. Case-insensitive, because a column name is a label
+ * a human typed, not an identifier. */
+int         los_var_index(const char *name);
+
+/* How many groups the loaded table holds. */
+long        los_ngroups(void);
+
 /* --- the tables ----------------------------------------------------------- */
 
 /* Load the coefficient table. Its header is

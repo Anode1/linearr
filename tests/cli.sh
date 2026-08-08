@@ -83,6 +83,52 @@ else
     skip=$((skip+2)); echo "  SKIP bare-run-on-a-terminal (no pty or no timeout here)"
 fi
 
+# --- naming the terms instead of counting commas ---------------------------
+check "named form" "$("$bin" 001 Cardioversion=1 icu_indicator=1)" "$EXPECT1"
+# The two ways of writing one case must agree, or having two is a liability.
+check "named form agrees with the row form" \
+    "$("$bin" 001 Cardioversion=1 icu_indicator=1)" "$("$bin" "$CASE1")"
+check "named form is case-insensitive" \
+    "$("$bin" 001 CARDIOVERSION=1 icu_indicator=1)" "$EXPECT1"
+
+# --- --terms: the answer to "what am I supposed to type?" ------------------
+check "--terms exit" "$("$bin" --terms >/dev/null 2>&1; echo $?)" "0"
+case "$("$bin" --terms)" in *"24 terms and 12 groups"*) ok ;;
+    *) no "--terms reports the size of the model" ;; esac
+case "$("$bin" --terms)" in *icu_indicator*) ok ;;
+    *) no "--terms lists the term names" ;; esac
+
+# --- errors name the thing that was wrong ----------------------------------
+# The old message was "cannot score: <the whole case>" whatever went wrong,
+# which sent the user to check data that was never the problem.
+set +e
+for probe in "001 nosuchterm=1|nosuchterm" \
+             "999 icu_indicator=1|no group" \
+             "001 icu_indicator=yes|not a number"; do
+    args=${probe%|*}; want=${probe#*|}
+    out=$("$bin" $args 2>&1)
+    case "$out" in *"$want"*) ok ;; *) no "error names '$want': got [$out]" ;; esac
+done
+set -e
+
+# --- it runs from somewhere else, like an installed program ----------------
+# This is the defect that made the tool usable only inside its own source tree.
+check "runs from another directory" "$(cd "$tmp" && "$bin" 001 Cardioversion=1 icu_indicator=1)" "$EXPECT1"
+check "-t finds its example from another directory" \
+    "$(cd "$tmp" && "$bin" -t example/simple-train.csv -g A 2>/dev/null | tail -1)" \
+    "A,5.0000,2.5000,1.5000"
+
+# --- a missing table is one fatal message, not one complaint per row -------
+printf 'coef.file = definitely-not-here.csv\n' > "$tmp/system.properties"
+set +e
+out=$(cd "$tmp" && printf '%s\n%s\n%s\n' "$CASE1" "$CASE1" "$CASE1" | "$bin" 2>&1); rc=$?
+set -e
+check "missing table exits nonzero" "$rc" "1"
+check "missing table is reported once, not per row" \
+    "$(printf '%s' "$out" | grep -c 'definitely-not-here')" "1"
+case "$out" in *"looked in"*) ok ;; *) no "missing table says where it looked: got [$out]" ;; esac
+rm -f "$tmp/system.properties"
+
 # --- fit, then score against what was fitted -------------------------------
 "$bin" -t example/simple-train.csv -g A 2>/dev/null > "$tmp/coef.csv"
 check "fit writes a header" "$(head -1 "$tmp/coef.csv")" "GROUP,Intercept,km,stops"
