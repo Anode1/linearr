@@ -3,6 +3,8 @@
  * lines from stdin so it works as a filter), run process(), print the result.
  * The scaffolding stays; the model lives in process.c, los.c and regress.c.
  * This is the only file that exits: the modules return -1 and let it decide. */
+#define _POSIX_C_SOURCE 200809L  /* isatty */
+
 #include "common.h"
 #include "process.h"
 #include "params.h"
@@ -11,6 +13,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <getopt.h>
+#include <unistd.h>
 
 #ifndef UNIT_TEST   /* the test build (make ut) supplies main() from tests.c */
 
@@ -20,7 +23,8 @@ static void usage(FILE *out, const char *prog) {
         "  CASE  \"GROUP,x1,...,xp\" -- a group and one value per term, as many\n"
         "        as the coefficient file's header names; prints the prediction\n"
         "        and the trim point\n"
-        "  without CASE: score every line read from stdin (filter mode)\n"
+        "  without CASE: score every line piped in on stdin (filter mode);\n"
+        "        with a terminal on stdin and nothing to do, print this\n"
         "  -t F  fit the coefficients from training file F instead of scoring;\n"
         "        its rows are \"GROUP,VALUE,x1,...,xp\" and its header names the\n"
         "        terms. Prints a complete coefficient file on stdout and the\n"
@@ -95,15 +99,21 @@ int main(int argc, char **argv) {
         int i;
         for (i = optind; i < argc; i++)
             if (score(argv[i]) != 0) bad = 1;
+    } else if (isatty(STDIN_FILENO)) {
+        /* Nothing to read and a terminal on stdin: the user typed the bare
+         * command and wants to know what it does. Reading stdin here made the
+         * program sit there silently looking hung, and only showed the usage
+         * after a Ctrl-C -- the worst possible first impression. A filter still
+         * gets its filter behaviour below, because a pipe is not a terminal. */
+        usage(stdout, argv[0]);
     } else {
-        int any = 0;
         while (fgets(line, sizeof line, stdin)) {
             line[strcspn(line, "\r\n")] = '\0';
             if (line[0] == '\0' || line[0] == '#') continue;
-            any = 1;
             if (score(line) != 0) bad = 1;
         }
-        if (!any) { usage(stderr, argv[0]); bad = 1; }
+        /* An empty pipe is not an error: `grep ... | linearr` matching nothing
+         * is an ordinary outcome, and a filter that lectures about it is noise. */
     }
 
     process_free();

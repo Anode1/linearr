@@ -24,7 +24,9 @@ what a hospital is.
 ## Build and run
 
     make            # build ./linearr
-    make ut         # build and run the in-place unit tests
+    make check      # both test gates -- run this before a commit
+    make ut         # the in-place unit tests
+    make cliut      # black-box: the binary driven through the shell
     make ut-asan    # the tests under AddressSanitizer
     make ut-ubsan   # the tests under UndefinedBehaviorSanitizer
     make pedantic   # strict warnings (-pedantic -Wshadow -Wstrict-prototypes ...)
@@ -162,6 +164,7 @@ params.c/.h       config: load system.properties, params_get("key")
 hash.c/.h         generic string -> void* hash table (backs params and the groups)
 constants.h       tunable sizes, all of them
 tests.c           in-place unit tests (make ut)
+tests/cli.sh      black-box tests: the binary through a shell and a pty (make cliut)
 conf/             the example model (synthetic)
 example/          two training files with different schemas (synthetic)
 scripts/scale.sh  measures the memory claim at 200 terms and 500 groups
@@ -226,7 +229,9 @@ The rules the code already follows, so new code matches:
   terminates. Single exit via `goto cleanup` where a function holds a file.
 - **One concept per file**, `static` for anything module-private,
   `const`-correct, `size_t` for sizes.
-- **Tests in place.** `make ut` is wired; a feature ships with a `CHECK`.
+- **Tests in place.** `make ut` is wired; a feature ships with a `CHECK`. What a
+  unit test structurally cannot reach -- a terminal on stdin, exit codes, which
+  stream a message went to -- belongs in `tests/cli.sh`.
 - **Sanitizer-clean.** `make ut-asan` and `make ut-ubsan` before tagging; CI and
   the pre-push hook run both.
 - **A comment is a claim.** Header comments, source comments, the Makefile, and

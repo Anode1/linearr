@@ -21,7 +21,9 @@ Do not change behaviour without changing these first.
 ## Build and test
 
     make          # build ./linearr
-    make ut       # the unit tests -- the fast inner loop, run before every commit
+    make check    # ut + cliut: the commit gate
+    make ut       # the unit tests -- the fast inner loop
+    make cliut    # black-box: the built binary through a shell and a pty
     make ut-asan  # the tests under AddressSanitizer
     make ut-ubsan # the tests under UndefinedBehaviorSanitizer
     make pedantic # -pedantic -Wshadow -Wstrict-prototypes -Wmissing-prototypes ...
@@ -86,8 +88,16 @@ Tests are the objective gate. Never trust output you have not verified.
    modules return codes, only the CLI `die()`s.
 3. **Test.** Add or extend `tests.c` -- linear, inline, ONE comment per test
    saying what it checks. Cover the new behaviour and its edges.
-4. **Verify.** `make ut` green, `make pedantic` warning-free, then the two
+4. **Verify.** `make check` green, `make pedantic` warning-free, then the two
    sanitizers.
+
+**Some behaviour has no unit test, by construction.** `make ut` runs with a pipe
+on stdin, never a terminal; it sees a return value, never an exit code; it calls
+`process()`, never the binary. A bare `./linearr` sat reading stdin and looked
+hung, printing its usage only after a Ctrl-C, while all 118 unit tests were
+green -- because none of them could have been the one to notice. That class of
+behaviour goes in `tests/cli.sh`. When you fix something a user hit and no test
+failed, the first question is which gate could not have caught it.
 
 Red -> green -> refactor. Every change keeps the whole suite green.
 

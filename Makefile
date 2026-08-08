@@ -5,7 +5,8 @@
 # library the project adds for you is -lm, which the fit and the rounding need.
 # Drop in a .c -- here or one directory down -- and it compiles, no editing
 # this file.
-#   make | release | debug | pedantic | ut | ut-asan | ut-ubsan | hooks | clean
+#   make | release | debug | pedantic | check | ut | cliut | ut-asan | ut-ubsan
+#   | hooks | clean
 SHELL = /bin/sh
 
 BIN     = linearr
@@ -38,7 +39,7 @@ release  : CFLAGS = -O2
 %.o: %.c
 	$(CC) $(PROJ) $(CPPFLAGS) $(CFLAGS) -MMD -c $< -o $@
 
-.PHONY: all release debug pedantic ut ut-asan ut-ubsan hooks clean modeclean
+.PHONY: all release debug pedantic check ut cliut ut-asan ut-ubsan hooks clean modeclean
 
 # all comes FIRST on purpose: make's default goal is the first non-special
 # target in the file, and .PHONY / .SUFFIXES / pattern rules do not count. With
@@ -67,6 +68,16 @@ $(TESTBIN): $(SOURCES.c)
 	$(CC) $(PROJ) -g -DUNIT_TEST $(CPPFLAGS) $(SOURCES.c) -o $(TESTBIN) $(LDLIBS) $(LIBM)
 ut: $(TESTBIN)
 	./$(TESTBIN)
+
+# cliut: the built binary driven through the shell, which is the only place some
+# behaviour exists at all. `make ut` never has a terminal on stdin, so it could
+# not see that a bare `./linearr` sat there looking hung instead of printing its
+# usage. Needs the binary, not the test build.
+cliut: $(BIN)
+	@sh tests/cli.sh
+
+# check: both gates. Run it before a commit.
+check: ut cliut
 
 # ut-asan / ut-ubsan: the same tests under AddressSanitizer and under
 # UndefinedBehaviorSanitizer. A leak, an overflow, or UB aborts with a file:line

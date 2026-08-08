@@ -10,6 +10,11 @@
 # identically:
 #   make ut-asan     # AddressSanitizer
 #   make ut-ubsan    # UndefinedBehaviorSanitizer
+#
+# make cliut runs here too: it drives the built binary through a shell and a
+# pseudo-terminal, which is where behaviour the unit tests structurally cannot
+# reach lives (a bare run with a terminal on stdin, exit codes, stdout/stderr
+# separation).
 name: sanitizers
 
 on:
@@ -32,6 +37,8 @@ jobs:
         run: make && test -x ./linearr
       - name: unit tests
         run: make ut
+      - name: CLI black-box tests
+        run: make cliut
       - name: strict warnings
         run: make pedantic
       - name: AddressSanitizer
