@@ -1,0 +1,15 @@
+# conf/trim_additions.csv -- days added to the prediction to get the trim
+# point, one line per group. SYNTHETIC, like coefficients.csv.
+GROUP,trim_addition
+001,26.5528
+002,31.9213
+003,39.8791
+004,37.3913
+005,49.5037
+006,9.4871
+007,42.0769
+008,52.2854
+009,39.3994
+010,46.1917
+011,30.3682
+012,18.0583

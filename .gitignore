@@ -1,0 +1,5 @@
+# build output
+linearr
+linearr_ut
+*.o
+*.d

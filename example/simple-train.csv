@@ -1,0 +1,21 @@
+# example/simple-train.csv -- nothing medical about it: minutes on the road as a
+# function of distance and stops, two terms instead of twenty-four. The point of
+# this file is that the program never had to change to fit it: the header names
+# the terms, so this IS the whole schema.
+#
+#   MINUTES = 5 + 2.5*km + 1.5*stops
+#
+GROUP,MINUTES,km,stops
+A,5.0,0,0
+A,30.0,10,0
+A,9.5,0,3
+A,34.5,10,3
+A,19.0,5,1
+A,58.0,20,2
+A,18.5,3,4
+B,12.0,0,0
+B,22.0,4,0
+B,18.0,0,4
+B,28.0,4,4
+B,20.0,2,2
+B,34.0,7,3
