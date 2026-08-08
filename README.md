@@ -21,6 +21,28 @@ group, plus that group's *trim point*, the day count past which a stay stops
 being typical. That is the shape the example data has; the program has no idea
 what a hospital is.
 
+## Origin
+
+The model here is not a textbook exercise. The author -- formally trained in
+physics and computer science -- built a least-squares length-of-stay predictor
+for industry in 2011: it went into production, ran against real caseloads, and
+was read and maintained by other people. Releasing a C implementation of it as
+open source was the intention at the time, and there was never time for it. This
+is that implementation: written from scratch around the same arithmetic,
+generalised so the terms come from your file instead of being fixed in the
+source, and carrying none of the original data. The coefficients shipped here
+are synthetic, and real tables belong to whoever produced them.
+
+That background is why the numerics are written out rather than delegated, and
+why the places where least squares stops being trustworthy -- a design the data
+cannot identify, a fit with no degrees of freedom left, the conditioning cost of
+normal equations -- are stated in this README instead of left for a reader to
+discover.
+
+Fifteen years is a long detour, but the shape of the problem has not changed:
+somebody has a table of coefficients, a stream of rows, and a machine that
+should not need a Python installation to multiply them together.
+
 ## Build and run
 
     make            # build ./linearr
