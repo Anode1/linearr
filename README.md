@@ -56,9 +56,37 @@ should not need a Python installation to multiply them together.
     make hooks      # run the sanitizers before every git push
     make clean
 
-Ask what the model expects:
+Fit a model from your own data and score against it -- no configuration file
+anywhere. A training row is `GROUP,VALUE,<one column per term>`, and the header
+names the terms:
 
-    $ ./linearr --terms
+    $ cat mine.csv
+    GROUP,MINUTES,km,stops
+    A,5.0,0,0
+    A,30.0,10,0
+    A,9.5,0,3
+    A,34.5,10,3
+    A,19.0,5,1
+    A,58.0,20,2
+    A,18.5,3,4
+
+    $ ./linearr -t mine.csv > model.csv
+    fit: 1 groups, 7 rows, least df=4
+
+    $ cat model.csv
+    GROUP,Intercept,km,stops
+    A,5,2.5,1.5
+
+    $ ./linearr -c model.csv --no-trim A km=10 stops=3
+    A prediction=34.5000 trim=34.5
+
+`-t` fits **every group in the file**, one line each, in a single pass. Standard
+output is a complete coefficient file and standard error is the commentary, so
+the redirect above is the whole workflow.
+
+Ask what a model expects:
+
+    $ ./linearr --terms -c conf/coefficients.csv
     24 terms and 12 groups in conf/coefficients.csv
         1  Cardioversion
         2  Cell_saver
@@ -66,7 +94,7 @@ Ask what the model expects:
        17  icu_indicator
       ...
 
-Score a case by naming the terms that are not zero -- everything else is 0:
+Score by naming the terms that are not zero -- everything else is 0:
 
     $ ./linearr 001 Cardioversion=1 icu_indicator=1
     001 prediction=19.9611 trim=46.5
@@ -77,32 +105,22 @@ read from stdin, so a file of cases round trips through a pipeline:
     $ ./linearr "001,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0"
     001 prediction=19.9611 trim=46.5
 
-    $ ./linearr < cases.csv > scored.txt
+    $ printf '001,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0\n' > cases.csv
+    $ ./linearr < cases.csv
+    001 prediction=19.9611 trim=46.5
 
 At two terms the row form is fine. At two hundred it is unusable, which is why
 the named form exists and is what the rest of this README uses.
 
-Files -- `coef.file`, `trim.file`, and `-t`'s argument -- are looked for in the
-current directory first, then beside the program, so an installed `linearr`
-works from anywhere and your own table still wins where you have one.
+Files -- `-c`, `--trim`, `coef.file`, `trim.file`, and `-t`'s argument -- are
+looked for in the current directory first, then beside the program, so an
+installed `linearr` works from anywhere and your own table still wins where you
+have one.
 
 When something is wrong, the message says what:
 
     $ ./linearr 001 nosuchterm=1
     cannot score group '001': no term 'nosuchterm' in conf/coefficients.csv -- run --terms to list them
-
-Fit the coefficients from training data -- rows of `GROUP,VALUE,<the terms>`:
-
-    $ ./linearr -t example/train.csv -g 001
-    fit: 17 rows, R2=1.0000, 17 terms unidentified and set to 0, df=9
-    GROUP,Intercept,Cardioversion,Cell_saver,...
-    001,6.4832,6.0308,0.0000,...
-
-Standard output is a complete coefficient file and standard error is the
-commentary, so the loop closes with a redirect:
-
-    $ ./linearr -t train.csv -g 001 > conf/coefficients.csv
-    $ ./linearr "001,1,0,0,..."          # scored against what you just fitted
 
 `./linearr -h` prints the options; `-d` traces to stderr.
 
@@ -126,37 +144,57 @@ Two terms instead of twenty-four, and the only thing that changed was the file.
 ## Scale
 
 The default build takes **256 terms** and any number of groups. That ceiling is
-the only number that decides the program's memory, and you set it at build time:
+what decides the fitter's footprint, and you set it at build time:
 
-    make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32'    # ~17 KB of fitter
+    make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32'
 
-| ceiling | fitter footprint |
-| --- | --- |
-| 32 terms | ~17 KB |
-| 64 | ~68 KB |
-| 128 | ~267 KB |
-| 256 (default) | ~1.1 MB |
-| 512 | ~4.2 MB |
+| ceiling | fitter matrices | note |
+| --- | --- | --- |
+| 32 terms | ~17 KB | |
+| 64 | ~68 KB | |
+| 128 | ~266 KB | |
+| 256 (default) | ~1.06 MB | |
+| 510 | ~4.2 MB | the maximum; above this raise `CSV_MAX_FIELDS` too |
+
+Three things that table does **not** cover, because a reviewer measured them and
+found the earlier version of this section overstating the case:
+
+- The fitter's matrices live in **static storage, not on the stack**. They were
+  automatics, so the fit needed 1.18 MB of contiguous stack and died with
+  SIGSEGV and no diagnostic under `ulimit -s 1024`.
+- The **stack** requirement is now about **300 KB** and comes from the line
+  buffers in `constants.h`, not from the ceiling. Measured: it runs under
+  `ulimit -s 320` and fails under 256. Shrink `CSV_LINE_MAX`, `MAX_INPUT` and
+  `MAX_OUTPUT` together with the ceiling on a small target.
+- Fitting **every** group in one pass holds one accumulator per group, so that
+  path costs `groups x terms^2` -- about 6 MB for 580 groups of 35 terms. It is
+  still never a function of how many rows you feed it.
 
 `scripts/scale.sh` exists to falsify the memory claim rather than repeat it: it
-fits the same 200-term model over row counts an order of magnitude apart and
-prints peak RSS for each. If those numbers tracked the data, the claim would be
-wrong and this section would have to change. Measured on the author's machine:
+fits the same model over row counts an order of magnitude apart and prints peak
+RSS for each. If those numbers tracked the data, the claim would be wrong and
+this section would have to change. Run at the shape the original production
+model had -- 35 terms, 580 groups -- output verbatim:
 
-    $ sh scripts/scale.sh 200 500 10000 100000
+    $ sh scripts/scale.sh 35 580 10000 100000
+    linearr scale check -- 35 terms, 580 groups
 
-    FIT -- the same 200-term model, 10000 rows then 100000:
+    generating training data (10000 and 100000 rows) ... done (816K, 8.0M)
+    FIT -- the same 35-term model, 10000 rows then 100000:
       rows         seconds  peak RSS (KB)
-      10000        0.50     3072
-      100000       5.70     2816          <- 10x the data, 4 MB -> 40 MB on disk
+      10000        0.02 2432
+      100000       0.24 2432
+      ^ RSS should be flat: 10x the data, the same memory.
 
-    SCORE -- 100000 cases against 500 groups:
-      100000       1.42     3072
+    generating a 580-group table and cases ... done
+    SCORE -- 100000 cases against 580 groups:
+      cases        seconds  peak RSS (KB)
+      100000       0.16 3712
 
-Time scales with the rows, as it must. Memory does not move. The coefficient
-table is the only thing that grows with the problem -- 500 groups x 201 doubles,
-about 785 KB, held once -- and it is bounded by the number of groups, never by
-the number of cases scored.
+    The coefficient table is the only thing that grows with the problem:
+      580 groups x (35 + 1) doubles = about 163 KB, held once.
+
+Ten times the data, the same memory. Time scales with the rows, as it must.
 
 ## What it does when the data cannot answer
 
@@ -177,12 +215,22 @@ meaningless 1.0000 read as success.
 `system.properties` -- `key = value`, `#` comments. Every key has a built-in
 default, so the file may be absent.
 
-| key | meaning |
-| --- | --- |
-| `coef.file` | the fitted model: `GROUP,Intercept,<one column per term>` |
-| `trim.file` | `GROUP,trim_addition`; set it empty for none |
-| `predict.scale` | digits the prediction is rounded to (default 4) |
-| `trim.scale` | digits the trim point is rounded to (default 1) |
+| key | default | meaning |
+| --- | --- | --- |
+| `coef.file` | `conf/coefficients.csv` | the fitted model: `GROUP,Intercept,<one column per term>`. `-c` overrides it |
+| `trim.file` | `conf/trim_additions.csv` | `GROUP,trim_addition`. Set it empty, or pass `--no-trim`, for none |
+| `predict.scale` | 4 | digits the prediction is rounded to |
+| `trim.scale` | 1 | digits the trim point is rounded to |
+
+With no trim table the trim point simply equals the prediction -- it is not a
+separate quantity that failed to load. A trim file *named* in the config and
+unreadable is an error; the built-in default merely being absent is not.
+
+**Coefficients are written at full precision**, in the shortest form that reads
+back as the same double, so `A,5,2.5,1.5` and `A,4.9999999999999991,...` are
+both exactly what was fitted. `predict.scale` governs the prediction, not the
+model: writing coefficients at four decimals silently turned any effect below
+5e-5 into zero and published a different model from the one that was fitted.
 
 Rounding is half away from zero, not `printf`'s half to even, and it is part of
 the answer rather than presentation: the trim point is built on the *rounded*
@@ -206,11 +254,12 @@ process.c/.h      THE slot: score a case (process), fit from a CSV (process_trai
 los.c/.h          the model: the schema, the coefficient tables, predict + trim
 regress.c/.h      ordinary least squares by accumulated normal equations
 csv.c/.h          bounded CSV: read a line, split it in place
+resolve.c/.h      find a data file: the current directory, then beside the binary
 common.c/.h       safe primitives: die(), debug(), xmalloc(), xstrdup()
 utils.c/.h        bounded string helpers (rtrim/ltrim)
 params.c/.h       config: load system.properties, params_get("key")
 hash.c/.h         generic string -> void* hash table (backs params and the groups)
-constants.h       tunable sizes, all of them
+constants.h       buffer sizes (the TERM ceiling lives in regress.h / los.h)
 tests.c           in-place unit tests (make ut)
 tests/cli.sh      black-box tests: the binary through a shell and a pty (make cliut)
 conf/             the example model (synthetic)
@@ -241,9 +290,14 @@ Makefile          the build
   it readable in an afternoon (`regress.c` is about 100 lines).
 
 **Reach for something else when:** you need regularization (ridge, lasso,
-elastic net), categorical encoding, missing-value handling, cross-validation, or
-inference -- standard errors, confidence intervals, p-values. None of that is
-here. `scikit-learn` and `statsmodels` do all of it well, and GSL
+elastic net), categorical encoding, missing-value handling, cross-validation,
+weighted least squares, or inference -- standard errors, confidence intervals,
+prediction intervals, p-values. None of that is here, and neither is the
+residual standard error a prediction consumer usually wants next. The worked
+example is also a modelling choice worth naming: length of stay is a skewed,
+non-negative, count-like response, and unweighted OLS on raw days is not the
+standard treatment for it (a log transform or a Gamma GLM is). Nothing stops
+this tool predicting a negative stay. `scikit-learn` and `statsmodels` do all of it well, and GSL
 (`gsl_multifit_linear`) or LAPACK (`dgels`) give you a fitted line in C with more
 numerical machinery behind it than this has.
 
@@ -263,10 +317,13 @@ The rules the code already follows, so new code matches:
 
 - **C99, warning-free.** Clean under `-std=c99 -Wall -Wextra`; a warning is a
   defect. `make pedantic` is the stricter gate.
-- **Stack first.** Rows are processed one at a time into fixed-size buffers, and
-  peak memory is computable by hand from the structs. The one sanctioned heap is
-  the coefficient table in `los.c`, bounded by the number of groups and freed on
-  every path.
+- **Stack first, and count the heap out loud.** Rows are processed one at a time
+  into fixed-size buffers; nothing on the row path allocates. Three things do
+  allocate, each bounded by the model or the config and never by the data, and
+  each freed on every path: the coefficient table (`los.c`), the config table
+  (`params.c`), and one accumulator per group while `-t` fits them all
+  (`process.c`). The claim used to read "the one sanctioned heap" and was
+  already wrong by one when a reviewer counted.
 - **Bounded strings only.** `snprintf` always; never `strcpy`/`strcat`/`sprintf`
   -- except the checked copy into a fixed buffer, where the guard sits on the
   line above and returns rather than truncating. Sizes come from `constants.h`.
@@ -297,6 +354,21 @@ up in [ais](https://github.com/Anode1/ais), in
   conventions come from.
 - [aisconfig](https://github.com/Anode1/aisconfig) -- the C project template
   this started from.
+
+## Platforms, and reporting a bug
+
+Built and tested on Linux and macOS on every push (`.github/workflows/sanitizers.yml`
+runs the suite plus AddressSanitizer and UndefinedBehaviorSanitizer on both).
+BSD should work and is untested. There is no Windows build.
+
+There is no `make install` yet: copy `linearr` and `conf/` to the same directory,
+or pass `-c` and point at your own table. A symlink to the binary is not enough
+on its own -- the program looks beside the path it was invoked through, so
+either install both files together or use `-c`.
+
+Bugs and findings: open an issue with the exact command, the input that
+reproduces it, and what you expected. A reproduction that fits in a shell
+snippet is worth more than a description.
 
 ## License
 

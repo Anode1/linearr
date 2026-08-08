@@ -24,7 +24,20 @@ int params_load(const char *path) {
 
     while (fgets(line, sizeof line, fp)) {
         char *eq, *key, *val;
-        line[strcspn(line, "\r\n")] = '\0';        /* drop the newline */
+        size_t n = strcspn(line, "\r\n");
+
+        /* A line that did not fit used to be silently split, so the tail of an
+         * over-long COMMENT became a settings line of its own: 1023 bytes of
+         * '#' followed by "predict.scale = 0" changed the program's behaviour
+         * from inside a comment. A value longer than the buffer was truncated
+         * into a different path. Neither is a thing a config file may do. */
+        if (line[n] == '\0' && !feof(fp)) {
+            debug("params: %s has a line longer than %d bytes", path,
+                  PARAMS_LINE_MAX - 1);
+            fclose(fp);
+            return -1;
+        }
+        line[n] = '\0';
         if (line[0] == '#' || line[0] == '\0') continue;
 
         eq = strchr(line, '=');

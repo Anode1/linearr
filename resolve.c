@@ -11,9 +11,18 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
+/* Readable AND a regular file. Without the second half, naming a FIFO as
+ * coef.file or as -t's argument made the program block forever on open with no
+ * output and no diagnostic -- indistinguishable from a hang. Directories,
+ * /dev/zero and unreadable files were already handled; the FIFO was the one
+ * input that could take the process away and not give it back. */
 static int readable(const char *path) {
-    return access(path, R_OK) == 0;
+    struct stat st;
+    if (access(path, R_OK) != 0) return 0;
+    if (stat(path, &st) != 0) return 0;
+    return S_ISREG(st.st_mode) != 0;
 }
 
 /* Where the program itself lives. Worked out once and remembered, because it

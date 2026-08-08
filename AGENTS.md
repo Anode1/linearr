@@ -46,15 +46,17 @@ Both are asserted by tests, and both are easy to destroy with a well-meaning
 refactor:
 
 - **Memory is a function of the model, never of the data.** `regress_add` folds
-  one observation into the cross-product matrix and forgets it; `process_train`
-  streams the file one line at a time; a case is a stack struct. Peak footprint
-  is `16*(REGRESS_MAX_VARS+1)^2` bytes plus the row buffers, and nothing in that
-  formula is a data size. Collecting rows into an array to "make it simpler"
-  throws this away, and it is the reason the program exists. `sh
-  scripts/scale.sh` is the check: fit the same model over 10x the rows and the
-  peak RSS must not move. Before adding any `malloc`, check it against the one
-  the core sanctions: the coefficient table in `los.c`, bounded by the number of
-  groups and freed on every path.
+  one observation into the centered co-moments and forgets it; the trainers
+  stream the file one line at a time; a case is a stack struct. Nothing in the
+  footprint formula is a data size. Collecting rows into an array to "make it
+  simpler" throws this away, and it is the reason the program exists. `sh
+  scripts/scale.sh` is the check: fit the same model over 10x the rows and peak
+  RSS must not move. Three things allocate, all bounded by the model or the
+  config: the coefficient table (`los.c`), the config table (`params.c`), and
+  one accumulator per group during a fit-everything pass (`process.c`). Adding a
+  fourth needs an argument. Note also that the fitter's matrices are STATIC, not
+  automatic: as locals they needed 1.18 MB of contiguous stack and killed the
+  program under `ulimit -s 1024` with no diagnostic.
 - **The terms come from the file, not from the source.** `los_schema_set` is the
   only place a column list is established, and both loaders feed it from a
   header line. Hardcoding a count or a name anywhere else -- including in a test
@@ -108,6 +110,34 @@ lying, and `process_train` clears the flag because it repurposes the schema.
 
 Note what did work: `make ut-asan` located it at a file and line on the first
 run. The sanitizers are not a formality.
+
+## What 145 green tests did not catch
+
+Three independent reviewers -- statistics, safety, adversarial -- were turned on
+this project after it looked finished. Memory safety survived: ~5,000 fuzz
+rounds under ASan and UBSan produced no crash and no sanitizer report, which is
+the part the discipline in this file was actually built to protect. Everything
+they did find was a **confidently printed wrong number with exit 0**, and the
+reason the suite could not see any of it is worth keeping:
+
+`tests.c` only ever exercised the fitter on well-behaved data -- values around
+1, a response with no offset, columns of comparable scale, well-conditioned
+designs. Under those conditions every defect below is invisible:
+
+- the rank tolerance was absolute, so a column measured in dollars deleted an
+  indicator column for being small. Units decided which terms existed.
+- `R2` was computed from uncentered sums, so an offset response produced
+  catastrophic cancellation -- and the `sse < 0` clamp turned the wreckage into
+  a printed `R2=1.0000`.
+- coefficients were written at `%.4f`, so the published table was a different
+  model from the fitted one whenever an effect was below 5e-5.
+- `nan` and `inf` parsed fine, propagated into every coefficient, and scored.
+
+**So: a test whose inputs are all the same order of magnitude is not a test of
+numerics.** When you add one, ask what it would look like if the data were
+scaled by 1e6, offset by 1e8, or nearly collinear -- and add that case too.
+There are now tests named `units:`, `offset:` and `conditioning:` for exactly
+this, and they should grow rather than be trimmed.
 
 ## The development loop (test-driven)
 

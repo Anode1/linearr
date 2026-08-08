@@ -1,75 +1,109 @@
 /* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
-/* regress.h -- ordinary least squares for y = b0 + b1*x1 + ... + bp*xp, by
- * accumulated normal equations.
+/* regress.h -- ordinary least squares for y = b0 + b1*x1 + ... + bp*xp.
  *
- * The point of this shape: an observation is ADDED and then forgotten. The
- * fitter holds the (p+1)x(p+1) cross-product matrix and nothing else, so a
- * training file of ten rows and one of ten million rows are fitted in the same
- * memory -- peak footprint is a function of the number of variables, never of
- * the number of rows (STYLE.md's bounded-memory invariant, on the arithmetic
- * rather than on the store). Nothing here allocates. */
+ * Observations are ADDED and then forgotten: the fitter holds cross-products,
+ * never rows, so ten observations and ten million are fitted in the same
+ * memory. Peak footprint is a function of the number of terms alone.
+ *
+ * Three decisions here were paid for by review, and each replaced something
+ * that looked fine and gave wrong answers:
+ *
+ * 1. CENTERED accumulation, not raw X'X. Sums of squares about zero are
+ *    differences of large nearly-equal numbers, so a response with an offset
+ *    (a price, an epoch timestamp, a population) destroyed R^2 while leaving
+ *    the coefficients correct -- and always in the flattering direction. With
+ *    a 1e8 offset the fit reported R2=1.0000 for a model whose true R2 was 0.
+ *    Means and co-moments are updated online (Welford), so the offset cancels
+ *    before it can cancel anything else.
+ *
+ * 2. EQUILIBRATED rank test. The tolerance used to be absolute, taken from the
+ *    largest diagonal of X'X -- and those diagonals scale as the SQUARE of a
+ *    column's units. A column measured in dollars sat 1e12 above an indicator,
+ *    so the indicator was declared unidentifiable and silently deleted, however
+ *    strong its effect. Whether a term existed depended on whether you wrote
+ *    income in dollars or thousands. The matrix is now scaled to unit diagonal
+ *    before elimination, which makes the test about rank, as its name says.
+ *
+ * 3. The intercept is NOT a column. It is recovered from the means afterwards,
+ *    so it can never be pinned and a constant regressor is correctly absorbed
+ *    into it rather than fighting it for the same degree of freedom.
+ *
+ * The module allocates nothing. The caller supplies storage, which is what lets
+ * one fit live in static memory and a hundred simultaneous fits live in one
+ * heap block sized to the actual term count. */
 #ifndef REGRESS_H
 #define REGRESS_H
 
-/* The term ceiling, and the only number that decides this program's memory.
- * Override it at build time for a target with a smaller stack:
- *     make CPPFLAGS=-DREGRESS_MAX_VARS=32
- *
- * The fitter holds two square matrices of (p+1)^2 doubles, where p is the
- * ceiling -- one in struct regress, one as scratch inside regress_solve -- so
- * the peak is 16*(p+1)^2 bytes plus change, and NOTHING else scales:
- *
- *     p = 32    ~ 17 KB      p = 256   ~ 1.1 MB
- *     p = 64    ~ 68 KB      p = 512   ~ 4.2 MB
- *     p = 128   ~ 267 KB
- *
- * That is the whole memory model. Ten training rows and ten billion cost the
- * same, because a row is folded in and dropped; only the width of a row, and
- * this ceiling, are in the formula. */
+#include <stddef.h>
+
+/* The term ceiling. Override at build time for a small target:
+ *     make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32'
+ * (Both, together: process.c refuses to compile if the model may be wider than
+ * the fitter. Above 510 you must raise CSV_MAX_FIELDS too.) */
 #ifndef REGRESS_MAX_VARS
-#define REGRESS_MAX_VARS 256                /* slopes, not counting b0        */
+#define REGRESS_MAX_VARS 256                /* slopes, not counting b0 */
 #endif
 #define REGRESS_MAX_TERMS (REGRESS_MAX_VARS + 1)
 
+/* A fit in progress. The arrays point into storage the CALLER owns; nothing
+ * here is allocated or freed by this module. */
 struct regress {
-    int    nvars;                           /* p: slopes, excluding intercept */
-    long   n;                               /* observations added             */
-    double xtx[REGRESS_MAX_TERMS][REGRESS_MAX_TERMS];  /* X'X, term 0 is the 1 */
-    double xty[REGRESS_MAX_TERMS];                     /* X'y                  */
-    double sy, syy;                         /* for the R^2 report             */
+    int     nvars;
+    long    n;              /* observations added */
+    double *mean;           /* nvars: running mean of each regressor */
+    double *c;              /* nvars*nvars: centered cross-products, row-major */
+    double *cxy;            /* nvars: centered cross-products with y */
+    double  my;             /* running mean of the response */
+    double  cyy;            /* centered sum of squares of the response */
 };
 
-/* Start a fit over nvars slopes. Returns 0, or -1 if nvars is out of range. */
-int regress_init(struct regress *r, int nvars);
+/* How many doubles regress_init needs for nvars terms, and how many
+ * regress_solve needs as scratch. Both are O(nvars^2) and neither depends on
+ * how much data will be added. */
+size_t regress_storage(int nvars);
+size_t regress_solve_storage(int nvars);
 
-/* Add one observation: x[nvars] regressors and the response y. Returns 0. */
+/* Start a fit over nvars slopes, using storage[regress_storage(nvars)], which
+ * must stay alive until the fit is solved. Returns 0, or -1 if nvars is out of
+ * range or storage is NULL. */
+int regress_init(struct regress *r, int nvars, double *storage);
+
+/* Add one observation: x[nvars] regressors and the response y. Returns 0, or
+ * -1 if any value is not finite -- a NaN admitted here poisons every
+ * coefficient, and used to do so silently, all the way to a published table of
+ * "nan" that scored "prediction=nan" and exited 0. */
 int regress_add(struct regress *r, const double *x, double y);
 
-/* Solve for beta[nvars+1] (beta[0] is the intercept), by Gauss-Jordan with
- * partial pivoting on the normal equations.
- *
- * A term the sample cannot identify -- a regressor that never varies, or one
- * collinear with the others -- has no least-squares answer at all, and the
- * matrix is singular there. Rather than fail the whole fit or return a number
- * the data does not support, such a term is pinned to exactly 0 and the rest
- * are fitted around it. That is the honest reading (this indicator contributes
- * nothing we can see) and it matches the shipped tables, where an intervention
- * a group never receives carries a zero coefficient.
- *
- * Returns the number of terms pinned that way (0 when the fit is full rank),
- * or -1 if nothing was added.
- *
- * Note what this does NOT refuse: a sample with fewer rows than terms. That is
- * the ordinary case here -- 25 terms and 15 rows, because a group never sees
- * most of the 24 interventions -- and pinning is exactly the right answer to
- * it. The fit is only meaningless when the rows do not outnumber the terms the
- * sample DID identify, which the caller can see: rows minus (nvars + 1 - the
- * return value) is the residual degrees of freedom, and at zero the line passes
- * through every point by construction and R^2 is 1 whatever the data says. */
-int regress_solve(const struct regress *r, double *beta);
+/* What the fit turned out to be. */
+struct regress_fit {
+    int    pinned;      /* terms the sample could not identify, set to 0     */
+    long   df;          /* residual degrees of freedom: n - (identified + 1) */
+    double r2;          /* -1 when it is not defined (a response that never
+                           varies) or not computable to useful precision     */
+    double condition;   /* ratio of largest to smallest accepted pivot on the
+                           equilibrated matrix: a conditioning proxy. 1.0 is
+                           perfect. Past ~1e8 the later digits of the
+                           coefficients are noise, and R^2 will not tell you:
+                           an ill-conditioned design fits its own sample
+                           beautifully. This is the number that says so.     */
+};
 
-/* Coefficient of determination for a solved beta, in [0,1] for a fit with an
- * intercept. Returns -1 if the response never varies (R^2 is undefined). */
-double regress_r2(const struct regress *r, const double *beta);
+/* Solve for beta[nvars+1] -- beta[0] is the intercept -- using
+ * scratch[regress_solve_storage(nvars)]. Fills fit if it is not NULL.
+ *
+ * A term the sample cannot identify (a regressor that never varies, or one
+ * collinear with the others) has no least-squares answer, so it is pinned to
+ * exactly 0 and the rest are fitted around it. Which of a collinear PAIR gets
+ * pinned depends on column order -- there is no answer to that question in the
+ * data, and fit->pinned is how the caller learns not to read the zero as an
+ * estimated effect.
+ *
+ * Returns 0, or -1 if nothing was added or the fit is not finite. Note what is
+ * NOT refused: fewer rows than terms. That is ordinary here -- 25 terms and 15
+ * rows, because a group never sees most interventions -- and pinning answers
+ * it. Judge that case by fit->df, which goes to zero when the line is passing
+ * through every point by construction. */
+int regress_solve(const struct regress *r, double *beta, double *scratch,
+                  struct regress_fit *fit);
 
 #endif /* REGRESS_H */

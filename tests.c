@@ -38,6 +38,21 @@ static int streq(const char *a, const char *b) {
     return a && b && strcmp(a, b) == 0;
 }
 
+/* Pull the numbers out of a "GROUP,b0,b1,..." row. Coefficients are written at
+ * full precision now, so comparing the TEXT of a fit against the text of the
+ * table it was generated from is a comparison of rounding, not of arithmetic.
+ * Compare the values. */
+static int coef_row(const char *row, double *v, int max) {
+    const char *p = strchr(row, ',');
+    int n = 0;
+    while (p && n < max) {
+        char *end;
+        v[n++] = strtod(p + 1, &end);
+        p = strchr(end, ',');
+    }
+    return n;
+}
+
 #define COEF "conf/coefficients.csv"
 #define TRIM "conf/trim_additions.csv"
 
@@ -124,82 +139,176 @@ static void test_csv(void) {
     }
 }
 
+/* Storage for the fitter, which allocates nothing itself. Static, because the
+ * matrices are ~1 MB at the default ceiling and this is exactly where the
+ * program used to blow a small stack. */
+static double t_store[REGRESS_MAX_VARS * REGRESS_MAX_VARS + 2 * REGRESS_MAX_VARS];
+static double t_scratch[REGRESS_MAX_VARS * (REGRESS_MAX_VARS + 1)];
+static double t_beta[REGRESS_MAX_TERMS];
+
 static void test_regress(void) {
     struct regress r;
-    double beta[REGRESS_MAX_TERMS];
+    struct regress_fit f;
     double x[2];
-    int pinned;
 
     /* An exact line through exact points comes back exactly: y = 2 + 3x1 - x2. */
-    regress_init(&r, 2);
+    regress_init(&r, 2, t_store);
     x[0] = 0; x[1] = 0; regress_add(&r, x, 2.0);
     x[0] = 1; x[1] = 0; regress_add(&r, x, 5.0);
     x[0] = 0; x[1] = 1; regress_add(&r, x, 1.0);
     x[0] = 2; x[1] = 3; regress_add(&r, x, 5.0);
-    pinned = regress_solve(&r, beta);
-    CHECK(pinned == 0, "regress: full rank, nothing pinned");
-    CHECK(NEAR(beta[0], 2.0) && NEAR(beta[1], 3.0) && NEAR(beta[2], -1.0),
+    CHECK(regress_solve(&r, t_beta, t_scratch, &f) == 0, "regress: solves");
+    CHECK(f.pinned == 0, "regress: full rank, nothing pinned");
+    CHECK(NEAR(t_beta[0], 2.0) && NEAR(t_beta[1], 3.0) && NEAR(t_beta[2], -1.0),
           "regress: recovers the coefficients");
-    CHECK(NEAR(regress_r2(&r, beta), 1.0), "regress: R2 is 1 on an exact fit");
+    CHECK(NEAR(f.r2, 1.0), "regress: R2 is 1 on an exact fit");
+    CHECK(f.df == 1, "regress: df");
 
-    /* Noise around that same line: the fit is close but no longer exact, and
-     * R2 must fall below 1 rather than quietly stay there. */
-    regress_init(&r, 1);
+    /* Noise around that line: close but not exact, and R2 must fall below 1. */
+    regress_init(&r, 1, t_store);
     x[0] = 0; regress_add(&r, x, 1.0);
     x[0] = 1; regress_add(&r, x, 3.1);
     x[0] = 2; regress_add(&r, x, 4.9);
     x[0] = 3; regress_add(&r, x, 7.2);
-    regress_solve(&r, beta);
-    CHECK(fabs(beta[1] - 2.0) < 0.1, "regress: slope through noisy points");
-    CHECK(regress_r2(&r, beta) < 1.0 && regress_r2(&r, beta) > 0.99,
-          "regress: R2 below 1 once the points are not collinear");
+    regress_solve(&r, t_beta, t_scratch, &f);
+    CHECK(fabs(t_beta[1] - 2.0) < 0.1, "regress: slope through noisy points");
+    CHECK(f.r2 < 1.0 && f.r2 > 0.99, "regress: R2 below 1 once points are not collinear");
 
-    /* A regressor that never varies carries no information, so it is pinned to
-     * 0 and the rest are fitted around it rather than the fit failing. */
-    regress_init(&r, 2);
+    /* THE UNITS TEST. y = 1 + 2e-6*big + 5*flag. The two columns differ by six
+     * orders of magnitude, so their X'X diagonals differ by twelve -- and the
+     * old absolute rank tolerance deleted the indicator for being small,
+     * reporting a constant model with a straight face. Whether a term exists
+     * must not depend on whether you write dollars or thousands. */
+    {
+        int i;
+        regress_init(&r, 2, t_store);
+        for (i = 0; i < 40; i++) {
+            x[0] = 1.0e5 + i * 2.0e4;
+            x[1] = (double)(i % 2);
+            regress_add(&r, x, 1.0 + 2.0e-6 * x[0] + 5.0 * x[1]);
+        }
+        CHECK(regress_solve(&r, t_beta, t_scratch, &f) == 0, "units: solves");
+        CHECK(f.pinned == 0, "units: neither column is pinned for its scale");
+        CHECK(fabs(t_beta[1] - 2.0e-6) < 1e-12, "units: the large column's slope");
+        CHECK(fabs(t_beta[2] - 5.0) < 1e-6, "units: the small column's slope");
+        CHECK(f.r2 > 0.999999999, "units: R2");
+    }
+
+    /* THE OFFSET TEST. y carries a 1e8 offset. Uncentered sums of squares are
+     * differences of huge nearly-equal numbers, so this used to report R2=1.0000
+     * for a model with a true R2 of 0 -- the clamp at sse<0 manufactured the
+     * perfect score. Centered accumulation makes the offset cancel first. */
+    {
+        int i;
+        regress_init(&r, 1, t_store);
+        for (i = 0; i < 60; i++) {
+            x[0] = (double)i;
+            regress_add(&r, x, 1.0e8 + 3.0 + 4.0 * x[0]);
+        }
+        regress_solve(&r, t_beta, t_scratch, &f);
+        CHECK(fabs(t_beta[0] - (1.0e8 + 3.0)) < 1e-4, "offset: intercept survives 1e8");
+        CHECK(fabs(t_beta[1] - 4.0) < 1e-9, "offset: slope survives 1e8");
+        CHECK(f.r2 > 0.999999, "offset: R2 is still 1 on exact data");
+    }
+    {   /* and an offset response with real noise must not report a perfect fit */
+        int i;
+        regress_init(&r, 1, t_store);
+        for (i = 0; i < 60; i++) {
+            x[0] = (double)i;
+            regress_add(&r, x, 1.0e8 + 3.0 + 4.0 * x[0] + ((i % 7) - 3) * 2.0);
+        }
+        regress_solve(&r, t_beta, t_scratch, &f);
+        CHECK(f.r2 < 0.9999, "offset: a noisy fit does not come back as R2=1");
+        CHECK(f.r2 > 0.9, "offset: but it is still a good fit");
+    }
+
+    /* A constant column is collinear with the intercept: pinned, and its effect
+     * correctly absorbed rather than fought over. */
+    regress_init(&r, 2, t_store);
     x[0] = 0; x[1] = 7; regress_add(&r, x, 1.0);
     x[0] = 1; x[1] = 7; regress_add(&r, x, 3.0);
     x[0] = 2; x[1] = 7; regress_add(&r, x, 5.0);
-    pinned = regress_solve(&r, beta);
-    CHECK(pinned == 1, "regress: the constant column is pinned");
-    CHECK(beta[2] == 0.0, "regress: a pinned coefficient is exactly 0");
-    CHECK(NEAR(beta[1], 2.0), "regress: the identified slope is still right");
+    regress_solve(&r, t_beta, t_scratch, &f);
+    CHECK(f.pinned == 1, "regress: the constant column is pinned");
+    CHECK(t_beta[2] == 0.0, "regress: a pinned coefficient is exactly 0");
+    CHECK(NEAR(t_beta[1], 2.0), "regress: the identified slope is still right");
+    CHECK(NEAR(t_beta[0], 1.0), "regress: and the intercept is never pinned");
 
-    /* Two columns saying the same thing: one of them is pinned, and the fit
-     * still reproduces the data instead of dividing by a zero pivot. */
-    regress_init(&r, 2);
+    /* Two columns saying the same thing: one is pinned, the fit still fits. */
+    regress_init(&r, 2, t_store);
     x[0] = 1; x[1] = 2; regress_add(&r, x, 4.0);
     x[0] = 2; x[1] = 4; regress_add(&r, x, 6.0);
     x[0] = 3; x[1] = 6; regress_add(&r, x, 8.0);
-    CHECK(regress_solve(&r, beta) == 1, "regress: collinear column is pinned");
-    CHECK(NEAR(regress_r2(&r, beta), 1.0), "regress: the collinear fit still fits");
+    regress_solve(&r, t_beta, t_scratch, &f);
+    CHECK(f.pinned == 1, "regress: collinear column is pinned");
+    CHECK(NEAR(f.r2, 1.0), "regress: the collinear fit still fits");
+
+    /* An ill-conditioned but not singular design must be REPORTED, because R2
+     * cannot see it: the fit is beautiful on its own sample and predicts noise. */
+    {
+        int i;
+        regress_init(&r, 2, t_store);
+        for (i = 0; i < 50; i++) {
+            x[0] = 1.0 + i * 0.01;
+            /* Nearly the same column, but NOT proportional to it: a strictly
+             * proportional column is exactly rank-deficient and gets pinned,
+             * which is a different verdict. This one is identifiable and
+             * badly conditioned, which is the case R2 cannot see. */
+            x[1] = x[0] + ((i % 2) ? 1.0e-6 : 0.0);
+            regress_add(&r, x, 1.0 + 2.0 * x[0] + 3.0 * x[1]);
+        }
+        regress_solve(&r, t_beta, t_scratch, &f);
+        CHECK(f.condition > 1e6, "conditioning: a near-duplicate column is reported");
+    }
+    {   /* and a healthy design reports a small number, so the warning is useful */
+        int i;
+        regress_init(&r, 2, t_store);
+        for (i = 0; i < 50; i++) {
+            x[0] = (double)(i % 5); x[1] = (double)(i % 3);
+            regress_add(&r, x, 1.0 + 2.0 * x[0] + 3.0 * x[1]);
+        }
+        regress_solve(&r, t_beta, t_scratch, &f);
+        CHECK(f.condition < 1e3, "conditioning: a healthy design reports a small number");
+    }
+
+    /* Non-finite input is refused at the door rather than poisoning every
+     * coefficient and being published as a table of "nan". */
+    regress_init(&r, 1, t_store);
+    x[0] = 1.0;
+    CHECK(regress_add(&r, x, 1.0) == 0, "regress: a finite observation is accepted");
+    CHECK(regress_add(&r, x, 0.0 / 0.0) == -1, "regress: a NaN response is refused");
+    x[0] = 1.0 / 0.0;
+    CHECK(regress_add(&r, x, 1.0) == -1, "regress: an infinite term is refused");
 
     /* An empty sample is not a fit, and says so. */
-    regress_init(&r, 2);
-    CHECK(regress_solve(&r, beta) == -1, "regress: refuses an empty sample");
+    regress_init(&r, 2, t_store);
+    CHECK(regress_solve(&r, t_beta, t_scratch, &f) == -1, "regress: refuses an empty sample");
 
-    /* Fewer rows than terms is NOT refused -- it is the ordinary case here, and
-     * pinning answers it. One row identifies the intercept and nothing else. */
-    regress_init(&r, 2);
+    /* Fewer rows than terms is NOT refused -- ordinary here, and pinning answers
+     * it. One row identifies the intercept and nothing else. */
+    regress_init(&r, 2, t_store);
     x[0] = 1; x[1] = 1; regress_add(&r, x, 4.0);
-    CHECK(regress_solve(&r, beta) == 2, "regress: one row identifies one term");
-    CHECK(NEAR(beta[0], 4.0) && beta[1] == 0.0 && beta[2] == 0.0,
+    regress_solve(&r, t_beta, t_scratch, &f);
+    CHECK(f.pinned == 2, "regress: one row identifies no slope");
+    CHECK(NEAR(t_beta[0], 4.0) && t_beta[1] == 0.0 && t_beta[2] == 0.0,
           "regress: that one term is the intercept, through the single point");
 
-    CHECK(regress_init(&r, REGRESS_MAX_VARS + 1) == -1, "regress: refuses too many variables");
+    CHECK(regress_init(&r, REGRESS_MAX_VARS + 1, t_store) == -1,
+          "regress: refuses too many variables");
+    CHECK(regress_init(&r, 2, NULL) == -1, "regress: refuses no storage");
 }
 
 /* The ceiling is not decoration: fit a model as wide as the build allows and
  * check every coefficient comes back. 32 terms was a toy bound; a real table is
  * hundreds of columns wide, and this is the test that says so. */
 static void test_wide_fit(void) {
-    static struct regress r;                     /* ~1 MB at the default ceiling */
-    static double beta[REGRESS_MAX_TERMS];
+    struct regress r;
+    struct regress_fit f;
     static double x[REGRESS_MAX_VARS];
     const int p = REGRESS_MAX_VARS;
     int i, j, ok = 1;
 
-    regress_init(&r, p);
+    regress_init(&r, p, t_store);
 
     /* y = 3 + sum(0.25*j * xj). One row per term isolates it; a handful of
      * combinations afterwards leave residual degrees of freedom behind. */
@@ -216,12 +325,13 @@ static void test_wide_fit(void) {
         x[j] = 0.0; x[j + 1] = 0.0;
     }
 
-    CHECK(regress_solve(&r, beta) == 0, "wide: a full-width fit is full rank");
-    CHECK(NEAR(beta[0], 3.0), "wide: intercept");
+    CHECK(regress_solve(&r, t_beta, t_scratch, &f) == 0, "wide: a full-width fit solves");
+    CHECK(f.pinned == 0, "wide: full rank");
+    CHECK(fabs(t_beta[0] - 3.0) < 1e-6, "wide: intercept");
     for (j = 0; j < p; j++)
-        if (!NEAR(beta[j + 1], 0.25 * (j + 1))) ok = 0;
+        if (fabs(t_beta[j + 1] - 0.25 * (j + 1)) > 1e-6) ok = 0;
     CHECK(ok, "wide: every one of the terms comes back");
-    CHECK(NEAR(regress_r2(&r, beta), 1.0), "wide: R2");
+    CHECK(f.r2 > 0.999999, "wide: R2");
 
     /* And the schema will carry that many named columns. */
     {
@@ -489,17 +599,21 @@ static void test_process_train(void) {
     CHECK(m != NULL, "train: reference group present");
     if (m) {
         struct los_model ref = *m;
-        size_t used;
+        double got[LOS_MAX_VARS + 2];
+        int k, nf, same = 1;
         ref.trim_addition = 0.0;
         CHECK(los_format_header(header, sizeof header) == 0, "train: format reference header");
-        used = (size_t)snprintf(expect, sizeof expect, "%s\n", header);
-        CHECK(los_format_model("001", &ref, expect + used, sizeof expect - used) == 0,
-              "train: format reference row");
+        (void)expect;
 
         CHECK(process_train("example/train.csv", "001", out, sizeof out, &info) == 0,
               "train: fits group 001");
-        CHECK(strcmp(out, expect) == 0, "train: recovers the coefficients it was generated from");
-        CHECK(NEAR(info.r2, 1.0), "train: R2 is 1 on exactly linear data");
+        nf = coef_row(strchr(out, '\n') + 1, got, LOS_MAX_VARS + 2);
+        CHECK(nf == 25, "train: the fitted row has an intercept and 24 terms");
+        if (fabs(got[0] - ref.intercept) > 1e-9) same = 0;
+        for (k = 1; k < nf; k++)
+            if (fabs(got[k] - ref.b[k - 1]) > 1e-9) same = 0;
+        CHECK(same, "train: recovers the coefficients it was generated from");
+        CHECK(info.r2 > 0.999999999, "train: R2 is 1 on exactly linear data");
         CHECK(info.rows == 17, "train: used only group 001's rows");
         /* 25 terms, 8 of them identified by this sample (the intercept and the
          * 7 live ones): the other 17 are 0, leaving 17 - 8 = 9 residual df. */
@@ -537,15 +651,27 @@ static void test_other_schema(void) {
     CHECK(process_train("example/simple-train.csv", "A", out, sizeof out, &info) == 0,
           "other schema: fits a two-term file");
     CHECK(los_nvars() == 2, "other schema: took its terms from that file's header");
-    CHECK(strcmp(out, "GROUP,Intercept,km,stops\nA,5.0000,2.5000,1.5000") == 0,
-          "other schema: recovers 5 + 2.5*km + 1.5*stops");
+    {
+        double got[4];
+        CHECK(strncmp(out, "GROUP,Intercept,km,stops\nA,", 27) == 0,
+              "other schema: header and group");
+        CHECK(coef_row(strchr(out, '\n') + 1, got, 4) == 3 &&
+              fabs(got[0] - 5.0) < 1e-9 && fabs(got[1] - 2.5) < 1e-9 &&
+              fabs(got[2] - 1.5) < 1e-9,
+              "other schema: recovers 5 + 2.5*km + 1.5*stops");
+    }
     CHECK(info.pinned == 0 && info.df == 4, "other schema: full rank, 4 df");
-    CHECK(NEAR(info.r2, 1.0), "other schema: R2");
+    CHECK(info.r2 > 0.999999999, "other schema: R2");
 
     CHECK(process_train("example/simple-train.csv", "B", out, sizeof out, NULL) == 0,
           "other schema: the second group");
-    CHECK(strcmp(out, "GROUP,Intercept,km,stops\nB,12.0000,2.5000,1.5000") == 0,
-          "other schema: same slopes, its own intercept");
+    {
+        double got[4];
+        CHECK(coef_row(strchr(out, '\n') + 1, got, 4) == 3 &&
+              fabs(got[0] - 12.0) < 1e-9 && fabs(got[1] - 2.5) < 1e-9 &&
+              fabs(got[2] - 1.5) < 1e-9,
+              "other schema: same slopes, its own intercept");
+    }
 
     los_free();
     process_free();

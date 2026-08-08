@@ -104,7 +104,7 @@ case "$("$bin" --terms)" in *icu_indicator*) ok ;;
 set +e
 for probe in "001 nosuchterm=1|nosuchterm" \
              "999 icu_indicator=1|no group" \
-             "001 icu_indicator=yes|not a number"; do
+             "001 icu_indicator=yes|not a finite number"; do
     args=${probe%|*}; want=${probe#*|}
     out=$("$bin" $args 2>&1)
     case "$out" in *"$want"*) ok ;; *) no "error names '$want': got [$out]" ;; esac
@@ -114,9 +114,12 @@ set -e
 # --- it runs from somewhere else, like an installed program ----------------
 # This is the defect that made the tool usable only inside its own source tree.
 check "runs from another directory" "$(cd "$tmp" && "$bin" 001 Cardioversion=1 icu_indicator=1)" "$EXPECT1"
+# Coefficients are written at full precision, so compare the VALUES. The old
+# %.4f made this a string match -- and made any coefficient below 5e-5 a zero.
+coefs() { tail -1 | cut -d, -f2- | tr ',' '\n' | awk '{printf "%.9f\n", $1}' | paste -sd' ' -; }
 check "-t finds its example from another directory" \
-    "$(cd "$tmp" && "$bin" -t example/simple-train.csv -g A 2>/dev/null | tail -1)" \
-    "A,5.0000,2.5000,1.5000"
+    "$(cd "$tmp" && "$bin" -t example/simple-train.csv -g A 2>/dev/null | coefs)" \
+    "5.000000000 2.500000000 1.500000000"
 
 # --- a missing table is one fatal message, not one complaint per row -------
 printf 'coef.file = definitely-not-here.csv\n' > "$tmp/system.properties"
@@ -132,7 +135,16 @@ rm -f "$tmp/system.properties"
 # --- fit, then score against what was fitted -------------------------------
 "$bin" -t example/simple-train.csv -g A 2>/dev/null > "$tmp/coef.csv"
 check "fit writes a header" "$(head -1 "$tmp/coef.csv")" "GROUP,Intercept,km,stops"
-check "fit writes the row"  "$(tail -1 "$tmp/coef.csv")" "A,5.0000,2.5000,1.5000"
+check "fit writes the row"  "$(coefs < "$tmp/coef.csv")" "5.000000000 2.500000000 1.500000000"
+
+# THE ROUND TRIP, which %.4f used to break silently: a coefficient below 5e-5
+# was written as 0.0000, so a fit reporting R2=1.0000 published a constant model.
+printf 'GROUP,VALUE,bytes\nA,3.0,0\nA,3.15,100000\nA,3.30,200000\nA,3.45,300000\n' > "$tmp/tiny.csv"
+"$bin" -t "$tmp/tiny.csv" -g A 2>/dev/null > "$tmp/tiny_coef.csv"
+printf 'coef.file = %s/tiny_coef.csv\ntrim.file =\n' "$tmp" > "$tmp/system.properties"
+check "a tiny coefficient survives the round trip" \
+    "$(cd "$tmp" && "$bin" A bytes=1000000)" "A prediction=4.5000 trim=4.5"
+rm -f "$tmp/system.properties"
 
 # The fit summary goes to stderr, so stdout stays a clean coefficient file.
 case "$("$bin" -t example/simple-train.csv -g A 2>&1 >/dev/null)" in
@@ -183,6 +195,70 @@ if command -v make >/dev/null 2>&1; then
 else
     skip=$((skip+3)); echo "  SKIP build-claims (no make)"
 fi
+
+# --- what the reviewers found: each of these printed a confident wrong answer --
+# An over-long stdin line must not become two predictions.
+python3 -c "
+import sys
+r1='001'+',1'*24; r1=r1+' '*(70000-len(r1)); r2='002'+',2'*24
+sys.stdout.write(r1+r2+chr(10))" > "$tmp/split.txt" 2>/dev/null || true
+if [ -s "$tmp/split.txt" ]; then
+    set +e
+    out=$("$bin" < "$tmp/split.txt" 2>/dev/null); rc=$?
+    set -e
+    check "an over-long stdin line yields no prediction at all" "$out" ""
+    check "and it is an error" "$rc" "1"
+else
+    skip=$((skip+2)); echo "  SKIP over-long-stdin (no python3)"
+fi
+
+# A write that failed is not a success.
+if [ -w /dev/full ]; then
+    set +e
+    "$bin" -t example/simple-train.csv -g A > /dev/full 2>/dev/null; rc=$?
+    set -e
+    check "a failed write to a full disk exits nonzero" "$rc" "1"
+else
+    skip=$((skip+1)); echo "  SKIP /dev/full"
+fi
+
+# nan must not reach a coefficient table.
+printf 'GROUP,VALUE,x\nA,1,1\nA,nan,2\nA,3,3\n' > "$tmp/nan.csv"
+set +e
+"$bin" -t "$tmp/nan.csv" -g A >/dev/null 2>&1; rc=$?
+set -e
+check "a nan in training is refused" "$rc" "1"
+set +e
+out=$("$bin" 001 icu_indicator=nan 2>&1); rc=$?
+set -e
+check "a nan on the command line is refused" "$rc" "1"
+
+# A FIFO must not take the process away and never give it back.
+if command -v mkfifo >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then
+    mkfifo "$tmp/fifo" 2>/dev/null || true
+    set +e
+    timeout 5 "$bin" -c "$tmp/fifo" --no-trim --terms >/dev/null 2>&1; rc=$?
+    set -e
+    check "a FIFO is refused promptly, not waited on" "$rc" "1"
+else
+    skip=$((skip+1)); echo "  SKIP fifo"
+fi
+
+# Options that used to be accepted and silently dropped.
+set +e
+"$bin" -g 001 </dev/null >/dev/null 2>&1; rc=$?
+set -e
+check "-g without -t is an error" "$rc" "1"
+
+# --- fitting every group in one pass ---------------------------------------
+"$bin" -t example/train.csv > "$tmp/all.csv" 2>/dev/null
+check "a fit-all writes one row per group" \
+    "$(grep -c '^00' "$tmp/all.csv")" "2"
+check "and the round trip reproduces the reference prediction" \
+    "$("$bin" -c "$tmp/all.csv" --no-trim 001 Cardioversion=1 icu_indicator=1)" \
+    "001 prediction=19.9611 trim=20.0"
+check "-g '*' still pools on request" \
+    "$("$bin" -t example/train.csv -g '*' 2>/dev/null | tail -1 | cut -c1-2)" "*,"
 
 echo "cliut: $pass passed, $fail failed, $skip skipped"
 [ "$fail" -eq 0 ]

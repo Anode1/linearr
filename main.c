@@ -14,6 +14,7 @@
 #include <string.h>
 #include <getopt.h>
 #include <unistd.h>
+#include <errno.h>
 
 #ifndef UNIT_TEST   /* the test build (make ut) supplies main() from tests.c */
 
@@ -33,7 +34,10 @@ static void usage(FILE *out, const char *prog) {
         "  -t F   fit from training file F, whose rows are GROUP,VALUE,x1..xp\n"
         "         and whose header names the terms. A complete coefficient file\n"
         "         goes to stdout, the fit summary to stderr\n"
-        "  -g G   fit only group G (default '*': every row pooled)\n"
+        "  -g G   fit only group G, or '*' to pool every row into one line.\n"
+        "         Without -g, every group in the file is fitted, one line each\n"
+        "  -c F   read the coefficient table from F instead of system.properties\n"
+        "  --trim F / --no-trim   the trim table, or none\n"
         "  --terms  what the loaded coefficient file expects, in order\n"
         "  -d     debug tracing to stderr\n"
         "  -h     this help\n"
@@ -78,6 +82,33 @@ static void print_terms(void) {
     printf("\nname them: GROUP %s=1 ...\n", n > 0 ? process_term_name(0) : "TERM");
 }
 
+/* Every group in one pass. This is the default for -t now, because "one fitted
+ * line per group" is what the model IS: the old default pooled every row into a
+ * single line labelled '*', and getting a real table meant one invocation and
+ * one full re-read of the training file per group. */
+static int train_all(const char *path) {
+    struct fit_summary sum;
+
+    if (process_train_all(path, stdout, &sum) != 0) {
+        fprintf(stderr, "cannot fit: %s\n", process_error());
+        return -1;
+    }
+    fprintf(stderr, "fit: %ld groups, %ld rows", sum.groups, sum.rows);
+    if (sum.pinned > 0) fprintf(stderr, ", %d term-slots pinned to 0", sum.pinned);
+    fprintf(stderr, ", least df=%ld", sum.min_df);
+    if (sum.max_condition > 1.0) fprintf(stderr, ", worst cond=%.3g", sum.max_condition);
+    fprintf(stderr, "\n");
+    if (sum.min_df <= 0)
+        fprintf(stderr, "warning: at least one group has no residual degrees of "
+                        "freedom -- its line passes through every row by "
+                        "construction. Fit those groups on more rows.\n");
+    if (sum.max_condition > 1e8)
+        fprintf(stderr, "warning: at least one group is ill-conditioned (cond=%.3g); "
+                        "the trailing digits of its coefficients are noise.\n",
+                sum.max_condition);
+    return 0;
+}
+
 static int train(const char *path, const char *group) {
     char out[MAX_OUTPUT];
     struct fit_info info;
@@ -92,7 +123,19 @@ static int train(const char *path, const char *group) {
     if (info.pinned > 0)
         fprintf(stderr, ", %d term%s unidentified and set to 0",
                 info.pinned, info.pinned == 1 ? "" : "s");
-    fprintf(stderr, ", df=%ld\n", info.df);
+    fprintf(stderr, ", df=%ld", info.df);
+    if (info.condition > 1.0) fprintf(stderr, ", cond=%.3g", info.condition);
+    fprintf(stderr, "\n");
+    /* R2 cannot see this failure: an ill-conditioned design fits its own sample
+     * beautifully and predicts nothing. Normal equations square the condition
+     * number, so this is the diagnostic that has to be said out loud. */
+    if (info.condition > 1e8)
+        fprintf(stderr, "warning: the design is ill-conditioned (cond=%.3g). The "
+                        "trailing digits of these coefficients are noise; rescale "
+                        "your columns or drop a near-duplicate one.\n", info.condition);
+    if (info.r2 < 0.0)
+        fprintf(stderr, "warning: R2 is not reportable here -- the response does not "
+                        "vary, or the fit consumed all of its variance.\n");
     /* Said plainly, because an R2 of 1 from a saturated fit reads like success
      * and is the easiest way to publish a model that knows nothing. */
     if (info.df <= 0)
@@ -112,8 +155,11 @@ static void need_model(void) {
 
 int main(int argc, char **argv) {
     static struct option longopts[] = {
-        { "terms", no_argument, NULL, 'T' },
-        { "help",  no_argument, NULL, 'h' },
+        { "terms",   no_argument,       NULL, 'T' },
+        { "coef",    required_argument, NULL, 'c' },
+        { "trim",    required_argument, NULL, 'R' },
+        { "no-trim", no_argument,       NULL, 'N' },
+        { "help",    no_argument,       NULL, 'h' },
         { NULL, 0, NULL, 0 }
     };
     const char *train_file = NULL;
@@ -123,12 +169,15 @@ int main(int argc, char **argv) {
 
     g_prog = argv[0];               /* resolve.c finds our files from this */
 
-    while ((c = getopt_long(argc, argv, "dht:g:", longopts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "dhc:t:g:", longopts, NULL)) != -1) {
         switch (c) {
             case 'd': g_debug = 1; break;
             case 't': train_file = optarg; break;
             case 'g': group = optarg; break;
             case 'T': want_terms = 1; break;
+            case 'c': process_use_coef(optarg); break;
+            case 'R': process_use_trim(optarg); break;
+            case 'N': process_use_trim(NULL); break;
             case 'h': usage(stdout, argv[0]); return 0;
             default:  usage(stderr, argv[0]); return 2;
         }
@@ -139,11 +188,18 @@ int main(int argc, char **argv) {
     if (params_load("system.properties") != 0)
         debug("no system.properties; using built-in defaults");
 
+    /* Silently ignoring an option is how a user comes to believe something
+     * happened. Each of these used to be accepted and dropped. */
+    if (group && !train_file)
+        die("-g names a group to fit, so it needs -t TRAIN.CSV");
+    if (want_terms && train_file)
+        die("--terms lists the loaded model; it cannot be combined with -t");
+
     if (want_terms) {
         need_model();
         print_terms();
     } else if (train_file) {
-        bad = train(train_file, group) != 0;
+        bad = (group ? train(train_file, group) : train_all(train_file)) != 0;
     } else if (optind < argc) {
         need_model();
         /* A comma in the first argument means the row form -- and then every
@@ -167,16 +223,42 @@ int main(int argc, char **argv) {
     } else {
         need_model();
         while (fgets(line, sizeof line, stdin)) {
-            line[strcspn(line, "\r\n")] = '\0';
+            size_t n = strcspn(line, "\r\n");
+
+            /* No line ending and not at end of file means the line did not fit.
+             * Reading on would score the REMAINDER as a case of its own: one
+             * physical line produced two confident predictions on stdout, with
+             * only the first half reported as an error. csv_next has always
+             * guarded this for files; stdin did not. Drain to the newline and
+             * refuse the whole line. */
+            if (line[n] == '\0' && !feof(stdin)) {
+                int ch;
+                while ((ch = fgetc(stdin)) != EOF && ch != '\n')
+                    ;
+                fprintf(stderr, "cannot score: a line longer than %d bytes\n",
+                        MAX_INPUT - 1);
+                bad = 1;
+                continue;
+            }
+            line[n] = '\0';
             if (line[0] == '\0' || line[0] == '#') continue;
             if (score(line) != 0) bad = 1;
         }
+        if (ferror(stdin)) die("cannot read stdin: %s", strerror(errno));
         /* An empty pipe is not an error: `grep ... | linearr` matching nothing
          * is an ordinary outcome, and a filter that lectures about it is noise. */
     }
 
     process_free();
     params_free();
+
+    /* Every printf above was unchecked, so `linearr -t train.csv > model.csv` on
+     * a full disk or over quota wrote nothing, said nothing, and exited 0 --
+     * installing an empty coefficient table while reporting success. stdout is
+     * an output the caller is relying on; a failure to produce it is a failure. */
+    if (fflush(stdout) != 0 || ferror(stdout))
+        die("cannot write output: %s", strerror(errno));
+
     return bad ? 1 : 0;
 }
 

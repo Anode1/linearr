@@ -6,6 +6,7 @@
 #define PROCESS_H
 
 #include <stddef.h>
+#include <stdio.h>
 
 /* --- scoring --------------------------------------------------------------
  *
@@ -19,6 +20,14 @@
  * when the data was never the problem. A table that will not load is one fatal
  * condition, reported once, not a per-row complaint. */
 int process_init(char *err, size_t errsz);
+
+/* Override the configured table paths, for -c/--coef and --trim/--no-trim.
+ * Call before process_init. process_use_trim(NULL) means deliberately none.
+ * These exist because the only way to score against a model you had just
+ * fitted was to create a conf/ directory and redirect into a hardcoded
+ * relative path -- a dead end a first-time user hit within five minutes. */
+void process_use_coef(const char *path);
+void process_use_trim(const char *path);
 
 /* Score one case written as a row: "GROUP,x1,...,xp", one value per term in the
  * coefficient file's column order. Returns 0, or -1 -- process_error() then
@@ -53,7 +62,14 @@ struct fit_info {
                            terms actually identified. At or below 0 the
                            line passes through every point by construction
                            and r2 is 1 no matter what the data says.       */
-    double r2;          /* coefficient of determination, -1 if undefined   */
+    double r2;          /* coefficient of determination, -1 when undefined
+                           or not computable to useful precision           */
+    double condition;   /* conditioning proxy: the ratio of the largest to
+                           the smallest pivot the fit accepted. Past ~1e8
+                           the trailing digits of the coefficients are
+                           noise -- and R2 will not tell you, because an
+                           ill-conditioned design fits its own sample
+                           beautifully.                                    */
 };
 
 /* Fit one group's line from a training CSV of "GROUP,VALUE,<terms>" rows, whose
@@ -66,6 +82,27 @@ struct fit_info {
  * info.df before believing the result. */
 int process_train(const char *csv_path, const char *group,
                   char *out, size_t outsz, struct fit_info *info);
+
+/* Fit EVERY group in the training file, in one pass, writing a complete
+ * coefficient file to out. This is what the model is actually for -- one line
+ * per group -- and doing it with repeated -g invocations cost one full re-read
+ * of the training file per group.
+ *
+ * Memory here is the one place this program's footprint depends on something
+ * other than the term count: one accumulator per group, each
+ * regress_storage(nvars) doubles. That is bounded by (groups x terms^2) and
+ * never by the number of rows -- 580 groups of 35 terms is about 6 MB -- and it
+ * is freed on every path. sum may be NULL.
+ *
+ * Returns 0, or -1 (see process_error). */
+struct fit_summary {
+    long   groups;      /* groups fitted                                  */
+    long   rows;        /* training rows used                             */
+    long   min_df;      /* the least residual freedom any group had       */
+    double max_condition;  /* the worst-conditioned group                 */
+    int    pinned;      /* total terms pinned across all groups           */
+};
+int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum);
 
 /* Release what scoring loaded. Idempotent. */
 void process_free(void);

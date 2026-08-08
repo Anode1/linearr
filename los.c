@@ -1,13 +1,17 @@
 /* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
 /* los.c -- see los.h.
  *
- * The one heap this program sanctions is here: the coefficient table, one
+ * One of this program's three heap users is here: the coefficient table, one
  * struct los_model per group, held in the hash table for the life of the run.
  * It is bounded by the number of GROUPS in the table, never by the number of
  * cases scored, and it is freed on every path by los_free(). The schema is a
  * fixed array. Cases themselves are stack objects, processed one at a time and
  * forgotten -- scoring ten cases and scoring ten million cost the same memory.
- * Nothing else allocates. */
+ *
+ * The other two are params.c's config table and, while `-t` fits every group,
+ * one accumulator per group in process.c. This comment used to say "nothing
+ * else allocates", which was false the day it was written: params.c was already
+ * there. A count is a claim like any other. */
 #include "los.h"
 #include "csv.h"
 #include "hash.h"
@@ -17,6 +21,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <errno.h>
+#include <float.h>
 
 #define GROUP_BUCKETS 1024
 
@@ -43,10 +49,21 @@ int los_schema_set(char *const *names, int n) {
         return -1;
     }
     for (i = 0; i < n; i++) {
+        int j;
         if (names[i][0] == '\0' || strlen(names[i]) >= LOS_NAME_MAX) {
             debug("los: column %d has an empty or over-long name", i + 1);
             return -1;
         }
+        /* Two columns a user cannot tell apart are refused rather than ranked.
+         * Lookup by name is case-insensitive, so "A" and "a" collide: with both
+         * present, `linearr G a=1` silently set column "A" and there was no way
+         * to address the other one at all. */
+        for (j = 0; j < i; j++)
+            if (ci_equal(names[i], names[j])) {
+                debug("los: columns %d and %d are both '%s' (names are matched "
+                      "without regard to case)", j + 1, i + 1, names[i]);
+                return -1;
+            }
     }
     /* Only once every name is known good, so a rejected header leaves the
      * previous schema intact rather than half-replaced. */
@@ -73,15 +90,22 @@ int los_var_index(const char *name) {
 long los_ngroups(void) { return ngroups; }
 
 /* strtod that refuses what atof would have accepted silently: an empty field,
- * or trailing text after the number. A typo in a table becomes an error rather
- * than a zero coefficient nobody notices. */
+ * trailing text -- and the three the earlier version of this comment claimed to
+ * catch and did not. strtod happily returns nan for "nan", inf for "inf" and
+ * for 1e400 (with ERANGE), and reads "0x10" as 16. Each of those loaded into a
+ * coefficient table without complaint, scored "prediction=nan", and exited 0.
+ * A number that is not finite is not a number we can publish. */
 static int parse_num(const char *s, double *out) {
     char *end;
     double v;
+
     if (s[0] == '\0') return -1;
+    errno = 0;
     v = strtod(s, &end);
+    if (errno == ERANGE) return -1;             /* 1e400, and denormal underflow */
     while (*end == ' ') end++;
     if (*end != '\0') return -1;
+    if (!isfinite(v)) return -1;                /* nan, inf, -inf */
     *out = v;
     return 0;
 }
@@ -147,7 +171,7 @@ static int load_coefficients(const char *path) {
         free(hash_put(models, group, m));       /* free a duplicate group's row */
         rows++;
     }
-    if (n < 0) { debug("los: %s has an over-long line", path); goto cleanup; }
+    if (n < 0) { debug("los: %s has a line that is over-long or holds a NUL byte", path); goto cleanup; }
 
     debug("los: %ld groups from %s", rows, path);
     rc = 0;
@@ -160,6 +184,7 @@ int los_load_trims(const char *path) {
     char   line[CSV_LINE_MAX];
     char  *field[CSV_MAX_FIELDS];
     FILE  *fp;
+    double first;
     int    rc = -1, n;
 
     if (!models) { debug("los: no coefficient table to attach trims to"); return -1; }
@@ -167,10 +192,20 @@ int los_load_trims(const char *path) {
     fp = fopen(path, "r");
     if (!fp) { debug("los: cannot open %s", path); return -1; }
 
-    if (csv_next(fp, line, sizeof line) != 1) {
-        debug("los: %s has no header", path);
+    /* Read the first line, and only DISCARD it if it is a header. It used to be
+     * eaten unconditionally, so a headerless trim table silently lost its first
+     * group's trim addition -- a wrong number, quietly, for one group only. */
+    n = csv_next(fp, line, sizeof line);
+    if (n != 1) {
+        debug("los: %s is empty", path);
         goto cleanup;
     }
+    if (csv_split(line, field, CSV_MAX_FIELDS) == 2 && parse_num(field[1], &first) == 0) {
+        struct los_model *m0 = hash_get(models, field[0]);
+        if (m0) m0->trim_addition = first;      /* it was data, not a header */
+        debug("los: %s has no header line; treating the first line as data", path);
+    }
+
     while ((n = csv_next(fp, line, sizeof line)) == 1) {
         struct los_model *m;
         double v;
@@ -188,7 +223,7 @@ int los_load_trims(const char *path) {
         m = hash_get(models, field[0]);
         if (m) m->trim_addition = v;
     }
-    if (n < 0) { debug("los: %s has an over-long line", path); goto cleanup; }
+    if (n < 0) { debug("los: %s has a line that is over-long or holds a NUL byte", path); goto cleanup; }
     rc = 0;
 cleanup:
     fclose(fp);
@@ -255,9 +290,30 @@ static int append_str(char *out, size_t outsz, size_t *used, const char *s) {
     return 0;
 }
 
+/* A coefficient is a model parameter, not a published figure. At the old %.4f
+ * every coefficient below 5e-5 was written as 0.0000, so a fit that reported
+ * R2=1.0000 wrote a CONSTANT model to disk, and the round trip the README
+ * recommends -- fit, redirect, score -- silently produced a different model
+ * from the one that was fitted. predict.scale still governs the PREDICTION,
+ * where rounding is part of the answer; it has no business here.
+ *
+ * The fix is the SHORTEST representation that reads back as the same double,
+ * not simply the longest available. %.17g always round-trips but prints 5 as
+ * 4.9999999999999991, which makes a table of exact values look like noise and
+ * invites someone to "clean it up". Trying 15, 16, then 17 gives "5" and "2.5"
+ * where the value really is 5 and 2.5, and spends the extra digits only where
+ * they carry information. */
 static int append_num(char *out, size_t outsz, size_t *used, double v) {
-    int w = snprintf(out + *used, outsz - *used, ",%.4f", v);
-    if (w < 0 || (size_t)w >= outsz - *used) return -1;
+    char   buf[64];
+    int    prec, w = 0;
+
+    for (prec = 15; prec <= 17; prec++) {
+        w = snprintf(buf, sizeof buf, ",%.*g", prec, v);
+        if (w < 0 || (size_t)w >= sizeof buf) return -1;
+        if (strtod(buf + 1, NULL) == v) break;     /* reads back identical */
+    }
+    if ((size_t)w >= outsz - *used) return -1;
+    memcpy(out + *used, buf, (size_t)w + 1);
     *used += (size_t)w;
     return 0;
 }
@@ -302,6 +358,18 @@ double los_trim_point(const struct los_model *m, double prediction) {
 double los_round(double v, int scale) {
     double p = 1.0;
     int    i;
+
+    if (!isfinite(v)) return v;
     for (i = 0; i < scale; i++) p *= 10.0;
-    return (v >= 0.0 ? floor(v * p + 0.5) : ceil(v * p - 0.5)) / p;
+
+    /* v*p overflowed to inf for a perfectly finite v -- 1.8e304 at scale 4 --
+     * and the infinity was then printed as a prediction. Nothing useful is lost
+     * by declining to round a number with no fractional part left to round. */
+    if (fabs(v) > DBL_MAX / p) return v;
+
+    /* round() is round-half-away-from-zero and correctly rounded. The old
+     * floor(v*p + 0.5) form did the rounding twice: the addition itself rounds,
+     * so 0.49999999999999994 -- the largest double below one half -- became
+     * exactly 1.0 before floor() ever saw it, and rounded up. */
+    return round(v * p) / p;
 }
