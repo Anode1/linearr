@@ -258,7 +258,53 @@ check "and the round trip reproduces the reference prediction" \
     "$("$bin" -c "$tmp/all.csv" --no-trim 001 Cardioversion=1 icu_indicator=1)" \
     "001 prediction=19.9611 trim=20.0"
 check "-g '*' still pools on request" \
-    "$("$bin" -t example/train.csv -g '*' 2>/dev/null | tail -1 | cut -c1-2)" "*,"
+    "$("$bin" -t example/train.csv -g '*' 2>/dev/null | grep -c '^\*,')" "1"
+
+# --- a pinned term is marked, so a redirect does not launder it into a zero ---
+check "the fitted table records which zeroes are silences" \
+    "$("$bin" -t example/train.csv 2>/dev/null | grep -c '^# pinned')" "2"
+case "$("$bin" -t example/train.csv 2>/dev/null | grep '^# pinned 001')" in
+    *constant*) ok ;; *) no "pinned note names the reason" ;;
+esac
+# and the note is a comment, so the table still reads straight back
+"$bin" -t example/train.csv > "$tmp/pinned.csv" 2>/dev/null
+check "a table with pinned notes still loads" \
+    "$("$bin" -c "$tmp/pinned.csv" --no-trim 001 Cardioversion=1 icu_indicator=1)" \
+    "001 prediction=19.9611 trim=20.0"
+
+# --- tables that used to be misread silently --------------------------------
+printf 'GROUP,Intercept,a\nX,10,1\nX,999,1\n' > "$tmp/dup.csv"
+set +e
+out=$("$bin" -c "$tmp/dup.csv" --no-trim X a=0 2>&1); rc=$?
+set -e
+check "a duplicate group code is refused" "$rc" "1"
+case "$out" in *twice*) ok ;; *) no "duplicate group message: got [$out]" ;; esac
+
+printf 'GROUP,Intercept,a\n#X,10,1\nY,20,1\n' > "$tmp/hash.csv"
+set +e
+out=$("$bin" -c "$tmp/hash.csv" --no-trim Y a=0 2>&1); rc=$?
+set -e
+check "a data row disguised as a comment is refused" "$rc" "1"
+
+printf 'X,10,1\nY,20,1\n' > "$tmp/nohdr.csv"
+set +e
+out=$("$bin" -c "$tmp/nohdr.csv" --no-trim X a=0 2>&1); rc=$?
+set -e
+check "a headerless coefficient file is refused" "$rc" "1"
+case "$out" in *header*) ok ;; *) no "headerless message names the header: got [$out]" ;; esac
+
+# --- a config value that cannot be honoured is an error, not a silent default -
+printf 'coef.file = %s/dup2.csv\ntrim.file =\npredict.scale = 99\n' "$tmp" > "$tmp/system.properties"
+printf 'GROUP,Intercept,a\nX,10,1\n' > "$tmp/dup2.csv"
+set +e
+(cd "$tmp" && "$bin" X a=1 >/dev/null 2>&1); rc=$?
+set -e
+check "an out-of-range predict.scale is refused" "$rc" "1"
+rm -f "$tmp/system.properties"
+
+# --- the two case forms must agree about whitespace --------------------------
+check "the named form tolerates a trailing space, as the row form does" \
+    "$("$bin" 001 'icu_indicator=1 ' 2>&1)" "$("$bin" '001,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0 ' 2>&1)"
 
 echo "cliut: $pass passed, $fail failed, $skip skipped"
 [ "$fail" -eq 0 ]

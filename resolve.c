@@ -41,10 +41,19 @@ const char *resolve_program_dir(void) {
 
     slash = strrchr(g_prog, '/');
     if (slash) {                                  /* invoked by a path */
-        n = (size_t)(slash - g_prog);
+        /* Through the symlink first: installing one binary by linking it into
+         * a bin directory is normal, and dirname(argv[0]) then pointed at the
+         * link's directory, where the data files are not. */
+        char real[RESOLVE_PATH_MAX];
+        const char *use = g_prog;
+        if (realpath(g_prog, real) != NULL) use = real;
+
+        slash = strrchr(use, '/');
+        if (!slash) return NULL;
+        n = (size_t)(slash - use);
         if (n == 0) n = 1;                        /* "/prog" -> "/" */
         if (n >= sizeof dir) return NULL;
-        memcpy(dir, g_prog, n);
+        memcpy(dir, use, n);
         dir[n] = '\0';
         return dir;
     }
@@ -62,6 +71,13 @@ const char *resolve_program_dir(void) {
         if (len < sizeof dir) {
             int w = snprintf(cand, sizeof cand, "%.*s/%s", (int)len, path, g_prog);
             if (w > 0 && (size_t)w < sizeof cand && access(cand, X_OK) == 0) {
+                char real[RESOLVE_PATH_MAX];
+                const char *sl;
+                if (realpath(cand, real) != NULL && (sl = strrchr(real, '/')) != NULL) {
+                    size_t rn = (size_t)(sl - real);
+                    if (rn == 0) rn = 1;
+                    if (rn < sizeof dir) { memcpy(dir, real, rn); dir[rn] = '\0'; return dir; }
+                }
                 memcpy(dir, path, len);
                 dir[len] = '\0';
                 return dir;
@@ -97,12 +113,24 @@ int resolve_file(const char *name, char *out, size_t outsz) {
             debug("resolve: %s beside the program", name);
             return 0;
         }
+        /* 3. the installed layout: <bindir>/../share/linearr/<name>, so
+         * `make install` can put the binary on PATH and its data where data
+         * goes, instead of demanding they sit in one directory. */
+        w = snprintf(cand, sizeof cand, "%s/../share/linearr/%s", dir, name);
+        if (w > 0 && (size_t)w < sizeof cand && readable(cand)) {
+            w = snprintf(out, outsz, "%s", cand);
+            if (w < 0 || (size_t)w >= outsz) return -1;
+            debug("resolve: %s in the installed share directory", name);
+            return 0;
+        }
     }
 
     /* Not found: hand back where we looked, so the caller's error can say it
      * instead of leaving the user to guess. */
-    if (dir) snprintf(out, outsz, "'%s' (looked in the current directory and in %s)",
-                      name, dir);
-    else     snprintf(out, outsz, "'%s' (looked in the current directory)", name);
+    if (dir && strcmp(dir, ".") != 0)
+        snprintf(out, outsz, "'%s' (looked in the current directory, in %s, and "
+                 "in %s/../share/linearr)", name, dir, dir);
+    else
+        snprintf(out, outsz, "'%s' (looked in the current directory)", name);
     return -1;
 }

@@ -1,47 +1,13 @@
-# linearr -- least squares in C, fitted from a CSV and scored one row at a time
+# linearr -- fit a line to your data, in C, and keep the memory flat
 
-A small C99 program that fits `y = b0 + b1*x1 + ... + bp*xp` from a CSV and then
-uses the fitted line to score new rows. No dependencies, no runtime to install,
-no build framework: a stock C compiler and `make`.
+Give it a CSV, get back the coefficients. Give it a case, get back a prediction.
+No dependencies, no runtime to install, no build framework: a stock C compiler
+and `make`. It streams the training file one row at a time, so a ten-row fit and
+a ten-million-row fit cost the same memory.
 
-Two properties are the reason it exists rather than being one more linear
-regression:
-
-- **The terms are not compiled in.** The header line of your CSV names them, so
-  adding a term to the polynomial is adding a column to a file. Nothing to edit,
-  nothing to rebuild.
-- **Memory is a function of the model, not of the data.** Observations are
-  accumulated into the normal equations one row at a time and then forgotten, so
-  ten training rows and ten million are fitted in the same memory. Nothing on
-  the data path allocates. There is a script that tries to falsify this and
-  prints the numbers: see [Scale](#scale).
-
-The worked example is hospital length of stay -- a prediction per case-mix
-group, plus that group's *trim point*, the day count past which a stay stops
-being typical. That is the shape the example data has; the program has no idea
-what a hospital is.
-
-## Origin
-
-The model here is not a textbook exercise. The author -- formally trained in
-physics and computer science -- built a least-squares length-of-stay predictor
-for industry in 2011: it went into production, ran against real caseloads, and
-was read and maintained by other people. Releasing a C implementation of it as
-open source was the intention at the time, and there was never time for it. This
-is that implementation: written from scratch around the same arithmetic,
-generalised so the terms come from your file instead of being fixed in the
-source, and carrying none of the original data. The coefficients shipped here
-are synthetic, and real tables belong to whoever produced them.
-
-That background is why the numerics are written out rather than delegated, and
-why the places where least squares stops being trustworthy -- a design the data
-cannot identify, a fit with no degrees of freedom left, the conditioning cost of
-normal equations -- are stated in this README instead of left for a reader to
-discover.
-
-Fifteen years is a long detour, but the shape of the problem has not changed:
-somebody has a table of coefficients, a stream of rows, and a machine that
-should not need a Python installation to multiply them together.
+    make
+    ./linearr -t mydata.csv > model.csv       # fit every group in one pass
+    ./linearr -c model.csv --no-trim A x=3    # score a case against it
 
 ## Build and run
 
@@ -124,6 +90,63 @@ When something is wrong, the message says what:
 
 `./linearr -h` prints the options; `-d` traces to stderr.
 
+## Where this is the right tool, and where it is not
+
+**It fits well when:**
+
+- there is no Python and there is not going to be -- an embedded target, a
+  locked-down clinical or lab machine, a container you want under a megabyte, a
+  build with no package manager;
+- the training file is much larger than the machine's memory, and you would
+  rather stream it once than hold a matrix of it (a 40 MB file and a 4 MB file
+  fit in the same 3 MB -- see [Scale](#scale));
+- a C or C++ codebase needs a fit without taking on GSL, LAPACK, or a build
+  system to go with them;
+- the coefficients are *published* -- a rate, a tariff, an expected value
+  someone else's process consumes -- so the rounding and the exact arithmetic
+  are part of the contract and have to be reproducible digit for digit;
+- scoring is a pipeline stage: one row in, one line out, exit code and stderr
+  behaving the way the rest of your shell does;
+- you are teaching what a least-squares fit actually is, and want the whole of
+  it readable in an afternoon (`regress.c` is about 100 lines).
+
+**Reach for something else when:** you need regularization (ridge, lasso,
+elastic net), categorical encoding, missing-value handling, cross-validation,
+weighted least squares, or inference -- standard errors, confidence intervals,
+prediction intervals, p-values. None of that is here, and neither is the
+residual standard error a prediction consumer usually wants next. The worked
+example is also a modelling choice worth naming: length of stay is a skewed,
+non-negative, count-like response, and unweighted OLS on raw days is not the
+standard treatment for it (a log transform or a Gamma GLM is). Nothing stops
+this tool predicting a negative stay. `scikit-learn` and `statsmodels` do all of it well, and GSL
+(`gsl_multifit_linear`) or LAPACK (`dgels`) give you a fitted line in C with more
+numerical machinery behind it than this has.
+
+**One honest numerical caveat.** Accumulating `X'X` and solving it is what makes
+the memory bound possible, and it costs conditioning: forming the normal
+equations squares the condition number of the design, so a badly scaled or
+near-collinear problem loses roughly twice the digits a QR or SVD solve would.
+For indicator columns and modestly scaled data -- what this is built for -- it is
+not the limiting factor; the pinning above handles the singular cases outright.
+If your design is ill-conditioned, use a QR-based fit. A streaming Householder
+QR would keep the memory bound and fix the conditioning, and is the obvious next
+thing to build here.
+
+## The two things that make it different
+
+- **The terms are not compiled in.** The header line of your CSV names them, so
+  adding a term to the polynomial is adding a column to a file. Nothing to edit,
+  nothing to rebuild -- the same binary fits a 24-term model and a 2-term one.
+- **Memory is a function of the model, not of the data.** Observations are
+  accumulated into centered cross-products one row at a time and then forgotten.
+  Nothing on the row path allocates. There is a script that tries to falsify
+  this and prints the numbers: see [Scale](#scale).
+
+The worked example is hospital length of stay -- a prediction per case-mix
+group, plus that group's *trim point*, the day count past which a stay stops
+being typical. That is the shape the example data has; the program has no idea
+what a hospital is.
+
 ## The terms are yours
 
 `example/simple-train.csv` is the same program with a schema nobody wrote any
@@ -140,6 +163,47 @@ code for -- minutes on the road, from distance and stops:
     A,5.0000,2.5000,1.5000
 
 Two terms instead of twenty-four, and the only thing that changed was the file.
+
+## What it does when the data cannot answer
+
+A term the sample cannot identify -- a column that never varies, or one that
+duplicates another -- has no least-squares answer, and the normal equations are
+singular there. Rather than fail the fit or return a number the data does not
+support, such a term is **pinned to exactly 0** and the rest are fitted around
+it, and the count is reported. This is the ordinary case with indicator columns:
+a group that never sees a given intervention simply has no evidence about it.
+
+The fit summary also reports **df**, the residual degrees of freedom. At zero,
+the line passes through every training row by construction and `R2` is 1 no
+matter what the data says; the program says so out loud rather than letting a
+meaningless 1.0000 read as success.
+
+## Configuration
+
+`system.properties` -- `key = value`, `#` comments. Every key has a built-in
+default, so the file may be absent.
+
+| key | default | meaning |
+| --- | --- | --- |
+| `coef.file` | `conf/coefficients.csv` | the fitted model: `GROUP,Intercept,<one column per term>`. `-c` overrides it |
+| `trim.file` | `conf/trim_additions.csv` | `GROUP,trim_addition`. Set it empty, or pass `--no-trim`, for none |
+| `predict.scale` | 4 | digits the prediction is rounded to |
+| `trim.scale` | 1 | digits the trim point is rounded to |
+
+With no trim table the trim point simply equals the prediction -- it is not a
+separate quantity that failed to load. A trim file *named* in the config and
+unreadable is an error; the built-in default merely being absent is not.
+
+**Coefficients are written at full precision**, in the shortest form that reads
+back as the same double, so `A,5,2.5,1.5` and `A,4.9999999999999991,...` are
+both exactly what was fitted. `predict.scale` governs the prediction, not the
+model: writing coefficients at four decimals silently turned any effect below
+5e-5 into zero and published a different model from the one that was fitted.
+
+Rounding is half away from zero, not `printf`'s half to even, and it is part of
+the answer rather than presentation: the trim point is built on the *rounded*
+prediction, because the published figure is what the next step is entitled to
+use.
 
 ## Scale
 
@@ -196,47 +260,6 @@ model had -- 35 terms, 580 groups -- output verbatim:
 
 Ten times the data, the same memory. Time scales with the rows, as it must.
 
-## What it does when the data cannot answer
-
-A term the sample cannot identify -- a column that never varies, or one that
-duplicates another -- has no least-squares answer, and the normal equations are
-singular there. Rather than fail the fit or return a number the data does not
-support, such a term is **pinned to exactly 0** and the rest are fitted around
-it, and the count is reported. This is the ordinary case with indicator columns:
-a group that never sees a given intervention simply has no evidence about it.
-
-The fit summary also reports **df**, the residual degrees of freedom. At zero,
-the line passes through every training row by construction and `R2` is 1 no
-matter what the data says; the program says so out loud rather than letting a
-meaningless 1.0000 read as success.
-
-## Configuration
-
-`system.properties` -- `key = value`, `#` comments. Every key has a built-in
-default, so the file may be absent.
-
-| key | default | meaning |
-| --- | --- | --- |
-| `coef.file` | `conf/coefficients.csv` | the fitted model: `GROUP,Intercept,<one column per term>`. `-c` overrides it |
-| `trim.file` | `conf/trim_additions.csv` | `GROUP,trim_addition`. Set it empty, or pass `--no-trim`, for none |
-| `predict.scale` | 4 | digits the prediction is rounded to |
-| `trim.scale` | 1 | digits the trim point is rounded to |
-
-With no trim table the trim point simply equals the prediction -- it is not a
-separate quantity that failed to load. A trim file *named* in the config and
-unreadable is an error; the built-in default merely being absent is not.
-
-**Coefficients are written at full precision**, in the shortest form that reads
-back as the same double, so `A,5,2.5,1.5` and `A,4.9999999999999991,...` are
-both exactly what was fitted. `predict.scale` governs the prediction, not the
-model: writing coefficients at four decimals silently turned any effect below
-5e-5 into zero and published a different model from the one that was fitted.
-
-Rounding is half away from zero, not `printf`'s half to even, and it is part of
-the answer rather than presentation: the trim point is built on the *rounded*
-prediction, because the published figure is what the next step is entitled to
-use.
-
 ## The example data is synthetic
 
 `conf/coefficients.csv`, `conf/trim_additions.csv` and both files under
@@ -245,6 +268,28 @@ returns exactly the coefficients in `conf/coefficients.csv`, which is what makes
 the fitter testable against a known answer. They are fitted to nothing and mean
 nothing. Point `coef.file` at your own table, or produce one with `-t`, before
 any number here is worth reading. No real data is distributed with this project.
+
+## Origin
+
+The model here is not a textbook exercise. The author -- formally trained in
+physics and computer science -- built a least-squares length-of-stay predictor
+for industry in 2011: it went into production, ran against real caseloads, and
+was read and maintained by other people. Releasing a C implementation of it as
+open source was the intention at the time, and there was never time for it. This
+is that implementation: written from scratch around the same arithmetic,
+generalised so the terms come from your file instead of being fixed in the
+source, and carrying none of the original data. The coefficients shipped here
+are synthetic, and real tables belong to whoever produced them.
+
+That background is why the numerics are written out rather than delegated, and
+why the places where least squares stops being trustworthy -- a design the data
+cannot identify, a fit with no degrees of freedom left, the conditioning cost of
+normal equations -- are stated in this README instead of left for a reader to
+discover.
+
+Fifteen years is a long detour, but the shape of the problem has not changed:
+somebody has a table of coefficients, a stream of rows, and a machine that
+should not need a Python installation to multiply them together.
 
 ## Layout
 
@@ -269,54 +314,17 @@ scripts/hooks/    pre-push: the sanitizers, before anything reaches the remote
 Makefile          the build
 ```
 
-## Where this is the right tool, and where it is not
-
-**It fits well when:**
-
-- there is no Python and there is not going to be -- an embedded target, a
-  locked-down clinical or lab machine, a container you want under a megabyte, a
-  build with no package manager;
-- the training file is much larger than the machine's memory, and you would
-  rather stream it once than hold a matrix of it (a 40 MB file and a 4 MB file
-  fit in the same 3 MB -- see [Scale](#scale));
-- a C or C++ codebase needs a fit without taking on GSL, LAPACK, or a build
-  system to go with them;
-- the coefficients are *published* -- a rate, a tariff, an expected value
-  someone else's process consumes -- so the rounding and the exact arithmetic
-  are part of the contract and have to be reproducible digit for digit;
-- scoring is a pipeline stage: one row in, one line out, exit code and stderr
-  behaving the way the rest of your shell does;
-- you are teaching what a least-squares fit actually is, and want the whole of
-  it readable in an afternoon (`regress.c` is about 100 lines).
-
-**Reach for something else when:** you need regularization (ridge, lasso,
-elastic net), categorical encoding, missing-value handling, cross-validation,
-weighted least squares, or inference -- standard errors, confidence intervals,
-prediction intervals, p-values. None of that is here, and neither is the
-residual standard error a prediction consumer usually wants next. The worked
-example is also a modelling choice worth naming: length of stay is a skewed,
-non-negative, count-like response, and unweighted OLS on raw days is not the
-standard treatment for it (a log transform or a Gamma GLM is). Nothing stops
-this tool predicting a negative stay. `scikit-learn` and `statsmodels` do all of it well, and GSL
-(`gsl_multifit_linear`) or LAPACK (`dgels`) give you a fitted line in C with more
-numerical machinery behind it than this has.
-
-**One honest numerical caveat.** Accumulating `X'X` and solving it is what makes
-the memory bound possible, and it costs conditioning: forming the normal
-equations squares the condition number of the design, so a badly scaled or
-near-collinear problem loses roughly twice the digits a QR or SVD solve would.
-For indicator columns and modestly scaled data -- what this is built for -- it is
-not the limiting factor; the pinning above handles the singular cases outright.
-If your design is ill-conditioned, use a QR-based fit. A streaming Householder
-QR would keep the memory bound and fix the conditioning, and is the obvious next
-thing to build here.
-
 ## Style
 
 The rules the code already follows, so new code matches:
 
 - **C99, warning-free.** Clean under `-std=c99 -Wall -Wextra`; a warning is a
   defect. `make pedantic` is the stricter gate.
+- **A pinned term is marked, not laundered.** A coefficient the data could not
+  identify is written as 0, and so is an estimated no-effect. The fit therefore
+  emits a `# pinned <group>: constant ... collinear ...` line beside the row, so
+  the distinction survives a redirect. It is a comment, so the table still reads
+  straight back into the scorer.
 - **Stack first, and count the heap out loud.** Rows are processed one at a time
   into fixed-size buffers; nothing on the row path allocates. Three things do
   allocate, each bounded by the model or the config and never by the data, and
@@ -348,6 +356,28 @@ medical-device standard (NASA Power of Ten, MISRA C:2012 rule 21.3) -- is writte
 up in [ais](https://github.com/Anode1/ais), in
 [`doc/dev/STYLE.md`](https://github.com/Anode1/ais/blob/main/doc/dev/STYLE.md).
 
+## Platforms, and reporting a bug
+
+Built and tested on Linux and macOS on every push (`.github/workflows/sanitizers.yml`
+runs the suite plus AddressSanitizer and UndefinedBehaviorSanitizer on both).
+BSD should work and is untested. There is no Windows build.
+
+    make install                       # /usr/local
+    make install PREFIX=$HOME/.local   # somewhere you own
+    make install DESTDIR=/tmp/stage    # staged, for a package
+    make uninstall
+
+The binary goes in `bin`, the example tables in `share/linearr/conf`, and the
+program looks in the current directory, then beside itself, then
+`<bindir>/../share/linearr`. A symlink into a `bin` directory works too -- the
+link is resolved before it looks beside itself.
+
+`./linearr --version` says which build you have.
+
+Bugs and findings: open an issue with the exact command, the input that
+reproduces it, and what you expected. A reproduction that fits in a shell
+snippet is worth more than a description.
+
 ## See also
 
 - [ais](https://github.com/Anode1/ais) -- the associative-memory engine these
@@ -355,21 +385,7 @@ up in [ais](https://github.com/Anode1/ais), in
 - [aisconfig](https://github.com/Anode1/aisconfig) -- the C project template
   this started from.
 
-## Platforms, and reporting a bug
-
-Built and tested on Linux and macOS on every push (`.github/workflows/sanitizers.yml`
-runs the suite plus AddressSanitizer and UndefinedBehaviorSanitizer on both).
-BSD should work and is untested. There is no Windows build.
-
-There is no `make install` yet: copy `linearr` and `conf/` to the same directory,
-or pass `-c` and point at your own table. A symlink to the binary is not enough
-on its own -- the program looks beside the path it was invoked through, so
-either install both files together or use `-c`.
-
-Bugs and findings: open an issue with the exact command, the input that
-reproduces it, and what you expected. A reproduction that fits in a shell
-snippet is worth more than a description.
-
 ## License
 
 GNU GPL v2 or later; see `LICENSE`.
+

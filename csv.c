@@ -13,7 +13,8 @@ int csv_next(FILE *fp, char *buf, size_t bufsz) {
         buf[n] = '\0';
         rtrim(buf, ' ');
         ltrim(buf, ' ');
-        if (buf[0] == '\0' || buf[0] == '#') continue;
+        if (buf[0] == '\0') continue;       /* blank lines are never data */
+        if (buf[0] == '#') return 2;         /* the caller decides */
         return 1;
     }
     return 0;

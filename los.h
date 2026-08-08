@@ -75,6 +75,9 @@ int los_load(const char *coef_path);
  * allowed to be the wider of the two. */
 int los_load_trims(const char *trim_path);
 
+/* Why the last los_load/los_load_trims returned -1. Never NULL. */
+const char *los_error(void);
+
 /* The model for a group, or NULL if the table does not have it. */
 const struct los_model *los_model_get(const char *group);
 

@@ -44,8 +44,9 @@ static int streq(const char *a, const char *b) {
  * Compare the values. */
 static int coef_row(const char *row, double *v, int max) {
     const char *p = strchr(row, ',');
+    const char *eol = strchr(row, '\n');       /* a '# pinned' note may follow */
     int n = 0;
-    while (p && n < max) {
+    while (p && n < max && (!eol || p < eol)) {
         char *end;
         v[n++] = strtod(p + 1, &end);
         p = strchr(end, ',');
@@ -130,8 +131,15 @@ static void test_csv(void) {
     CHECK(fp != NULL, "csv open example");
     if (fp) {
         char big[CSV_LINE_MAX];
-        CHECK(csv_next(fp, big, sizeof big) == 1, "csv_next reads");
-        CHECK(strncmp(big, "GROUP,LOS,", 10) == 0, "csv_next skipped the comments to the header");
+        /* Comment lines are RETURNED with a 2 rather than swallowed, so a
+         * caller can tell a comment from a data row it has misread. */
+        int r;
+        CHECK((r = csv_next(fp, big, sizeof big)) == 2, "csv_next returns comments to the caller");
+        CHECK(big[0] == '#', "csv_next: and hands back the comment text");
+        while ((r = csv_next(fp, big, sizeof big)) == 2)
+            ;
+        CHECK(r == 1, "csv_next reads the data line after them");
+        CHECK(strncmp(big, "GROUP,LOS,", 10) == 0, "csv_next reached the header");
         CHECK(strchr(big, '\n') == NULL, "csv_next stripped the newline");
         /* A line that does not fit is refused, never silently split in two. */
         CHECK(csv_next(fp, big, 8) == -1, "csv_next refuses an over-long line");
@@ -356,8 +364,10 @@ static void test_resolve(void) {
     char path[RESOLVE_PATH_MAX];
 
     g_prog = "./linearr_ut";
-    CHECK(streq(resolve_program_dir(), "."),
-          "resolve: the program directory comes off argv[0]");
+    /* Absolute, because argv[0] is run through realpath first: a symlinked
+     * binary must find the files beside the REAL one, not beside the link. */
+    CHECK(resolve_program_dir() != NULL && resolve_program_dir()[0] == '/',
+          "resolve: the program directory is resolved to a real absolute path");
 
     CHECK(resolve_file(COEF, path, sizeof path) == 0, "resolve: finds a file in the cwd");
     CHECK(strcmp(path, COEF) == 0, "resolve: and prefers the cwd copy, unchanged");

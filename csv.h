@@ -9,9 +9,17 @@
 
 #include <stdio.h>
 
-/* Read the next content line into buf (capacity bufsz): blank lines and lines
- * beginning with '#' are skipped, and the trailing CR/LF is stripped. Returns 1
- * on a line, 0 at end of file, -1 if a line did not fit in buf. */
+/* Read the next line into buf (capacity bufsz), stripping the trailing CR/LF.
+ * Blank lines are skipped -- they are never data. A line beginning with '#' is
+ * NOT skipped; it is returned with a 2, so the caller can look at it.
+ *
+ * That distinction matters: silently swallowing '#' lines meant a group code
+ * beginning with '#' vanished from a table without a word, and `--terms` then
+ * reported one group for a two-group file. A reader that cannot see a comment
+ * cannot tell a comment from a row it has misread.
+ *
+ * Returns 1 on a data line, 2 on a comment line, 0 at end of file, -1 if a line
+ * did not fit in buf (or held a NUL byte, which looks the same from here). */
 int csv_next(FILE *fp, char *buf, size_t bufsz);
 
 /* Split line in place on ',' into at most maxf pointers in field[]. Surrounding

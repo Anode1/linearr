@@ -40,12 +40,17 @@ static void usage(FILE *out, const char *prog) {
         "  --trim F / --no-trim   the trim table, or none\n"
         "  --terms  what the loaded coefficient file expects, in order\n"
         "  -d     debug tracing to stderr\n"
+        "  --version  which build this is\n"
         "  -h     this help\n"
         "\n"
         "Files (coef.file, trim.file, and -t's argument) are looked for in the\n"
         "current directory first, then beside the program.\n",
         prog, prog, prog, prog, prog);
 }
+
+/* "1 terms and 1 groups" reads as unfinished work, and this program asks to be
+ * trusted with numbers. */
+static const char *s_(long n) { return (n == 1) ? "" : "s"; }
 
 /* Score one line; report a bad one and keep going, so a bad row in a batch does
  * not throw away the rest of the file. */
@@ -75,8 +80,8 @@ static int score_named(const char *group, char *const *assign, int n) {
 static void print_terms(void) {
     int i, n = process_nterms();
 
-    printf("%d terms and %ld groups in %s\n", n, process_ngroups(),
-           process_coef_path());
+    printf("%d term%s and %ld group%s in %s\n", n, s_(n), process_ngroups(),
+           s_(process_ngroups()), process_coef_path());
     for (i = 0; i < n; i++)
         printf("  %3d  %s\n", i + 1, process_term_name(i));
     printf("\nname them: GROUP %s=1 ...\n", n > 0 ? process_term_name(0) : "TERM");
@@ -93,7 +98,8 @@ static int train_all(const char *path) {
         fprintf(stderr, "cannot fit: %s\n", process_error());
         return -1;
     }
-    fprintf(stderr, "fit: %ld groups, %ld rows", sum.groups, sum.rows);
+    fprintf(stderr, "fit: %ld group%s, %ld row%s", sum.groups, s_(sum.groups),
+            sum.rows, s_(sum.rows));
     if (sum.pinned > 0) fprintf(stderr, ", %d term-slots pinned to 0", sum.pinned);
     fprintf(stderr, ", least df=%ld", sum.min_df);
     if (sum.max_condition > 1.0) fprintf(stderr, ", worst cond=%.3g", sum.max_condition);
@@ -118,11 +124,11 @@ static int train(const char *path, const char *group) {
         return -1;
     }
     printf("%s\n", out);
-    fprintf(stderr, "fit: %ld rows", info.rows);
+    fprintf(stderr, "fit: %ld row%s", info.rows, s_(info.rows));
     if (info.r2 >= 0.0) fprintf(stderr, ", R2=%.4f", info.r2);
     if (info.pinned > 0)
         fprintf(stderr, ", %d term%s unidentified and set to 0",
-                info.pinned, info.pinned == 1 ? "" : "s");
+                info.pinned, s_(info.pinned));
     fprintf(stderr, ", df=%ld", info.df);
     if (info.condition > 1.0) fprintf(stderr, ", cond=%.3g", info.condition);
     fprintf(stderr, "\n");
@@ -156,6 +162,7 @@ static void need_model(void) {
 int main(int argc, char **argv) {
     static struct option longopts[] = {
         { "terms",   no_argument,       NULL, 'T' },
+        { "version", no_argument,       NULL, 'V' },
         { "coef",    required_argument, NULL, 'c' },
         { "trim",    required_argument, NULL, 'R' },
         { "no-trim", no_argument,       NULL, 'N' },
@@ -178,6 +185,8 @@ int main(int argc, char **argv) {
             case 'c': process_use_coef(optarg); break;
             case 'R': process_use_trim(optarg); break;
             case 'N': process_use_trim(NULL); break;
+            case 'V': printf("linearr %s\nGNU GPL v2 or later; no warranty.\n",
+                             LINEARR_VERSION); return 0;
             case 'h': usage(stdout, argv[0]); return 0;
             default:  usage(stderr, argv[0]); return 2;
         }

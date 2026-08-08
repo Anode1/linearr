@@ -22,9 +22,26 @@
 #include <string.h>
 #include <math.h>
 #include <errno.h>
+#include <stdarg.h>
 #include <float.h>
 
 #define GROUP_BUCKETS 1024
+
+static char reason[256] = "";
+
+/* Why the last load failed. The caller used to print one sentence -- "X is not
+ * a coefficient table" -- for about ten distinct causes, with the real one
+ * visible only under -d. */
+const char *los_error(void) { return reason; }
+
+static int refuse(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    vsnprintf(reason, sizeof reason, fmt, ap);
+    va_end(ap);
+    debug("los: %s", reason);
+    return -1;
+}
 
 static struct hash *models;
 static char         var_name[LOS_MAX_VARS][LOS_NAME_MAX];
@@ -33,7 +50,10 @@ static long         ngroups;
 
 static int ci_equal(const char *a, const char *b) {
     for (; *a && *b; a++, b++) {
-        int ca = *a, cb = *b;
+        /* unsigned char, so a byte >= 0x80 is not implementation-defined here
+         * (MISRA 10.3); both operands are widened the same way either way, but
+         * "works by symmetry" is not a thing to leave in a header comparison. */
+        int ca = (unsigned char)*a, cb = (unsigned char)*b;
         if (ca >= 'A' && ca <= 'Z') ca += 'a' - 'A';
         if (cb >= 'A' && cb <= 'Z') cb += 'a' - 'A';
         if (ca != cb) return 0;
@@ -116,6 +136,14 @@ static int copy_group(char *dst, size_t dstsz, const char *src) {
     return 0;
 }
 
+/* A line that begins with '#' but has exactly the shape of a data row is almost
+ * certainly data whose group code starts with '#', not a comment. Saying so
+ * beats dropping the row and reporting one group fewer than the file has. */
+static int comment_is_data_shaped(char *line, int want) {
+    char *field[CSV_MAX_FIELDS];
+    return csv_split(line, field, CSV_MAX_FIELDS) == want;
+}
+
 static int load_coefficients(const char *path) {
     char   line[CSV_LINE_MAX];
     char  *field[CSV_MAX_FIELDS];
@@ -123,32 +151,70 @@ static int load_coefficients(const char *path) {
     int    rc = -1, n, i;
     long   rows = 0;
 
-    if (!fp) { debug("los: cannot open %s", path); return -1; }
+    if (!fp) return refuse("cannot open %s", path);
 
-    if (csv_next(fp, line, sizeof line) != 1) {
-        debug("los: %s has no header", path);
+    while ((n = csv_next(fp, line, sizeof line)) == 2)
+        ;                                   /* leading comments precede a header */
+    if (n != 1) {
+        refuse("%s has no header line", path);
         goto cleanup;
     }
     n = csv_split(line, field, CSV_MAX_FIELDS);
     if (n < 3) {
-        debug("los: %s wants GROUP,Intercept and at least one term", path);
+        refuse("%s needs a header of GROUP, Intercept and at least one term; "
+               "this one has %d column%s", path, n, n == 1 ? "" : "s");
         goto cleanup;
+    }
+    /* A "header" whose every field is a number is not a header. It used to be
+     * adopted as the schema, so the terms were named "6.4832" and "0", and the
+     * error a user finally saw complained about a missing TERM. */
+    {   int numeric = 1, k;
+        double tmp;
+        for (k = 1; k < n; k++)
+            if (parse_num(field[k], &tmp) != 0) { numeric = 0; break; }
+        if (numeric) {
+            refuse("%s starts with a row of numbers where its header should be: "
+                   "a coefficient file needs GROUP,Intercept,<term names>", path);
+            goto cleanup;
+        }
     }
     /* The header IS the model's column order: whatever it names, in that order,
      * is what x[] and b[] mean from here on. */
-    if (los_schema_set(field + 2, n - 2) != 0) goto cleanup;
+    if (los_schema_set(field + 2, n - 2) != 0) {
+        refuse("%s does not name %d usable terms: they must be non-empty, under "
+               "%d characters, and distinct ignoring case", path, n - 2, LOS_NAME_MAX);
+        goto cleanup;
+    }
 
-    while ((n = csv_next(fp, line, sizeof line)) == 1) {
+    while ((n = csv_next(fp, line, sizeof line)) > 0) {
         struct los_model *m;
         char   group[GROUP_MAX];
         double v;
 
+        if (n == 2) {
+            if (comment_is_data_shaped(line, nvars + 2)) {
+                refuse("%s has a line beginning with '#' that has the shape of a "
+                       "data row -- a group code cannot start with '#', because "
+                       "the line reads as a comment", path);
+                goto cleanup;
+            }
+            continue;
+        }
+
         if (csv_split(line, field, CSV_MAX_FIELDS) != nvars + 2) {
-            debug("los: %s row %ld does not have %d columns", path, rows + 1, nvars + 2);
+            refuse("%s row %ld does not have %d columns", path, rows + 1, nvars + 2);
             goto cleanup;
         }
         if (copy_group(group, sizeof group, field[0]) != 0) {
-            debug("los: %s row %ld has a bad group '%s'", path, rows + 1, field[0]);
+            refuse("%s row %ld has an empty group, or one over %d characters",
+                   path, rows + 1, GROUP_MAX - 1);
+            goto cleanup;
+        }
+        /* Two rows for one group is a table its author did not mean to write.
+         * Last-one-wins scored the second silently, so the file and the answer
+         * disagreed and nothing said so. */
+        if (hash_get(models, group) != NULL) {
+            refuse("%s names group '%s' twice", path, group);
             goto cleanup;
         }
 
@@ -156,22 +222,28 @@ static int load_coefficients(const char *path) {
         m->trim_addition = 0.0;
         if (parse_num(field[1], &m->intercept) != 0) {
             free(m);
-            debug("los: %s group %s has a bad intercept", path, group);
+            refuse("%s group %s: the intercept '%s' is not a finite number",
+                   path, group, field[1]);
             goto cleanup;
         }
         for (i = 0; i < nvars; i++) {
             if (parse_num(field[i + 2], &v) != 0) {
                 free(m);
-                debug("los: %s group %s has a bad %s", path, group, var_name[i]);
+                refuse("%s group %s: %s = '%s' is not a finite number",
+                       path, group, var_name[i], field[i + 2]);
                 goto cleanup;
             }
             m->b[i] = v;
         }
-        if (hash_get(models, group) == NULL) ngroups++;
-        free(hash_put(models, group, m));       /* free a duplicate group's row */
+        ngroups++;
+        free(hash_put(models, group, m));
         rows++;
     }
-    if (n < 0) { debug("los: %s has a line that is over-long or holds a NUL byte", path); goto cleanup; }
+    if (n < 0) {
+        refuse("%s has a line over %d bytes, or one holding a NUL byte",
+               path, CSV_LINE_MAX - 2);
+        goto cleanup;
+    }
 
     debug("los: %ld groups from %s", rows, path);
     rc = 0;
@@ -195,9 +267,10 @@ int los_load_trims(const char *path) {
     /* Read the first line, and only DISCARD it if it is a header. It used to be
      * eaten unconditionally, so a headerless trim table silently lost its first
      * group's trim addition -- a wrong number, quietly, for one group only. */
-    n = csv_next(fp, line, sizeof line);
+    while ((n = csv_next(fp, line, sizeof line)) == 2)
+        ;
     if (n != 1) {
-        debug("los: %s is empty", path);
+        refuse("%s is empty", path);
         goto cleanup;
     }
     if (csv_split(line, field, CSV_MAX_FIELDS) == 2 && parse_num(field[1], &first) == 0) {
@@ -206,16 +279,18 @@ int los_load_trims(const char *path) {
         debug("los: %s has no header line; treating the first line as data", path);
     }
 
-    while ((n = csv_next(fp, line, sizeof line)) == 1) {
+    while ((n = csv_next(fp, line, sizeof line)) > 0) {
         struct los_model *m;
         double v;
 
+        if (n == 2) continue;
         if (csv_split(line, field, CSV_MAX_FIELDS) != 2) {
-            debug("los: %s wants exactly GROUP,trim_addition", path);
+            refuse("%s wants exactly GROUP,trim_addition on every line", path);
             goto cleanup;
         }
         if (parse_num(field[1], &v) != 0) {
-            debug("los: %s group %s has a bad trim addition", path, field[0]);
+            refuse("%s group %s: the trim addition '%s' is not a finite number",
+                   path, field[0], field[1]);
             goto cleanup;
         }
         /* A trim for a group with no coefficients is not an error: the trim
@@ -223,7 +298,11 @@ int los_load_trims(const char *path) {
         m = hash_get(models, field[0]);
         if (m) m->trim_addition = v;
     }
-    if (n < 0) { debug("los: %s has a line that is over-long or holds a NUL byte", path); goto cleanup; }
+    if (n < 0) {
+        refuse("%s has a line over %d bytes, or one holding a NUL byte",
+               path, CSV_LINE_MAX - 2);
+        goto cleanup;
+    }
     rc = 0;
 cleanup:
     fclose(fp);

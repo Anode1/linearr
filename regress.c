@@ -96,6 +96,7 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
     if (!r->n || p < 1 || !scratch) return -1;
 
     for (i = 0; i <= p; i++) beta[i] = 0.0;
+    if (fit) for (i = 0; i < p; i++) fit->term[i] = REGRESS_COLLINEAR;
 
     /* Equilibrate: divide row i and column j by the square roots of their own
      * variances, so the matrix has a unit diagonal and the pivot test below is
@@ -126,7 +127,14 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
 
         piv = scratch[(size_t)best * (size_t)stride + (size_t)col];
         if (d[col] == 0.0 || fabs(piv) <= RANK_EPS) {
-            debug("regress: term %d is unidentified, pinned to 0", col + 1);
+            /* Two reasons, and they are not the same claim. A column with no
+             * variance carries no evidence about anything. A column collinear
+             * with another has evidence that cannot be attributed -- and which
+             * of the pair keeps it depends on the order they were listed in. */
+            if (fit) fit->term[col] = (d[col] == 0.0) ? REGRESS_CONSTANT
+                                                      : REGRESS_COLLINEAR;
+            debug("regress: term %d is %s, pinned to 0", col + 1,
+                  d[col] == 0.0 ? "constant" : "collinear with another");
             continue;                        /* beta stays 0 */
         }
 
@@ -154,6 +162,7 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
                     f * scratch[(size_t)rank * (size_t)stride + (size_t)j];
         }
         pivot_col[rank] = col;
+        if (fit) fit->term[col] = REGRESS_FITTED;
         rank++;
     }
 

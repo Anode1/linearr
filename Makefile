@@ -59,7 +59,11 @@ endif
 %.o: %.c .build-flags
 	$(CC) $(PROJ) $(CPPFLAGS) $(CFLAGS) -MMD -c $< -o $@
 
-.PHONY: all release debug pedantic check ut cliut ut-asan ut-ubsan hooks clean modeclean
+.PHONY: all release debug pedantic check ut cliut ut-asan ut-ubsan hooks \
+        install uninstall clean modeclean
+
+PREFIX ?= /usr/local
+DESTDIR ?=
 
 # all comes FIRST on purpose: make's default goal is the first non-special
 # target in the file, and .PHONY / .SUFFIXES / pattern rules do not count. With
@@ -120,7 +124,26 @@ hooks:
 	git config core.hooksPath scripts/hooks
 	@echo "hooks enabled: scripts/hooks/pre-push runs ut-asan + ut-ubsan"
 
+# install: the binary on PATH, its data in share. resolve.c looks in the current
+# directory, then beside the binary, then <bindir>/../share/linearr -- so this
+# layout works and a symlink into a bin directory works too (the program
+# resolves the link before looking beside itself).
+#   make install                      -> /usr/local
+#   make install PREFIX=$$HOME/.local  -> ~/.local
+#   make install DESTDIR=/tmp/stage   -> staged, for a package
+install: $(BIN)
+	mkdir -p $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/$(BIN)/conf
+	cp $(BIN) $(DESTDIR)$(PREFIX)/bin/$(BIN)
+	cp conf/*.csv $(DESTDIR)$(PREFIX)/share/$(BIN)/conf/
+	cp system.properties $(DESTDIR)$(PREFIX)/share/$(BIN)/ 2>/dev/null || true
+	@echo "installed $(BIN) to $(DESTDIR)$(PREFIX)/bin"
+	@echo "example tables in $(DESTDIR)$(PREFIX)/share/$(BIN)/conf (use -c for your own)"
+
+uninstall:
+	-rm -f $(DESTDIR)$(PREFIX)/bin/$(BIN)
+	-rm -rf $(DESTDIR)$(PREFIX)/share/$(BIN)
+
 clean:
-	-rm -f $(BIN) $(TESTBIN) $(OBJS) $(OBJS:.o=.d)
+	-rm -f $(BIN) $(TESTBIN) $(OBJS) $(OBJS:.o=.d) $(OBJS:.o=.su)
 
 -include $(OBJS:.o=.d)

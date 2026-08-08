@@ -58,6 +58,48 @@ void process_use_coef(const char *path) { coef_override = path; }
 void process_use_trim(const char *path) { trim_override = path; trim_override_set = 1; }
 
 static int  tables_loaded;
+
+/* A pinned term is written as 0 in the coefficient row, and 0 is also what an
+ * estimated no-effect looks like. Redirecting a fit into a table therefore used
+ * to LOSE the distinction between "we could not identify this" and "this does
+ * nothing" -- and scoring a case that turns such a term on then produced a
+ * confident extrapolation off the training data's column space. R writes NA for
+ * an aliased term; statsmodels drops it. Here the count went to stderr and the
+ * file said nothing.
+ *
+ * So the file carries a note. It is a '#' line, which every reader of these
+ * files already skips, so the table still round-trips into the scorer unchanged
+ * -- but the fact survives the redirect and a human reading the table can see
+ * which zeroes are claims and which are silences. Returns 0 if there was
+ * nothing to say. */
+static int format_pinned(const char *group, const struct regress_fit *f,
+                         int nvars, char *out, size_t outsz) {
+    size_t used = 0;
+    int    i, w, any = 0, kind;
+
+    for (i = 0; i < nvars; i++) if (f->term[i] != REGRESS_FITTED) any = 1;
+    if (!any) return 0;
+
+    w = snprintf(out, outsz, "# pinned %s:", group);
+    if (w < 0 || (size_t)w >= outsz) return 0;
+    used = (size_t)w;
+
+    for (kind = REGRESS_CONSTANT; kind <= REGRESS_COLLINEAR; kind++) {
+        int first = 1;
+        for (i = 0; i < nvars; i++) {
+            if (f->term[i] != kind) continue;
+            w = snprintf(out + used, outsz - used, "%s%s",
+                         first ? (kind == REGRESS_CONSTANT ? " constant " : " collinear ")
+                               : ",",
+                         los_var_name(i));
+            if (w < 0 || (size_t)w >= outsz - used) return 1;   /* truncated but honest */
+            used += (size_t)w;
+            first = 0;
+        }
+    }
+    return 1;
+}
+
 static char coef_path[RESOLVE_PATH_MAX];
 static char err_buf[512] = "no error";
 
@@ -79,13 +121,16 @@ static const char *param_or(const char *key, const char *fallback) {
     return (v && v[0]) ? v : fallback;
 }
 
-static int param_int(const char *key, int fallback) {
+/* A scale outside 0..9 used to fall back to the default without a word, so
+ * `predict.scale = 99` quietly produced four decimals and the config lied about
+ * what the program was doing. A setting that cannot be honoured is an error. */
+static int param_int(const char *key, int fallback, int *bad) {
     const char *v = params_get(key);
     char *end;
     long n;
     if (!v || v[0] == '\0') return fallback;
     n = strtol(v, &end, 10);
-    if (*end != '\0' || n < 0 || n > 9) return fallback;
+    if (*end != '\0' || n < 0 || n > 9) { if (bad) *bad = 1; return fallback; }
     return (int)n;
 }
 
@@ -108,10 +153,7 @@ static int ensure_tables(void) {
     if (resolve_file(want, path, sizeof path) != 0)
         return fail("cannot find the coefficient table %s -- point coef.file "
                     "in system.properties at yours, or fit one with -t", path);
-    if (los_load(path) != 0)
-        return fail("%s is not a coefficient table: it needs a "
-                    "GROUP,Intercept,<terms> header and matching rows "
-                    "(run with -d for the line)", path);
+    if (los_load(path) != 0) return fail("%s", los_error());
     snprintf(coef_path, sizeof coef_path, "%s", path);
 
     /* The trim table is optional in three distinguishable ways, and they are
@@ -130,10 +172,20 @@ static int ensure_tables(void) {
         if (resolve_file(tw, path, sizeof path) != 0 || los_load_trims(path) != 0) {
             if (trim) {                       /* asked for by name: their call */
                 los_free();
-                return fail("cannot use the trim table %s -- set trim.file empty "
-                            "if there is none", path);
+                return fail("%s (pass --no-trim, or set trim.file empty, if "
+                            "there is none)", los_error());
             }
             debug("process: no %s; the trim point is the prediction", DEFAULT_TRIM_FILE);
+        }
+    }
+
+    {   int bad = 0;
+        (void)param_int("predict.scale", DEFAULT_PREDICT_SCALE, &bad);
+        (void)param_int("trim.scale", DEFAULT_TRIM_SCALE, &bad);
+        if (bad) {
+            los_free();
+            return fail("predict.scale and trim.scale must be whole numbers "
+                        "from 0 to 9");
         }
     }
 
@@ -166,8 +218,8 @@ static int score_case(const struct los_case *c, char *out, size_t outsz) {
         return fail("no group '%s' in %s (%ld groups there)",
                     c->group, coef_path, los_ngroups());
 
-    pscale = param_int("predict.scale", DEFAULT_PREDICT_SCALE);
-    tscale = param_int("trim.scale", DEFAULT_TRIM_SCALE);
+    pscale = param_int("predict.scale", DEFAULT_PREDICT_SCALE, NULL);
+    tscale = param_int("trim.scale", DEFAULT_TRIM_SCALE, NULL);
 
     /* The trim point is built on the ROUNDED prediction, not the raw one: the
      * published figure is what the next step is entitled to use. */
@@ -214,8 +266,11 @@ int process_named(const char *group, char *const *assign, int n,
             return fail("no term '%s' in %s -- run --terms to list them",
                         name, coef_path);
 
+        /* Trim, because csv_split does and the two forms of a case must not
+         * disagree: "a=1 " was refused while "G,1 " was accepted. */
         errno = 0;
         v = strtod(eq + 1, &end);
+        while (*end == ' ' || *end == '\t') end++;
         if (end == eq + 1 || *end != '\0' || errno == ERANGE || !isfinite(v))
             return fail("'%s' is not a finite number", eq + 1);
         c.x[j] = v;
@@ -261,7 +316,9 @@ int process_train(const char *csv_path, const char *group,
     /* The training file's header defines the polynomial: GROUP, the observed
      * value, then one column per term. Add a column to the file and the fit has
      * that term -- nothing here counts the terms for itself. */
-    if (csv_next(fp, line, sizeof line) != 1) {
+    while ((n = csv_next(fp, line, sizeof line)) == 2)
+        ;                                   /* leading comments precede a header */
+    if (n != 1) {
         fail("%s has no header line", csv_path);
         goto cleanup;
     }
@@ -294,8 +351,9 @@ int process_train(const char *csv_path, const char *group,
     }
     /* One row at a time: read it, add it to the cross-products, forget it. The
      * file may be any size; the fitter's footprint is the same either way. */
-    while ((n = csv_next(fp, line, sizeof line)) == 1) {
+    while ((n = csv_next(fp, line, sizeof line)) > 0) {
         double los;
+        if (n == 2) continue;
         seen++;
         if (los_parse_training(line, &c, &los) != 0) {
             fail("%s row %ld: expected a group, a value, and %d terms",
@@ -339,6 +397,15 @@ int process_train(const char *csv_path, const char *group,
     if (los_format_model(pool ? "*" : group, &fitted, out + used, outsz - used) != 0) {
         fail("the fitted table does not fit in %lu bytes", (unsigned long)outsz);
         goto cleanup;
+    }
+    {   char note[MAX_OUTPUT];
+        if (format_pinned(pool ? "*" : group, &f, nvars, note, sizeof note)) {
+            used = strlen(out);
+            if (used + strlen(note) + 2 < outsz) {
+                out[used] = '\n';
+                memcpy(out + used + 1, note, strlen(note) + 1);
+            }
+        }
     }
 
     if (info) {
@@ -395,7 +462,9 @@ int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum) 
         if (!fp) return fail("cannot open the training file '%s'", path);
     }
 
-    if (csv_next(fp, line, sizeof line) != 1) {
+    while ((n = csv_next(fp, line, sizeof line)) == 2)
+        ;                                   /* leading comments precede a header */
+    if (n != 1) {
         fail("%s has no header line", csv_path);
         goto cleanup;
     }
@@ -417,8 +486,9 @@ int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum) 
 
     /* One pass. A row is added to its group's accumulator and forgotten, so the
      * file may be any size; only the number of GROUPS costs memory. */
-    while ((n = csv_next(fp, line, sizeof line)) == 1) {
+    while ((n = csv_next(fp, line, sizeof line)) > 0) {
         double los;
+        if (n == 2) continue;
         seen++;
         if (los_parse_training(line, &c, &los) != 0) {
             fail("%s row %ld: expected a group, a value, and %d terms",
@@ -477,6 +547,10 @@ int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum) 
             goto cleanup;
         }
         fprintf(out, "%s\n", row);
+        {   char note[MAX_OUTPUT];
+            if (format_pinned(g->group, &f, nvars, note, sizeof note))
+                fprintf(out, "%s\n", note);
+        }
 
         if (sum) {
             sum->pinned += f.pinned;

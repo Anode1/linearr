@@ -74,12 +74,24 @@ int regress_init(struct regress *r, int nvars, double *storage);
  * "nan" that scored "prediction=nan" and exited 0. */
 int regress_add(struct regress *r, const double *x, double y);
 
+/* Why a term carries no coefficient. These are different verdicts with
+ * different consequences, and the fitter is the only thing that knows which is
+ * which -- so it says, rather than leaving both as an indistinguishable 0. */
+enum regress_term {
+    REGRESS_FITTED = 0,   /* estimated from the data                        */
+    REGRESS_CONSTANT,     /* the column never varies: no evidence at all     */
+    REGRESS_COLLINEAR     /* its effect is inseparable from another column's;
+                             which of the pair keeps the effect is decided by
+                             column order, not by the data                   */
+};
+
 /* What the fit turned out to be. */
 struct regress_fit {
     int    pinned;      /* terms the sample could not identify, set to 0     */
     long   df;          /* residual degrees of freedom: n - (identified + 1) */
     double r2;          /* -1 when it is not defined (a response that never
                            varies) or not computable to useful precision     */
+    unsigned char term[REGRESS_MAX_VARS];  /* enum regress_term, per slope */
     double condition;   /* ratio of largest to smallest accepted pivot on the
                            equilibrated matrix: a conditioning proxy. 1.0 is
                            perfect. Past ~1e8 the later digits of the

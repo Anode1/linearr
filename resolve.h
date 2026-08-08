@@ -5,10 +5,12 @@
  * merely built. `linearr` used to fail from anywhere else, because it opened
  * "conf/coefficients.csv" relative to the current directory and nowhere else.
  *
- * So a name is looked for in two places, in this order:
+ * So a name is looked for in three places, in this order:
  *   1. relative to the current directory -- your files win, always;
- *   2. beside the program itself -- the defaults that shipped with it.
- * An absolute path is used as given. */
+ *   2. beside the program itself -- a build tree, or an unpacked release;
+ *   3. <bindir>/../share/linearr -- where `make install` puts them.
+ * An absolute path is used as given, and a symlinked binary is resolved first,
+ * because linking one binary into a bin directory is how people install one. */
 #ifndef RESOLVE_H
 #define RESOLVE_H
 

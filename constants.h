@@ -18,4 +18,8 @@
 #define GROUP_MAX         32   /* longest group code                           */
 #define RESOLVE_PATH_MAX 4096  /* longest path we will build looking for a file */
 
+/* Bumped by hand at a release, and printed by --version, so a bug report can
+ * name something. */
+#define LINEARR_VERSION "0.1.0"
+
 #endif /* CONSTANTS_H */
