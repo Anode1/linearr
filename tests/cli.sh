@@ -174,7 +174,7 @@ if command -v make >/dev/null 2>&1; then
     cp -r "$root/conf" "$root/example" "$src"/ 2>/dev/null || true
     mkdir -p "$src/tests"; cp "$root/tests/cli.sh" "$src/tests/" 2>/dev/null || true
 
-    (cd "$src" && make clean >/dev/null 2>&1; make >/dev/null 2>&1)
+    (cd "$src" && env -u MAKEFLAGS -u MAKELEVEL sh -c 'make clean >/dev/null 2>&1; make >/dev/null 2>&1')
     if [ -x "$src/linearr" ]; then ok; else no "make (default goal) builds the binary"; fi
 
     # A changed ceiling must reach the objects. A 32-term build has to refuse a
@@ -187,11 +187,38 @@ if command -v make >/dev/null 2>&1; then
     (cd "$src" && ./linearr --terms >/dev/null 2>&1) \
         && ok || no "the default build accepts a 100-term table"
 
-    (cd "$src" && make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32' >/dev/null 2>&1)
+    (cd "$src" && env -u MAKEFLAGS -u MAKELEVEL \
+        make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32' >/dev/null 2>&1)
     set +e
     (cd "$src" && ./linearr --terms >/dev/null 2>&1); rc=$?
     set -e
     check "CPPFLAGS reaches the objects (a 32-term build refuses 100 terms)" "$rc" "1"
+
+    # And the project's OWN flags have to reach the compiler with it. They once
+    # did not: `.build-flags` was a prerequisite of the %.o rule, make caches the
+    # directory at startup so a file $(shell) created during parsing was invisible
+    # to it, the rule was rejected as inapplicable, and make's BUILT-IN %.o rule
+    # ran instead -- without -std=c99, without -W -Wall, without -MMD. A
+    # deliberately uninitialised variable then compiled with zero diagnostics.
+    # env -u MAKEFLAGS: run under `make check` this inherits the parent's flags,
+    # including -w, so the first line of output is "Entering directory" and the
+    # test reads make's chatter instead of a compile line. A test of the build
+    # must not depend on how the test itself was started.
+    (cd "$src" && env -u MAKEFLAGS -u MAKELEVEL make clean >/dev/null 2>&1)
+    line=$(cd "$src" && env -u MAKEFLAGS -u MAKELEVEL \
+           make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32' 2>&1 \
+           | grep -m1 -- ' -c ')
+    case "$line" in
+        *-std=c99*) ok ;; *) no "the build uses -std=c99: got [$line]" ;;
+    esac
+    case "$line" in
+        *-Wall*) ok ;; *) no "the build uses -Wall: got [$line]" ;;
+    esac
+    # A real warning must actually surface, not merely appear on the command line.
+    printf '\nstatic int cli_probe(void) { int x; return x; }\n' >> "$src/utils.c"
+    n=$(cd "$src" && env -u MAKEFLAGS -u MAKELEVEL \
+        make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32' 2>&1 | grep -c warning)
+    [ "$n" -ge 1 ] && ok || no "an uninitialised variable produces a warning (got $n)"
 else
     skip=$((skip+3)); echo "  SKIP build-claims (no make)"
 fi

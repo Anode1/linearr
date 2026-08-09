@@ -48,15 +48,28 @@ release  : CFLAGS = -O2
 # It is done with $(shell) at parse time and NOT with a rule depending on a
 # .PHONY target: writing it that way puts a real target above `all:` and hands
 # the default goal to it, which is precisely the defect this project already
-# fixed once. The stamp is rewritten only when the flags actually change, so an
-# ordinary edit-build loop stays incremental.
+# fixed once.
+#
+# It also DELETES the objects rather than making them depend on the stamp file.
+# The dependency version looked cleaner and was quietly broken: make caches the
+# directory listing at startup, so a file $(shell) creates during parsing is not
+# visible to it, the prerequisite `.build-flags` appears not to exist, the
+# pattern rule below is rejected as inapplicable, and make falls back to its
+# BUILT-IN %.o rule. That rule does not carry $(PROJ), so a fresh tree built
+# with any CPPFLAGS compiled without -std=c99 -W -Wall and without -MMD: no
+# warnings, no header dependencies. A deliberately uninitialised variable
+# produced zero diagnostics, while the first rule in the README's Style section
+# is that a warning is a defect. The build was not looking.
+#
+# Deleting is also immune to timestamp granularity, which the mtime comparison
+# was not.
 FLAGS_NOW := $(CC) $(PROJ) $(CPPFLAGS) $(CFLAGS)
 FLAGS_WAS := $(shell cat .build-flags 2>/dev/null)
 ifneq ($(FLAGS_NOW),$(FLAGS_WAS))
-$(shell printf '%s' '$(FLAGS_NOW)' > .build-flags)
+$(shell rm -f $(OBJS) $(OBJS:.o=.d) $(BIN); printf '%s' '$(FLAGS_NOW)' > .build-flags)
 endif
 
-%.o: %.c .build-flags
+%.o: %.c
 	$(CC) $(PROJ) $(CPPFLAGS) $(CFLAGS) -MMD -c $< -o $@
 
 .PHONY: all release debug pedantic check ut cliut ut-asan ut-ubsan hooks \
