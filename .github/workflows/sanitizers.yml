@@ -17,9 +17,14 @@
 # separation).
 name: sanitizers
 
+# No branch filter, deliberately. This was copied from a sibling project as
+# `branches: [main]` while this repository's branch is `master`, so the workflow
+# never ran once -- and the README said "built and tested on Linux and macOS on
+# every push" the whole time. A CI trigger is a claim like any other, and this
+# one was false in the quietest possible way: a green checkmark was never absent,
+# because there was never a run to be absent.
 on:
   push:
-    branches: [main]
   pull_request:
   workflow_dispatch:
 
