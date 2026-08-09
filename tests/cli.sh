@@ -396,5 +396,17 @@ set +e
 set -e
 check "--residuals without -t is an error" "$rc" "1"
 
+# --- groups: the same terms, different coefficients ------------------------
+check "a per-group fit recovers each route's own line" \
+    "$("$bin" -t example/routes.csv 2>/dev/null | tail -3 | tr '\n' ' ')" \
+    "city,5,3,2 suburb,4,2,1.5 highway,8,1,5 "
+check "pooling them gives one line that is none of the three" \
+    "$("$bin" -t example/routes.csv -g '*' 2>/dev/null | tail -1)" \
+    "*,5.66666666667,2,2.83333333333"
+# and the pooled fit's error is visible where R2 is not alarming
+case "$("$bin" -t example/routes.csv -g '*' 2>&1 >/dev/null)" in
+    *"resid SD=7.693"*) ok ;; *) no "the pooled fit reports its residual SD" ;;
+esac
+
 echo "cliut: $pass passed, $fail failed, $skip skipped"
 [ "$fail" -eq 0 ]

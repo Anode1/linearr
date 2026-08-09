@@ -77,10 +77,34 @@ printed above 1e8.
 
 ## The three files, and what a group is
 
-**A group is one fitted line.** Rows sharing a group code are fitted together and
-get their own coefficients; a different code gets different ones. It is whatever
-you would otherwise run a separate regression for: a ward, a route, a machine,
-a region. One group and you have plain least squares.
+**A group is one fitted line.** Rows sharing a group code are fitted together
+and get their own coefficients; a different code gets different ones. Groups
+exist so that one file and one pass produce one model per subset, instead of
+splitting the file and running the program once per part. With a single group
+this is plain least squares.
+
+`example/routes.csv` is delivery time against distance and stops on three kinds
+of route. The terms are the same everywhere; what each term is worth is not:
+
+    $ ./linearr -t example/routes.csv
+    fit: 3 groups, 18 rows, least df=3, worst resid SD=3.832e-07, worst cond=1.02
+    group,intercept,km,stops
+    city,5,3,2
+    suburb,4,2,1.5
+    highway,8,1,5
+
+Three minutes per kilometre in the city, one on the highway; a stop costs two
+minutes in the city and five on a highway route. Pooling the same eighteen rows
+into one line gives an average of the three that describes none of them:
+
+    $ ./linearr -t example/routes.csv -g '*'
+    fit: 18 rows, R2=0.8159, resid SD=7.693, df=15, cond=1.02
+    group,intercept,km,stops
+    *,5.66666666667,2,2.83333333333
+
+R2 of 0.82 still looks acceptable. The residual SD is what shows the cost:
+predictions from the pooled line are typically 7.7 minutes out, against
+essentially zero for the per-group fits above.
 
 Every file puts the group first and the terms last, in the same order. Only the
 middle differs:
@@ -487,8 +511,8 @@ constants.h       buffer sizes (the TERM ceiling lives in regress.h / los.h)
 tests.c           in-place unit tests (make ut)
 tests/cli.sh      black-box tests: the binary through a shell and a pty (make cliut)
 conf/             the example model (synthetic)
-example/          training files: two schemas, plus the three the README's
-                  "three short pieces" section runs (all synthetic)
+example/          training files: routes.csv shows why groups exist, plus the
+                  three the "three short pieces" section runs (all synthetic)
 scripts/scale.sh  measures the memory claim at 200 terms and 500 groups
 scripts/bench.sh  the same job in Java, Python, awk and R, answers checked first
 java/             the second implementation; Regress.java mirrors regress.c

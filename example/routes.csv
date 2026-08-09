@@ -1,0 +1,28 @@
+# example/routes.csv: why groups exist.
+#
+# Delivery time against distance and number of stops, on three kinds of route.
+# The terms are the same everywhere; what each term is WORTH is not. A minute
+# per kilometre in the city is not a minute per kilometre on the highway, and a
+# stop costs far more on a highway route than on a suburban one.
+#
+# Fitted per group you get three usable lines. Pooled with -g '*' you get one
+# line that describes none of the three.
+group,minutes,km,stops
+city,5,0,0
+city,35,10,0
+city,11,0,3
+city,41,10,3
+city,22,5,1
+city,69,20,2
+suburb,4,0,0
+suburb,24,10,0
+suburb,8.5,0,3
+suburb,28.5,10,3
+suburb,15.5,5,1
+suburb,47,20,2
+highway,8,0,0
+highway,18,10,0
+highway,23,0,3
+highway,33,10,3
+highway,18,5,1
+highway,38,20,2
