@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""fit.py -- the Python baseline for scripts/bench.sh.
+"""fit.py: the Python baseline for scripts/bench.sh.
 
 Streaming on purpose: `for line in f`, one row folded into its group's
 cross-products and dropped. NOT pandas. Writing this as
 `pd.read_csv(...).groupby(...)` and the C as a stream would compare the two
-STYLES, not the two languages -- and pandas' number would be about pandas.
+STYLES, not the two languages, and pandas' number would be about pandas.
 The idiomatic-and-materialising case is fit.R, which says so.
 """
 import sys

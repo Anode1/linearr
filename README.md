@@ -1,9 +1,8 @@
-# linearr: fit a line to your data, in C, and keep the memory flat
+# linearr: ordinary least squares in C
 
-Give it a CSV, get back the coefficients. Give it a case, get back a prediction.
-No dependencies, no runtime to install, no build framework: a stock C compiler
-and `make`. It streams the training file one row at a time, so a ten-row fit and
-a ten-million-row fit cost the same memory.
+Reads a CSV and returns the coefficients; reads a case and returns a prediction.
+It requires a C compiler and `make`, and nothing else. The training file is read
+one row at a time, so its size does not affect how much memory the fit uses.
 
     make
     ./linearr -t mydata.csv > model.csv       # fit every group in one pass
@@ -12,17 +11,18 @@ a ten-million-row fit cost the same memory.
 ## All of least squares, in three short pieces
 
 **What it does.** You have rows: some measurements, and a number you care about.
-It finds the straight line through them that misses by as little as possible --
-squared, so a miss of 2 counts four times a miss of 1. Out come the
-coefficients: how much each measurement moves the answer. That is the whole
-method. It is old, it is cheap, and where the world really is roughly linear it
-is hard to beat.
+It finds the straight line through them that misses by as little as possible,
+squared, so that a miss of 2 counts four times a miss of 1. The coefficients it
+returns are how much each measurement moves the answer. That is the whole
+method; it dates from Legendre and Gauss around 1805 and remains a reasonable
+choice wherever the relationship is close to linear.
 
-Three things can go wrong with it, and all three fit perfectly while being
-wrong, which is why this program says them out loud.
+Three situations are worth knowing about, because in each of them the fit
+succeeds and the result is not what it appears to be. The program reports all
+three.
 
 **One: the data cannot tell two columns apart.** If `icu` and `vent` are 1 on
-exactly the same rows -- nobody ever had one without the other -- the data can
+exactly the same rows (nobody ever had one without the other), the data can
 say the pair adds 8 days. It cannot say how to split that 8 between them. Every
 split fits equally well, so there is no answer to find:
 
@@ -32,12 +32,13 @@ split fits equally well, so there is no answer to find:
     A,6.000000000000001,8,0
     # pinned A: collinear vent
 
-All 8 goes to the first column, the second gets 0, and the note says so. That 0
-is a shrug, not a finding, and without the note it would read as "ventilation
-does nothing". A column that never varies at all -- an intervention nobody in
-the group received -- is the same situation: the data has no opinion about it.
+All 8 is assigned to the first column and the second is set to 0, with a note
+recording that this happened. Without the note the 0 would be indistinguishable
+from an estimate that ventilation has no effect. A column that never varies at
+all, an intervention nobody in the group received, is the same case: the data
+carries no information about it.
 
-**Two: nothing left over.** Three rows and three unknowns will fit perfectly,
+**Two: no degrees of freedom left.** Three rows and three unknowns will fit perfectly,
 the way two points always define a line exactly. It would fit perfectly on any
 numbers whatsoever, so a perfect fit tells you nothing:
 
@@ -48,16 +49,16 @@ numbers whatsoever, so a perfect fit tells you nothing:
     GROUP,Intercept,a,b
     A,1.0000000000000007,2.999999999999999,5.999999999999998
 
-*Degrees of freedom* is just the slack -- rows minus unknowns. Zero slack, zero
-evidence. Six rows against three unknowns leaves three rows' worth of
-disagreement the line had to survive, and surviving that is what makes a good
-fit mean something.
+*Degrees of freedom* is rows minus unknowns, and it is the amount of
+disagreement the fit had to accommodate. At zero there is none, so the quality
+of the fit is not evidence of anything. Six rows against three unknowns leaves
+three rows' worth, and it is that residual disagreement which makes a small
+error informative.
 
-**Three: the arithmetic squares your data before solving it.** That is what
-gives this program its flat memory -- it keeps a small square of sums instead of
-your file, so ten rows and ten million cost the same. The price is precision:
-squaring costs you about half your digits. Give it two columns that differ in
-the sixth decimal and ask for `1 + 2*x1 + 3*x2`:
+**Three: the arithmetic squares the data before solving.** Keeping the sums of
+products rather than the rows is what bounds the memory, and it costs precision:
+squaring roughly halves the significant digits available. With two columns that
+differ in the sixth decimal, asked for `1 + 2*x1 + 3*x2`:
 
     $ ./linearr -t example/nearly-the-same.csv
     fit: 1 group, 40 rows, least df=37, worst cond=5.34e+10
@@ -66,17 +67,19 @@ the sixth decimal and ask for `1 + 2*x1 + 3*x2`:
     GROUP,Intercept,x1,x2
     A,1.0000000000062395,2.0000226299291737,2.999977370075073
 
-It found 2.00002 and 2.99998 where the truth is 2 and 3 -- five digits gone,
-and it says so. A method that does not square first (QR, SVD) would keep them
-apart. R2 cannot see this at all: a badly conditioned fit describes its own
-training data beautifully and predicts nothing. The `cond=` number is what
-tells you, and past 1e8 it warns.
+It returns 2.00002 and 2.99998 where the true values are 2 and 3, a loss of
+about five significant digits, and it reports the fact. A method that does not
+form the cross-products first, such as QR or SVD, would separate the two
+columns. R2 does not detect this: an ill-conditioned fit still describes its own
+training sample closely, so its in-sample error stays small while its
+predictions do not. The `cond=` figure is the diagnostic, and a warning is
+printed above 1e8.
 
 ## The three files, and what a group is
 
 **A group is one fitted line.** Rows sharing a group code are fitted together and
 get their own coefficients; a different code gets different ones. It is whatever
-you would otherwise run a separate regression for -- a ward, a route, a machine,
+you would otherwise run a separate regression for: a ward, a route, a machine,
 a region. One group and you have plain least squares.
 
 Every file puts the group first and the terms last, in the same order. Only the
@@ -84,21 +87,21 @@ middle differs:
 
 | file | column 1 | column 2 | columns 3.. |
 | --- | --- | --- | --- |
-| training (`-t`) | group | **the goal** -- what you are predicting | one per term |
+| training (`-t`) | group | **the goal**, what you are predicting | one per term |
 | coefficients (`-c`) | group | the intercept | one per term |
 | a case | group | *(none)* | one per term |
 | residuals (`--residuals`) | group | observed | predicted, residual |
 
 So a training header of `GROUP,MINUTES,km,stops` says: predict `MINUTES` from
-`km` and `stops`, separately for each group. The names are yours -- the program
-reads position, not the word -- but the ORDER is fixed, and the goal is the
+`km` and `stops`, separately for each group. The names are yours (the program
+reads position, not the word), but the ORDER is fixed, and the goal is the
 second column, not the first.
 
 ## Where the model is wrong
 
-The coefficients say what the model believes. The residuals say where it is
-wrong, and that is the part a summary number cannot show you. Fit a parabola
-with a straight line and every statistic looks survivable:
+The coefficients describe the model; the residuals show where it does not fit,
+which no single summary number can. Fitting a parabola with a straight line
+produces summary statistics that give no sign of the problem:
 
     $ ./linearr -t curve.csv --residuals r.csv
     fit: 1 group, 9 rows, least df=7, worst resid SD=6.633
@@ -115,9 +118,10 @@ with a straight line and every statistic looks survivable:
     A,19,16.666666666666668,2.3333333333333321
     A,26,16.666666666666668,9.3333333333333321
 
-Plus, minus, minus, minus, plus. That is a curve, not scatter, and it says the
-model has the wrong shape -- which no R2, no residual SD and no conditioning
-number will ever tell you, because each of them averages exactly this away.
+The residuals are positive at both ends and negative in the middle. That is a
+systematic pattern rather than scatter, and it indicates the model has the wrong
+shape. R2, the residual SD and the conditioning figure all average over the
+residuals, so none of them can show it.
 
 It costs a second pass over the training file rather than a copy of it in
 memory: the fit forgets each row as it reads it, so the rows have to be read
@@ -147,10 +151,10 @@ again to be subtracted from. Memory stays a function of the model.
 elastic net), categorical encoding, missing-value handling, cross-validation,
 weighted least squares, or inference: standard errors, confidence intervals,
 prediction intervals, p-values. None of that is here. The residual standard
-deviation IS -- `resid SD=` in the fit summary, the typical distance between a
-prediction and the truth in the response's own units, which is the number a
-consumer of a prediction actually needs and which R2 cannot give. The worked
-example is also a modelling choice worth naming: length of stay is a skewed,
+deviation is reported, as `resid SD=` in the fit summary: the typical distance
+between a prediction and the observed value, in the response's own units. R2 is
+a ratio and does not give it. The worked example involves a modelling choice
+that should be stated: length of stay is a skewed,
 non-negative, count-like response, and unweighted OLS on raw days is not the
 standard treatment for it (a log transform or a Gamma GLM is). Nothing stops
 this tool predicting a negative stay. `scikit-learn` and `statsmodels` do all of it well, and GSL
@@ -161,13 +165,13 @@ numerical machinery behind it than this has.
 the memory bound possible, and it costs conditioning: forming the normal
 equations squares the condition number of the design, so a badly scaled or
 near-collinear problem loses roughly twice the digits a QR or SVD solve would.
-For indicator columns and modestly scaled data (what this is built for) it is
-not the limiting factor; the pinning above handles the singular cases outright.
-If your design is ill-conditioned, use a QR-based fit. A streaming Householder
-QR would keep the memory bound and fix the conditioning, and is the obvious next
-thing to build here.
+For indicator columns and modestly scaled data it is usually not the limiting
+factor, and exactly singular cases are detected and reported. Near-singular ones
+are not removed by that, only measured, which is what `cond=` is for. For an
+ill-conditioned design, use a QR-based fit. A streaming Householder QR would
+keep the memory bound and remove the conditioning cost.
 
-## The two things that make it different
+## Two properties
 
 - **The terms are not compiled in.** The header line of your CSV names them, so
   adding a term to the polynomial is adding a column to a file. Nothing to edit,
@@ -234,12 +238,12 @@ model had (35 terms, 580 groups), output verbatim:
     The coefficient table is the only thing that grows with the problem:
       580 groups x (35 + 1) doubles = about 163 KB, held once.
 
-Ten times the data, the same memory. Time scales with the rows, as it must.
+Ten times the data, the same memory. Time scales with the number of rows.
 
 ## The same job in other languages
 
 Read the file, fit a line per group, write the table. `scripts/bench.sh` checks
-each one's coefficients against linearr's before timing it -- an unchecked speed
+each one's coefficients against linearr's before timing it; an unchecked speed
 number may be timing a different answer. All agree: one answer, different prices.
 
     $ sh scripts/bench.sh 8 50 500000        # 8 terms, 50 groups, 500k rows
@@ -251,14 +255,15 @@ number may be timing a different answer. All agree: one answer, different prices
     awk              streaming    10.55s   5632 KB    agrees to 1.2e-13
     Python           frame        3.01s    315904 KB  agrees to 1.2e-13
 
-Every one of these streams except the last, because every one of these languages
-*can*. Writing the C as a stream and the Python as pandas would measure the two
-styles and call it a language comparison. So the materialising row is Python
-too: same language, same machine, same algorithm, one variable changed. At ten
-times the data the streaming rows do not move and that row goes 41 MB -> 316 MB.
+All but the last read the file one row at a time, which each of these languages
+permits. Writing the C as a stream and the Python with pandas would compare two
+styles rather than two languages, so the materialising row is also Python: the
+same language, machine and algorithm, with one variable changed. Over a tenfold
+increase in rows the streaming figures are unchanged and that row rises from
+41 MB to 316 MB.
 
 The JVM's number is mostly the JVM. Capping its heap separates the runtime's
-appetite from what the algorithm needs -- 500,000 rows fit in a 16 MB heap at
+appetite from what the algorithm needs: 500,000 rows fit in a 16 MB heap at
 the same speed:
 
     -Xmx16m   0.27s  61772 KB
@@ -270,12 +275,12 @@ installed.
 
 ## Two implementations
 
-`java/` fits the same model, in the style this project's C came from --
+`java/` fits the same model in the style this project's C came from: a
 `BufferedReader` and a `readLine` loop, `Hashtable`, `Vector`, `StringBuffer`,
-and one reused record rather than one object per row. `Regress.java` is
-`regress.c` line for line: the same centered accumulation, the same equilibrated
-rank test, the same intercept-from-the-means. They are meant to be read side by
-side, and they agree to the last bit rather than merely closely.
+and one reused record rather than one object per row. `Regress.java` follows
+`regress.c` closely enough to be read beside it: the same centered accumulation,
+the same equilibrated rank test, the intercept recovered from the means. The two
+produce identical coefficients, not merely close ones.
 
     cd java && ant jar          # or: javac -nowarn *.java
     java Linearr ../example/train.csv
@@ -426,9 +431,9 @@ cannot identify, a fit with no degrees of freedom left, the conditioning cost of
 normal equations) are stated in this README instead of left for a reader to
 discover.
 
-Fifteen years is a long detour, but the shape of the problem has not changed:
-somebody has a table of coefficients, a stream of rows, and a machine that
-should not need a Python installation to multiply them together.
+The problem itself has not changed in the interval: a table of coefficients, a
+stream of rows to apply them to, and often a machine on which installing a
+scientific stack is inconvenient or not permitted.
 
 ### The original term set
 
@@ -497,22 +502,22 @@ The rules the code already follows, so new code matches:
 
 - **C99, warning-free.** Clean under `-std=c99 -Wall -Wextra`; a warning is a
   defect. `make pedantic` is the stricter gate.
-- **A pinned term is marked, not laundered.** A coefficient the data could not
-  identify is written as 0, and so is an estimated no-effect. The fit therefore
+- **A pinned term is marked.** A coefficient the data could not identify is
+  written as 0, and so is an estimated no-effect. The fit therefore
   emits a `# pinned <group>: constant ... collinear ...` line beside the row, so
   the distinction survives a redirect. It is a comment, so the table still reads
   straight back into the scorer.
-- **Stack first, and count the heap out loud.** Rows are processed one at a time
+- **Stack first; the heap is enumerated.** Rows are processed one at a time
   into fixed-size buffers; nothing on the row path allocates. Three things do
   allocate, each bounded by the model or the config and never by the data, and
   each freed on every path: the coefficient table (`los.c`), the config table
   (`params.c`), and one accumulator per group while `-t` fits them all
-  (`process.c`). Three is the whole list, and it is meant to stay countable.
+  (`process.c`). That is the complete list, and it is kept short enough to check.
 - **Bounded strings only.** `snprintf` always; never `strcpy`/`strcat`/`sprintf`,
   except the checked copy into a fixed buffer, where the guard sits on the
   line above and returns rather than truncating. Sizes come from `constants.h`.
 - **Checked allocation.** `xmalloc`/`xstrdup` never return NULL.
-- **Functions, not fragile macros.** `die`, `debug`, `xmalloc` are functions, so
+- **Functions, not macros.** `die`, `debug`, `xmalloc` are functions, so
   they type-check and are greppable.
 - **Modules return, the CLI exits.** A module returns `0`/`-1`; only `main`
   terminates. Single exit via `goto cleanup` where a function holds a file.
@@ -523,11 +528,9 @@ The rules the code already follows, so new code matches:
   stream a message went to) belongs in `tests/cli.sh`.
 - **Sanitizer-clean.** `make ut-asan` and `make ut-ubsan` before tagging; CI and
   the pre-push hook run both.
-- **A discarded return value is stated, not implied.** Where a result is
-  deliberately ignored the call is written `(void)printf(...)` -- MISRA 17.7.
-  It is not decoration: `main` checks `ferror(stdout)` once at the end precisely
-  *because* the individual writes are unchecked, and the casts are what say that
-  was a decision.
+- **Discarded return values carry a `(void)` cast** (MISRA 17.7). `main` checks
+  `ferror(stdout)` once at the end because the individual writes are unchecked;
+  the casts record that this was intended.
 - **A comment is a claim.** Header comments, source comments, the Makefile, and
   the usage text go stale exactly like a README. When behaviour changes they move
   with it. See `AGENTS.md`.

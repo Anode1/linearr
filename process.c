@@ -556,7 +556,7 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
         /* Keep this group's line. The residual pass needs it after every group
          * has been solved, and fit_beta is one shared buffer the next group
          * overwrites. Without this the residual pass read whatever xmalloc had
-         * left in the block and printed predictions around 1e161 -- the one
+         * left in the block and printed predictions around 1e161, the one
          * good thing about uninitialised memory being that it is obviously
          * wrong rather than plausibly wrong. */
         {   int b;

@@ -23,7 +23,7 @@
 /* A row is a group, maybe a response, and one field per term, plus slack for
  * whatever padding a file carries. These were a flat 65536 each, which is four
  * times what the default ceiling can produce and twenty times what a 32-term
- * build can -- and they are the whole of this program's stack requirement.
+ * build can, and they are the whole of this program's stack requirement.
  * Derived, the ceiling is the only thing to set on a small target. */
 #define CSV_LINE_MAX   ((LOS_MAX_VARS + 2) * CSV_FIELD_MAX + 1024)
 #define MAX_INPUT      CSV_LINE_MAX   /* longest input line we read from stdin */

@@ -1,4 +1,4 @@
-# fit.awk -- the awk baseline for scripts/bench.sh. Streaming is awk's only
+# fit.awk: the awk baseline for scripts/bench.sh. Streaming is awk's only
 # idiom, which is the point: this is what the language does naturally, not a
 # style chosen to flatter the benchmark.
 #   awk -f fit.awk train.csv

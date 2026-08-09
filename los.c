@@ -130,7 +130,7 @@ static const double pow10_exact[] = {
  * exactly represented values is correctly rounded by definition, and the
  * correctly rounded quotient IS what strtod returns for the same digits. So
  * where this path answers, it answers with strtod's bits. Anything else --
- * exponents, hex, over-long mantissas, leading spaces, trailing junk -- it
+ * exponents, hex, over-long mantissas, leading spaces, trailing junk; it
  * declines, and nothing about those cases changes. */
 static int fast_num(const char *s, double *out) {
     const char        *p = s;

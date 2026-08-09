@@ -1,9 +1,9 @@
 #!/bin/sh
-# bench.sh -- the same job in several languages: read the file, fit one line per
+# bench.sh: the same job in several languages: read the file, fit one line per
 # group, write the table.
 #
 # Each implementation is written the way its language does the job when it is
-# ALLOWED to stream -- a read-a-line loop and a fixed accumulator per group.
+# ALLOWED to stream: a read-a-line loop and a fixed accumulator per group.
 # That is the only comparison worth printing. Writing C as a stream and Python
 # as pandas measures the two styles, not the two languages, and the memory
 # column becomes a rhetorical trick. bench/Fit.java is modelled on the author's

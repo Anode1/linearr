@@ -185,7 +185,7 @@ static void test_regress(void) {
     /* The residual SD is the number a prediction consumer needs and R2 cannot
      * give: how far a prediction typically lands from the truth, in the
      * response's own units. Built from noise of SD 2, it must come back near 2
-     * -- and R2 near 1 at the same time, which is the point: a high R2 and a
+     * and R2 near 1 at the same time, which is the point: a high R2 and a
      * large error are not contradictory. */
     {
         int i;

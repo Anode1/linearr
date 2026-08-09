@@ -111,7 +111,7 @@ int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum);
 /* Fit, then write one residual per training row to `resid`: what the row said,
  * what the line predicts, and the difference. The coefficients say what the
  * model believes; the residuals are where it is wrong, and that is where the
- * shape of the error shows -- a curve the line cannot follow, a group whose
+ * shape of the error shows: a curve the line cannot follow, a group whose
  * spread grows with its prediction, the one row that is not like the others.
  * No summary statistic shows those; R2 and the residual SD both average them
  * away.

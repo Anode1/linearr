@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""fit-frame.py -- the same fit as fit.py, in the same language, on the same
+"""fit-frame.py: the same fit as fit.py, in the same language, on the same
 machine, differing in ONE thing: it reads the whole file into memory first.
 
 This is the control. Comparing streaming C against a materialising R would

@@ -1,5 +1,5 @@
 /* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
-/* Regress.java -- the Java twin of regress.c. Same algorithm, same order, same
+/* Regress.java: the Java twin of regress.c. Same algorithm, same order, same
  * names, so the two can be read side by side and matched line for line.
  *
  * Ordinary least squares for y = b0 + b1*x1 + ... + bp*xp. Observations are
@@ -19,7 +19,7 @@
 public final class Regress {
 
     /* Rank tolerance on the EQUILIBRATED matrix, whose diagonal is all ones.
-     * A pure rank statement, carrying no units -- which is the point. */
+     * A pure rank statement, carrying no units, which is the point. */
     static final double RANK_EPS = 1e-12;
 
     /* Why a term carries no coefficient. Different verdicts, different
@@ -65,7 +65,7 @@ public final class Regress {
         this.pivotCol = new int[nvars];
     }
 
-    /** Add one observation. Returns false if any value is not finite -- one NaN
+    /** Add one observation. Returns false if any value is not finite; one NaN
      *  admitted here reaches every coefficient. Allocates nothing. */
     public boolean add(double[] x, double y) {
         if (!isFinite(y)) return false;

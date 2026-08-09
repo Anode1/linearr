@@ -84,7 +84,7 @@ found by reading a claim against the code rather than by running anything:
   prediction", when an absent key means the built-in default, so the table loads
   and the trim is applied. The README got the correction; the config file that
   originally made the claim did not. Three independent reviews missed it.
-  **When you correct a claim, grep for the other places that make it** -- a
+  **When you correct a claim, grep for the other places that make it**: a
   fixed sentence in one file is not a fixed claim.
 
 ## Nullable returns, and the segfault this project already had
@@ -151,7 +151,7 @@ this, and they should grow rather than be trimmed.
 Task #16 of this project's own review was marked completed with two of its five
 items done. Nothing failed; the remaining three were simply not looked at again,
 because "MISRA tail" had a tick beside it. Finish the list, or leave the item
-open with the remainder written into it -- a partly-done task recorded as done
+open with the remainder written into it; a partly-done task recorded as done
 is worse than one recorded as pending, because it stops being looked at.
 
 ## The development loop (test-driven)

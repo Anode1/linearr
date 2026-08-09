@@ -1,5 +1,5 @@
 /* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
-/* Linearr.java -- the Java twin of main.c + process.c: read a training CSV, fit
+/* Linearr.java: the Java twin of main.c + process.c: read a training CSV, fit
  * one line per group in a single pass, write the coefficient table.
  *
  * Written in the style of the author's 2011 code, which is the style this
@@ -122,7 +122,7 @@ public class Linearr {
                 sb.append(SEPARATOR);
                 /* BigDecimal for the printed number, as the 2011 code used it:
                  * the published figure is a decimal, not a float someone read
-                 * off a double. It is out here, once per group -- never in the
+                 * off a double. It is out here, once per group, never in the
                  * row loop, where it would allocate per value. */
                 sb.append(BigDecimal.valueOf(beta[i]).toString());
             }

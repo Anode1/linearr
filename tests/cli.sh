@@ -198,7 +198,7 @@ if command -v make >/dev/null 2>&1; then
     # did not: `.build-flags` was a prerequisite of the %.o rule, make caches the
     # directory at startup so a file $(shell) created during parsing was invisible
     # to it, the rule was rejected as inapplicable, and make's BUILT-IN %.o rule
-    # ran instead -- without -std=c99, without -W -Wall, without -MMD. A
+    # ran instead, without -std=c99, without -W -Wall, without -MMD. A
     # deliberately uninitialised variable then compiled with zero diagnostics.
     # env -u MAKEFLAGS: run under `make check` this inherits the parent's flags,
     # including -w, so the first line of output is "Entering directory" and the

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""compare.py REF.CSV OTHER.CSV -- max relative difference between two
+"""compare.py REF.CSV OTHER.CSV: max relative difference between two
 coefficient tables. Prints the number and exits 1 if it exceeds the tolerance.
 
 This is what makes the benchmark a benchmark: a speed number nobody checked is
