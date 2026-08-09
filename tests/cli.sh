@@ -368,10 +368,18 @@ case "$("$bin" -t example/nearly-the-same.csv 2>&1)" in
     *"ill-conditioned"*) ok ;;
     *) no "piece three: near-duplicate columns are reported as ill-conditioned" ;;
 esac
-# and the numbers the README prints are the numbers it produces
-check "piece three's coefficients are what the README shows" \
-    "$("$bin" -t example/nearly-the-same.csv 2>/dev/null | tail -1)" \
-    "A,1.00000000001,2.00002262993,2.99997737008"
+# NOT an exact comparison. This fit is the ill-conditioned one, and its trailing
+# digits are the noise the section is about: Linux returns 2.00002262993 where
+# macOS returns 2.00015811817, from the same source, because the two libms round
+# differently and the design amplifies that. Asserting the digits would be
+# asserting the opposite of what the example teaches. What must hold is that the
+# answer is close to 2 and 3, and NOT close enough to be trusted at full width.
+check "piece three lands near the truth but not on it" \
+    "$("$bin" -t example/nearly-the-same.csv 2>/dev/null | tail -1 | awk -F, '
+        { near = ($3 > 1.999 && $3 < 2.001 && $4 > 2.999 && $4 < 3.001)
+          exact = ($3 > 1.999999 && $3 < 2.000001)
+          print (near && !exact) ? "near but not exact" : "unexpected: " $3 " " $4 }')" \
+    "near but not exact"
 
 # --- residuals: where the model is wrong ------------------------------------
 printf 'group,value,x\nA,26,-4\nA,19,-3\nA,14,-2\nA,11,-1\nA,10,0\nA,11,1\nA,14,2\nA,19,3\nA,26,4\n' \

@@ -68,7 +68,10 @@ differ in the sixth decimal, asked for `1 + 2*x1 + 3*x2`:
     A,1.00000000001,2.00002262993,2.99997737008
 
 It returns 2.00002262993 and 2.99997737008 where the true values are 2 and 3,
-a loss of about five significant digits, and it reports the fact. A method that does not
+a loss of about five significant digits, and it reports the fact. Those trailing
+digits are not reproducible across platforms either: the same source on macOS
+returns 2.00015811817, because the two maths libraries round differently and
+this design amplifies the difference. That is what an ill-conditioned fit is. A method that does not
 form the cross-products first, such as QR or SVD, would separate the two
 columns. R2 does not detect this: an ill-conditioned fit still describes its own
 training sample closely, so its in-sample error stays small while its
