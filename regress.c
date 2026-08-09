@@ -208,6 +208,8 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
         /* SSE from centered quantities: the residual is orthogonal to the
          * fitted columns, so SSE = Cyy - b'Cxy exactly, with no cancellation
          * against a mean that was never subtracted. */
+        fit->rss = -1.0;
+        fit->sigma = -1.0;
         if (r->cyy > 0.0) {
             double sse = r->cyy;
             for (i = 0; i < p; i++) sse -= beta[i + 1] * r->cxy[i];
@@ -225,6 +227,11 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
                 if (sse < 0.0) sse = 0.0;
                 fit->r2 = 1.0 - sse / r->cyy;
                 if (fit->r2 < 0.0) fit->r2 = 0.0;
+                fit->rss = sse;
+                /* Divided by the residual freedom, not by n: with df at zero
+                 * the line passes through every point and there is no spread
+                 * left to estimate. */
+                if (fit->df > 0) fit->sigma = sqrt(sse / (double)fit->df);
             }
         } else {
             fit->r2 = -1.0;               /* the response never varies */

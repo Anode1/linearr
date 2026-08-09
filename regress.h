@@ -92,6 +92,14 @@ struct regress_fit {
     double r2;          /* -1 when it is not defined (a response that never
                            varies) or not computable to useful precision     */
     unsigned char term[REGRESS_MAX_VARS];  /* enum regress_term, per slope */
+    double rss;         /* residual sum of squares                           */
+    double sigma;       /* residual standard deviation, sqrt(rss/df): the
+                           typical distance between a prediction and the
+                           truth, in the response's own units. R^2 says how
+                           much of the variance was explained, which is a
+                           ratio and tells a user consuming a prediction
+                           nothing about how wrong it will be. This does.
+                           -1 when there is no residual freedom to divide by. */
     double condition;   /* ratio of largest to smallest accepted pivot on the
                            equilibrated matrix: a conditioning proxy. 1.0 is
                            perfect. Past ~1e8 the later digits of the

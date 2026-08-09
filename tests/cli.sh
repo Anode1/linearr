@@ -373,5 +373,25 @@ check "piece three's coefficients are what the README shows" \
     "$("$bin" -t example/nearly-the-same.csv 2>/dev/null | tail -1)" \
     "A,1.0000000000062395,2.0000226299291737,2.999977370075073"
 
+# --- residuals: where the model is wrong ------------------------------------
+printf 'GROUP,VALUE,x\nA,26,-4\nA,19,-3\nA,14,-2\nA,11,-1\nA,10,0\nA,11,1\nA,14,2\nA,19,3\nA,26,4\n' \
+    > "$tmp/curve.csv"
+"$bin" -t "$tmp/curve.csv" --residuals "$tmp/r.csv" >/dev/null 2>&1
+check "a residual file has a row per training row, plus a header" \
+    "$(wc -l < "$tmp/r.csv" | tr -d ' ')" "10"
+check "and names its columns" "$(head -1 "$tmp/r.csv")" "GROUP,observed,predicted,residual"
+# The residuals must be real numbers from the fitted line. They were once read
+# from uninitialised xmalloc memory and came out around 1e161.
+check "the residuals are the observed minus the predicted" \
+    "$(awk -F, 'NR==2{printf "%.6f", $2-$3-$4}' "$tmp/r.csv")" "0.000000"
+case "$(awk -F, 'NR==2{print ($4>0 && $4<100) ? "sane" : "WILD " $4}' "$tmp/r.csv")" in
+    sane) ok ;; *) no "residuals are of a plausible size" ;;
+esac
+# --residuals needs -t, and covers every group
+set +e
+"$bin" --residuals "$tmp/x.csv" 001 icu_indicator=1 >/dev/null 2>&1; rc=$?
+set -e
+check "--residuals without -t is an error" "$rc" "1"
+
 echo "cliut: $pass passed, $fail failed, $skip skipped"
 [ "$fail" -eq 0 ]

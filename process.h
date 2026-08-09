@@ -64,6 +64,9 @@ struct fit_info {
                            and r2 is 1 no matter what the data says.       */
     double r2;          /* coefficient of determination, -1 when undefined
                            or not computable to useful precision           */
+    double sigma;       /* residual standard deviation: how far a prediction
+                           typically lands from the truth, in the response's
+                           units. -1 when there is no residual freedom.     */
     double condition;   /* conditioning proxy: the ratio of the largest to
                            the smallest pivot the fit accepted. Past ~1e8
                            the trailing digits of the coefficients are
@@ -99,10 +102,25 @@ struct fit_summary {
     long   groups;      /* groups fitted                                  */
     long   rows;        /* training rows used                             */
     long   min_df;      /* the least residual freedom any group had       */
+    double max_sigma;   /* the worst group's residual standard deviation  */
     double max_condition;  /* the worst-conditioned group                 */
     int    pinned;      /* total terms pinned across all groups           */
 };
 int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum);
+
+/* Fit, then write one residual per training row to `resid`: what the row said,
+ * what the line predicts, and the difference. The coefficients say what the
+ * model believes; the residuals are where it is wrong, and that is where the
+ * shape of the error shows -- a curve the line cannot follow, a group whose
+ * spread grows with its prediction, the one row that is not like the others.
+ * No summary statistic shows those; R2 and the residual SD both average them
+ * away.
+ *
+ * It costs a SECOND PASS over the training file, not a copy of it in memory:
+ * the fit forgets each row as it goes, so the rows have to be read again to be
+ * subtracted from. Memory stays a function of the model. */
+int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
+                            struct fit_summary *sum);
 
 /* Release what scoring loaded. Idempotent. */
 void process_free(void);

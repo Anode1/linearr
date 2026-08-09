@@ -72,6 +72,57 @@ apart. R2 cannot see this at all: a badly conditioned fit describes its own
 training data beautifully and predicts nothing. The `cond=` number is what
 tells you, and past 1e8 it warns.
 
+## The three files, and what a group is
+
+**A group is one fitted line.** Rows sharing a group code are fitted together and
+get their own coefficients; a different code gets different ones. It is whatever
+you would otherwise run a separate regression for -- a ward, a route, a machine,
+a region. One group and you have plain least squares.
+
+Every file puts the group first and the terms last, in the same order. Only the
+middle differs:
+
+| file | column 1 | column 2 | columns 3.. |
+| --- | --- | --- | --- |
+| training (`-t`) | group | **the goal** -- what you are predicting | one per term |
+| coefficients (`-c`) | group | the intercept | one per term |
+| a case | group | *(none)* | one per term |
+| residuals (`--residuals`) | group | observed | predicted, residual |
+
+So a training header of `GROUP,MINUTES,km,stops` says: predict `MINUTES` from
+`km` and `stops`, separately for each group. The names are yours -- the program
+reads position, not the word -- but the ORDER is fixed, and the goal is the
+second column, not the first.
+
+## Where the model is wrong
+
+The coefficients say what the model believes. The residuals say where it is
+wrong, and that is the part a summary number cannot show you. Fit a parabola
+with a straight line and every statistic looks survivable:
+
+    $ ./linearr -t curve.csv --residuals r.csv
+    fit: 1 group, 9 rows, least df=7, worst resid SD=6.633
+
+    $ cat r.csv
+    GROUP,observed,predicted,residual
+    A,26,16.666666666666668,9.3333333333333321
+    A,19,16.666666666666668,2.3333333333333321
+    A,14,16.666666666666668,-2.6666666666666679
+    A,11,16.666666666666668,-5.6666666666666679
+    A,10,16.666666666666668,-6.6666666666666679
+    A,11,16.666666666666668,-5.6666666666666679
+    A,14,16.666666666666668,-2.6666666666666679
+    A,19,16.666666666666668,2.3333333333333321
+    A,26,16.666666666666668,9.3333333333333321
+
+Plus, minus, minus, minus, plus. That is a curve, not scatter, and it says the
+model has the wrong shape -- which no R2, no residual SD and no conditioning
+number will ever tell you, because each of them averages exactly this away.
+
+It costs a second pass over the training file rather than a copy of it in
+memory: the fit forgets each row as it reads it, so the rows have to be read
+again to be subtracted from. Memory stays a function of the model.
+
 ## Where this is the right tool, and where it is not
 
 **It fits well when:**
@@ -95,8 +146,10 @@ tells you, and past 1e8 it warns.
 **Reach for something else when:** you need regularization (ridge, lasso,
 elastic net), categorical encoding, missing-value handling, cross-validation,
 weighted least squares, or inference: standard errors, confidence intervals,
-prediction intervals, p-values. None of that is here, and neither is the
-residual standard error a prediction consumer usually wants next. The worked
+prediction intervals, p-values. None of that is here. The residual standard
+deviation IS -- `resid SD=` in the fit summary, the typical distance between a
+prediction and the truth in the response's own units, which is the number a
+consumer of a prediction actually needs and which R2 cannot give. The worked
 example is also a modelling choice worth naming: length of stay is a skewed,
 non-negative, count-like response, and unweighted OLS on raw days is not the
 standard treatment for it (a log transform or a Gamma GLM is). Nothing stops

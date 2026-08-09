@@ -45,6 +45,12 @@ public final class Regress {
         public int      pinned;
         public long     df;
         public double   r2;          /* -1 when undefined or not computable */
+        public double   rss;         /* residual sum of squares             */
+        public double   sigma;       /* residual SD, sqrt(rss/df): how far a
+                                        prediction typically lands from the
+                                        truth, in the response's own units.
+                                        R2 is a ratio and says nothing about
+                                        that. -1 with no residual freedom.  */
         public double   condition;   /* largest/smallest accepted pivot     */
         public int[]    term;        /* FITTED / CONSTANT / COLLINEAR       */
     }
@@ -159,6 +165,8 @@ public final class Regress {
             fit.pinned = p - rank;
             fit.df = n - rank - 1;
             fit.condition = (pivmin > 0.0) ? pivmax / pivmin : 1.0;
+            fit.rss = -1.0;
+            fit.sigma = -1.0;
             if (cyy > 0.0) {
                 double sse = cyy;
                 for (int i = 0; i < p; i++) sse -= beta[i + 1] * cxy[i];
@@ -170,6 +178,8 @@ public final class Regress {
                     if (sse < 0.0) sse = 0.0;
                     fit.r2 = 1.0 - sse / cyy;
                     if (fit.r2 < 0.0) fit.r2 = 0.0;
+                    fit.rss = sse;
+                    if (fit.df > 0) fit.sigma = Math.sqrt(sse / (double) fit.df);
                 }
             } else {
                 fit.r2 = -1.0;                   /* the response never varies */

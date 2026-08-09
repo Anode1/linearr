@@ -446,6 +446,7 @@ int process_train(const char *csv_path, const char *group,
         info->pinned    = pinned;
         info->df        = f.df;
         info->r2        = f.r2;
+        info->sigma     = f.sigma;
         info->condition = f.condition;
     }
     rc = 0;
@@ -460,7 +461,8 @@ struct group_fit {
     struct group_fit *next;
     char   group[GROUP_MAX];
     struct regress r;
-    double storage[1];              /* really regress_storage(nvars) doubles */
+    double *beta;                   /* points into storage, after the fitter's */
+    double storage[1];              /* regress_storage(nvars) + nvars + 1      */
 };
 
 static void group_fits_free(struct group_fit *head) {
@@ -472,6 +474,11 @@ static void group_fits_free(struct group_fit *head) {
 }
 
 int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum) {
+    return process_train_residuals(csv_path, out, NULL, sum);
+}
+
+int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
+                            struct fit_summary *sum) {
     struct group_fit *head = NULL, *tail = NULL, *g;
     struct hash      *index = NULL;
     struct los_case   c;
@@ -484,7 +491,7 @@ int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum) 
 
     if (sum) {
         sum->groups = 0; sum->rows = 0; sum->min_df = 0;
-        sum->max_condition = 1.0; sum->pinned = 0;
+        sum->max_condition = 1.0; sum->pinned = 0; sum->max_sigma = -1.0;
     }
 
     if (open_training(csv_path, &fp, &nvars) != 0) goto cleanup;
@@ -505,8 +512,9 @@ int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum) 
         }
         g = hash_get(index, c.group);
         if (!g) {
-            g = xmalloc(sizeof *g + (need > 0 ? need - 1 : 0) * sizeof(double));
+            g = xmalloc(sizeof *g + (need + (size_t)nvars) * sizeof(double));
             g->next = NULL;
+            g->beta = g->storage + need;     /* nvars+1 doubles, after the fitter */
             memcpy(g->group, c.group, sizeof g->group);
             if (regress_init(&g->r, nvars, g->storage) != 0) {
                 free(g);
@@ -545,6 +553,15 @@ int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum) 
             fail("cannot fit group '%s': the result is not a finite line", g->group);
             goto cleanup;
         }
+        /* Keep this group's line. The residual pass needs it after every group
+         * has been solved, and fit_beta is one shared buffer the next group
+         * overwrites. Without this the residual pass read whatever xmalloc had
+         * left in the block and printed predictions around 1e161 -- the one
+         * good thing about uninitialised memory being that it is obviously
+         * wrong rather than plausibly wrong. */
+        {   int b;
+            for (b = 0; b <= nvars; b++) g->beta[b] = fit_beta[b];
+        }
         model_from_beta(&fitted, nvars);
 
         if (los_format_model(g->group, &fitted, row, sizeof row) != 0) {
@@ -561,10 +578,40 @@ int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum) 
             sum->pinned += f.pinned;
             if (sum->groups == 0 || f.df < sum->min_df) sum->min_df = f.df;
             if (f.condition > sum->max_condition) sum->max_condition = f.condition;
+            if (f.sigma > sum->max_sigma) sum->max_sigma = f.sigma;
             sum->groups++;
         }
     }
     if (sum) sum->rows = rows;
+
+    /* The second pass. Re-read rather than remember: holding the rows would
+     * make the footprint a function of the data, which is the one thing this
+     * program does not do. */
+    if (resid) {
+        FILE *again;
+        char  path[RESOLVE_PATH_MAX];
+        int   k;
+
+        if (resolve_file(csv_path, path, sizeof path) != 0 ||
+            (again = fopen(path, "r")) == NULL) {
+            fail("cannot re-read %s for the residuals", csv_path);
+            goto cleanup;
+        }
+        fprintf(resid, "GROUP,observed,predicted,residual\n");
+        while ((n = csv_next(again, line, sizeof line)) == 2)
+            ;                                    /* skip to past the header */
+        while ((n = csv_next(again, line, sizeof line)) > 0) {
+            double los, yhat;
+            if (n == 2) continue;
+            if (los_parse_training(line, &c, &los) != 0) continue;
+            g = hash_get(index, c.group);
+            if (!g) continue;
+            yhat = g->beta[0];
+            for (k = 0; k < nvars; k++) yhat += g->beta[k + 1] * c.x[k];
+            fprintf(resid, "%s,%.17g,%.17g,%.17g\n", c.group, los, yhat, los - yhat);
+        }
+        fclose(again);
+    }
     rc = 0;
 cleanup:
     if (fp) fclose(fp);

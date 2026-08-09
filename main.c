@@ -37,6 +37,9 @@ static void usage(FILE *out, const char *prog) {
         "  -g G   fit only group G, or '*' to pool every row into one line.\n"
         "         Without -g, every group in the file is fitted, one line each\n"
         "  -c F   read the coefficient table from F instead of system.properties\n"
+        "  --residuals F   with -t, also write one row per training row to F:\n"
+        "         GROUP,observed,predicted,residual. Where the model is wrong,\n"
+        "         which no summary number can show you\n"
         "  --trim F / --no-trim   the trim table, or none\n"
         "  --terms  what the loaded coefficient file expects, in order\n"
         "  -d     debug tracing to stderr\n"
@@ -91,10 +94,16 @@ static void print_terms(void) {
  * line per group" is what the model IS: the old default pooled every row into a
  * single line labelled '*', and getting a real table meant one invocation and
  * one full re-read of the training file per group. */
-static int train_all(const char *path) {
+static int train_all(const char *path, const char *resid_file) {
     struct fit_summary sum;
+    FILE *resid = NULL;
 
-    if (process_train_all(path, stdout, &sum) != 0) {
+    if (resid_file) {
+        resid = fopen(resid_file, "w");
+        if (!resid) die("cannot write %s: %s", resid_file, strerror(errno));
+    }
+    if (process_train_residuals(path, stdout, resid, &sum) != 0) {
+        if (resid) fclose(resid);
         (void)fprintf(stderr, "cannot fit: %s\n", process_error());
         return -1;
     }
@@ -103,6 +112,7 @@ static int train_all(const char *path) {
     if (sum.pinned > 0)
         fprintf(stderr, ", %d term-slot%s pinned to 0", sum.pinned, s_(sum.pinned));
     (void)fprintf(stderr, ", least df=%ld", sum.min_df);
+    if (sum.max_sigma >= 0.0) fprintf(stderr, ", worst resid SD=%.4g", sum.max_sigma);
     if (sum.max_condition > 1.0) fprintf(stderr, ", worst cond=%.3g", sum.max_condition);
     (void)fprintf(stderr, "\n");
     if (sum.min_df <= 0)
@@ -127,6 +137,7 @@ static int train(const char *path, const char *group) {
     (void)printf("%s\n", out);
     (void)fprintf(stderr, "fit: %ld row%s", info.rows, s_(info.rows));
     if (info.r2 >= 0.0) fprintf(stderr, ", R2=%.4f", info.r2);
+    if (info.sigma >= 0.0) fprintf(stderr, ", resid SD=%.4g", info.sigma);
     if (info.pinned > 0)
         (void)fprintf(stderr, ", %d term%s unidentified and set to 0",
                 info.pinned, s_(info.pinned));
@@ -167,12 +178,14 @@ int main(int argc, char **argv) {
         { "version", no_argument,       NULL, 'V' },
         { "coef",    required_argument, NULL, 'c' },
         { "trim",    required_argument, NULL, 'R' },
-        { "no-trim", no_argument,       NULL, 'N' },
+        { "no-trim",   no_argument,       NULL, 'N' },
+        { "residuals", required_argument, NULL, 'E' },
         { "help",    no_argument,       NULL, 'h' },
         { NULL, 0, NULL, 0 }
     };
     const char *train_file = NULL;
     const char *group = NULL;
+    const char *resid_file = NULL;
     char line[MAX_INPUT];
     int c, bad = 0, want_terms = 0;
 
@@ -187,6 +200,7 @@ int main(int argc, char **argv) {
             case 'c': process_use_coef(optarg); break;
             case 'R': process_use_trim(optarg); break;
             case 'N': process_use_trim(NULL); break;
+            case 'E': resid_file = optarg; break;
             case 'V': printf("linearr %s\nGNU GPL v2 or later; no warranty.\n",
                              LINEARR_VERSION); return 0;
             case 'h': usage(stdout, argv[0]); return 0;
@@ -203,6 +217,10 @@ int main(int argc, char **argv) {
      * happened. Each of these used to be accepted and dropped. */
     if (group && !train_file)
         die("-g names a group to fit, so it needs -t TRAIN.CSV");
+    if (resid_file && !train_file)
+        die("--residuals writes one row per TRAINING row, so it needs -t");
+    if (resid_file && group)
+        die("--residuals covers every group; use it without -g");
     if (want_terms && train_file)
         die("--terms lists the loaded model; it cannot be combined with -t");
 
@@ -210,7 +228,8 @@ int main(int argc, char **argv) {
         need_model();
         print_terms();
     } else if (train_file) {
-        bad = (group ? train(train_file, group) : train_all(train_file)) != 0;
+        bad = (group ? train(train_file, group)
+                     : train_all(train_file, resid_file)) != 0;
     } else if (optind < argc) {
         need_model();
         /* A comma in the first argument means the row form, and then every

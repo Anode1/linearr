@@ -182,6 +182,35 @@ static void test_regress(void) {
     CHECK(fabs(t_beta[1] - 2.0) < 0.1, "regress: slope through noisy points");
     CHECK(f.r2 < 1.0 && f.r2 > 0.99, "regress: R2 below 1 once points are not collinear");
 
+    /* The residual SD is the number a prediction consumer needs and R2 cannot
+     * give: how far a prediction typically lands from the truth, in the
+     * response's own units. Built from noise of SD 2, it must come back near 2
+     * -- and R2 near 1 at the same time, which is the point: a high R2 and a
+     * large error are not contradictory. */
+    {
+        int i;
+        regress_init(&r, 1, t_store);
+        for (i = 0; i < 400; i++) {
+            double noise = ((i * 37) % 11 - 5) * 0.606;   /* SD ~= 2, no RNG */
+            x[0] = (double)i;
+            regress_add(&r, x, 5.0 + 3.0 * x[0] + noise);
+        }
+        regress_solve(&r, t_beta, t_scratch, &f);
+        CHECK(f.sigma > 1.5 && f.sigma < 2.5, "residual SD: recovers the noise level");
+        CHECK(f.r2 > 0.999, "residual SD: and R2 is near 1 at the same time");
+        CHECK(f.rss > 0.0, "residual SD: the residual sum of squares is reported");
+        CHECK(fabs(f.sigma - sqrt(f.rss / (double)f.df)) < 1e-12,
+              "residual SD: is sqrt(rss/df), divided by the freedom not by n");
+    }
+    {   /* with no freedom left there is no spread to estimate */
+        regress_init(&r, 1, t_store);
+        x[0] = 0; regress_add(&r, x, 1.0);
+        x[0] = 1; regress_add(&r, x, 2.0);
+        regress_solve(&r, t_beta, t_scratch, &f);
+        CHECK(f.df == 0, "residual SD: df is zero here");
+        CHECK(f.sigma < 0.0, "residual SD: and it is not reported");
+    }
+
     /* THE UNITS TEST. y = 1 + 2e-6*big + 5*flag. The two columns differ by six
      * orders of magnitude, so their X'X diagonals differ by twelve, and the
      * old absolute rank tolerance deleted the indicator for being small,
