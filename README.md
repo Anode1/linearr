@@ -324,6 +324,9 @@ names the terms:
     $ ./linearr -c model.csv --no-trim A km=10 stops=3
     A prediction=34.5000 trim=34.5
 
+Those three columns were the whole schema; it ships as
+`example/simple-train.csv` if you want to run it as it stands.
+
 `-t` fits **every group in the file**, one line each, in a single pass. Standard
 output is a complete coefficient file and standard error is the commentary, so
 the redirect above is the whole workflow.
@@ -367,23 +370,6 @@ When something is wrong, the message says what:
     cannot score group '001': no term 'nosuchterm' in conf/coefficients.csv; run --terms to list them
 
 `./linearr -h` prints the options; `-d` traces to stderr.
-
-## The terms are yours
-
-`example/simple-train.csv` is the same program with a schema nobody wrote any
-code for: minutes on the road, from distance and stops:
-
-    GROUP,MINUTES,km,stops
-    A,5.0,0,0
-    A,30.0,10,0
-    ...
-
-    $ ./linearr -t example/simple-train.csv -g A
-    fit: 7 rows, R2=1.0000, df=4, cond=1
-    GROUP,Intercept,km,stops
-    A,4.999999999999999,2.5,1.4999999999999998
-
-Two terms instead of twenty-four, and the only thing that changed was the file.
 
 ## Configuration
 
