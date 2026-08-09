@@ -31,7 +31,7 @@ static void usage(FILE *out, const char *prog) {
         "                         coefficient file's column order; this is the\n"
         "                         form read from stdin, so a scored file round\n"
         "                         trips through a pipeline\n"
-        "  -t F   fit from training file F, whose rows are GROUP,VALUE,x1..xp\n"
+        "  -t F   fit from training file F, whose rows are group,value,x1..xp\n"
         "         and whose header names the terms. A complete coefficient file\n"
         "         goes to stdout, the fit summary to stderr\n"
         "  -g G   fit only group G, or '*' to pool every row into one line.\n"

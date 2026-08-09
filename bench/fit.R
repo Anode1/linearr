@@ -14,11 +14,11 @@ terms <- names(d)[3:ncol(d)]
 resp  <- names(d)[2]
 grp   <- names(d)[1]
 
-cat(paste0("GROUP,Intercept,", paste(terms, collapse = ",")), "\n", sep = "")
+cat(paste0("group,intercept,", paste(terms, collapse = ",")), "\n", sep = "")
 for (g in unique(d[[grp]])) {
   sub <- d[d[[grp]] == g, , drop = FALSE]
   f   <- as.formula(paste0("`", resp, "` ~ ", paste0("`", terms, "`", collapse = " + ")))
   co  <- coef(lm(f, data = sub))
   co[is.na(co)] <- 0          # lm() reports an aliased term as NA; we write 0
-  cat(g, ",", paste(sprintf("%.17g", co), collapse = ","), "\n", sep = "")
+  cat(g, ",", paste(sprintf("%.12g", co), collapse = ","), "\n", sep = "")
 }

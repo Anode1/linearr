@@ -29,7 +29,7 @@ int process_init(char *err, size_t errsz);
 void process_use_coef(const char *path);
 void process_use_trim(const char *path);
 
-/* Score one case written as a row: "GROUP,x1,...,xp", one value per term in the
+/* Score one case written as a row: "group,x1,...,xp", one value per term in the
  * coefficient file's column order. Returns 0, or -1; process_error() then
  * says why. */
 int process(const char *input, char *out, size_t outsz);
@@ -75,7 +75,7 @@ struct fit_info {
                            beautifully.                                    */
 };
 
-/* Fit one group's line from a training CSV of "GROUP,VALUE,<terms>" rows, whose
+/* Fit one group's line from a training CSV of "group,value,<terms>" rows, whose
  * header names the terms. group selects the rows; "*" pools every row in the
  * file under that name. Writes a complete two-line coefficient file into out:
  * the header, a newline, then the fitted row, so

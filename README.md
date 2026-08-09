@@ -28,8 +28,8 @@ split fits equally well, so there is no answer to find:
 
     $ ./linearr -t example/together.csv
     fit: 1 group, 5 rows, 1 term-slot pinned to 0, least df=3
-    GROUP,Intercept,icu,vent
-    A,6.000000000000001,8,0
+    group,intercept,icu,vent
+    A,6,8,0
     # pinned A: collinear vent
 
 All 8 is assigned to the first column and the second is set to 0, with a note
@@ -46,8 +46,8 @@ numbers whatsoever, so a perfect fit tells you nothing:
     fit: 1 group, 3 rows, least df=0, worst cond=1.33
     warning: at least one group has no residual degrees of freedom; its line
     passes through every row by construction. Fit those groups on more rows.
-    GROUP,Intercept,a,b
-    A,1.0000000000000007,2.999999999999999,5.999999999999998
+    group,intercept,a,b
+    A,1,3,6
 
 *Degrees of freedom* is rows minus unknowns, and it is the amount of
 disagreement the fit had to accommodate. At zero there is none, so the quality
@@ -61,14 +61,14 @@ squaring roughly halves the significant digits available. With two columns that
 differ in the sixth decimal, asked for `1 + 2*x1 + 3*x2`:
 
     $ ./linearr -t example/nearly-the-same.csv
-    fit: 1 group, 40 rows, least df=37, worst cond=5.34e+10
+    fit: 1 group, 40 rows, least df=37, worst resid SD=0, worst cond=5.34e+10
     warning: at least one group is ill-conditioned (cond=5.34e+10); the trailing
     digits of its coefficients are noise.
-    GROUP,Intercept,x1,x2
-    A,1.0000000000062395,2.0000226299291737,2.999977370075073
+    group,intercept,x1,x2
+    A,1.00000000001,2.00002262993,2.99997737008
 
-It returns 2.00002 and 2.99998 where the true values are 2 and 3, a loss of
-about five significant digits, and it reports the fact. A method that does not
+It returns 2.00002262993 and 2.99997737008 where the true values are 2 and 3,
+a loss of about five significant digits, and it reports the fact. A method that does not
 form the cross-products first, such as QR or SVD, would separate the two
 columns. R2 does not detect this: an ill-conditioned fit still describes its own
 training sample closely, so its in-sample error stays small while its
@@ -92,7 +92,7 @@ middle differs:
 | a case | group | *(none)* | one per term |
 | residuals (`--residuals`) | group | observed | predicted, residual |
 
-So a training header of `GROUP,MINUTES,km,stops` says: predict `MINUTES` from
+So a training header of `group,minutes,km,stops` says: predict `minutes` from
 `km` and `stops`, separately for each group. The names are yours (the program
 reads position, not the word), but the ORDER is fixed, and the goal is the
 second column, not the first.
@@ -107,16 +107,16 @@ produces summary statistics that give no sign of the problem:
     fit: 1 group, 9 rows, least df=7, worst resid SD=6.633
 
     $ cat r.csv
-    GROUP,observed,predicted,residual
-    A,26,16.666666666666668,9.3333333333333321
-    A,19,16.666666666666668,2.3333333333333321
-    A,14,16.666666666666668,-2.6666666666666679
-    A,11,16.666666666666668,-5.6666666666666679
-    A,10,16.666666666666668,-6.6666666666666679
-    A,11,16.666666666666668,-5.6666666666666679
-    A,14,16.666666666666668,-2.6666666666666679
-    A,19,16.666666666666668,2.3333333333333321
-    A,26,16.666666666666668,9.3333333333333321
+    group,observed,predicted,residual
+    A,26,16.6666666667,9.33333333333
+    A,19,16.6666666667,2.33333333333
+    A,14,16.6666666667,-2.66666666667
+    A,11,16.6666666667,-5.66666666667
+    A,10,16.6666666667,-6.66666666667
+    A,11,16.6666666667,-5.66666666667
+    A,14,16.6666666667,-2.66666666667
+    A,19,16.6666666667,2.33333333333
+    A,26,16.6666666667,9.33333333333
 
 The residuals are positive at both ends and negative in the middle. That is a
 systematic pattern rather than scatter, and it indicates the model has the wrong
@@ -244,16 +244,17 @@ Ten times the data, the same memory. Time scales with the number of rows.
 
 Read the file, fit a line per group, write the table. `scripts/bench.sh` checks
 each one's coefficients against linearr's before timing it; an unchecked speed
-number may be timing a different answer. All agree: one answer, different prices.
+number may be timing a different answer. All agree to the printed digit: one
+answer, different prices.
 
     $ sh scripts/bench.sh 8 50 500000        # 8 terms, 50 groups, 500k rows
 
     implementation   shape        time     peak RSS   check
-    linearr (C)      streaming    0.10s    2432 KB    agrees to 0
-    Java             streaming    0.26s    105700 KB  agrees to 0
-    Python           streaming    2.42s    10240 KB   agrees to 1.2e-13
-    awk              streaming    10.55s   5632 KB    agrees to 1.2e-13
-    Python           frame        3.01s    315904 KB  agrees to 1.2e-13
+    linearr (C)      streaming    0.11s    2432 KB    agrees to 0
+    Java             streaming    0.28s    105612 KB  agrees to 0
+    Python           streaming    2.37s    10240 KB   agrees to 0
+    awk              streaming    10.47s   5632 KB    agrees to 0
+    Python           frame        3.01s    315904 KB  agrees to 0
 
 All but the last read the file one row at a time, which each of these languages
 permits. Writing the C as a stream and the Python with pandas would compare two
@@ -266,8 +267,8 @@ The JVM's number is mostly the JVM. Capping its heap separates the runtime's
 appetite from what the algorithm needs: 500,000 rows fit in a 16 MB heap at
 the same speed:
 
-    -Xmx16m   0.27s  61772 KB
-    -Xmx64m   0.27s  88564 KB
+    -Xmx16m   0.26s  61976 KB
+    -Xmx64m   0.27s  89644 KB
 
 `bench/fit.R` is the ecosystem case, and it says so in its own header: `read.csv`
 materialises the frame because that is R's idiom. It SKIPs unless R is
@@ -280,7 +281,7 @@ installed.
 and one reused record rather than one object per row. `Regress.java` follows
 `regress.c` closely enough to be read beside it: the same centered accumulation,
 the same equilibrated rank test, the intercept recovered from the means. The two
-produce identical coefficients, not merely close ones.
+produce identical coefficient files.
 
     cd java && ant jar          # or: javac -nowarn *.java
     java Linearr ../example/train.csv
@@ -306,11 +307,11 @@ not.
     make clean
 
 Fit a model from your own data and score against it, with no configuration file
-anywhere. A training row is `GROUP,VALUE,<one column per term>`, and the header
+anywhere. A training row is `group,value,<one column per term>`, and the header
 names the terms:
 
     $ cat mine.csv
-    GROUP,MINUTES,km,stops
+    group,minutes,km,stops
     A,5.0,0,0
     A,30.0,10,0
     A,9.5,0,3
@@ -323,8 +324,8 @@ names the terms:
     fit: 1 group, 7 rows, least df=4, worst cond=1
 
     $ cat model.csv
-    GROUP,Intercept,km,stops
-    A,4.999999999999999,2.5,1.4999999999999998
+    group,intercept,km,stops
+    A,5,2.5,1.5
 
     $ ./linearr -c model.csv --no-trim A km=10 stops=3
     A prediction=34.5000 trim=34.5
@@ -383,8 +384,8 @@ default, so the file may be absent.
 
 | key | default | meaning |
 | --- | --- | --- |
-| `coef.file` | `conf/coefficients.csv` | the fitted model: `GROUP,Intercept,<one column per term>`. `-c` overrides it |
-| `trim.file` | `conf/trim_additions.csv` | `GROUP,trim_addition`. Set it empty, or pass `--no-trim`, for none |
+| `coef.file` | `conf/coefficients.csv` | the fitted model: `group,intercept,<one column per term>`. `-c` overrides it |
+| `trim.file` | `conf/trim_additions.csv` | `group,trim_addition`. Set it empty, or pass `--no-trim`, for none |
 | `predict.scale` | 4 | digits the prediction is rounded to |
 | `trim.scale` | 1 | digits the trim point is rounded to |
 
@@ -392,9 +393,10 @@ With no trim table the trim point simply equals the prediction; it is not a
 separate quantity that failed to load. A trim file *named* in the config and
 unreadable is an error; the built-in default merely being absent is not.
 
-**Coefficients are written at full precision**, in the shortest form that reads
-back as the same double, so `A,5,2.5,1.5` and `A,4.9999999999999991,...` are
-both exactly what was fitted. `predict.scale` governs the prediction, not the
+**Coefficients are written to 12 significant digits**, so an exact 5 prints as
+`5`. That is far below the residual standard deviation of any fit that produced
+them, and it is significant digits rather than decimal places: four decimals
+would write every coefficient below 5e-5 as `0.0000`. `predict.scale` governs the prediction, not the
 model: rounding coefficients to four decimals would write any effect below 5e-5
 as zero and publish a different model from the one that was fitted.
 

@@ -48,7 +48,7 @@ run() {                                    # run CMD..., echo "seconds rss_kb"
 gen_train() {                              # gen_train FILE ROWS
     awk -v terms="$TERMS" -v rows="$2" -v seed=7 'BEGIN {
         srand(seed)
-        printf "GROUP,LOS"
+        printf "group,value"
         for (j = 1; j <= terms; j++) printf ",term_%d", j
         printf "\n"
         for (j = 1; j <= terms; j++) b[j] = int(rand() * 2000) / 100
@@ -67,7 +67,7 @@ gen_train() {                              # gen_train FILE ROWS
 gen_table() {                              # gen_table FILE  (GROUPS groups wide)
     awk -v terms="$TERMS" -v groups="$GROUPS" -v seed=11 'BEGIN {
         srand(seed)
-        printf "GROUP,Intercept"
+        printf "group,intercept"
         for (j = 1; j <= terms; j++) printf ",term_%d", j
         printf "\n"
         for (g = 1; g <= groups; g++) {

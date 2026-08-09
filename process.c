@@ -597,7 +597,7 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
             fail("cannot re-read %s for the residuals", csv_path);
             goto cleanup;
         }
-        fprintf(resid, "GROUP,observed,predicted,residual\n");
+        fprintf(resid, "group,observed,predicted,residual\n");
         while ((n = csv_next(again, line, sizeof line)) == 2)
             ;                                    /* skip to past the header */
         while ((n = csv_next(again, line, sizeof line)) > 0) {
@@ -608,7 +608,7 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
             if (!g) continue;
             yhat = g->beta[0];
             for (k = 0; k < nvars; k++) yhat += g->beta[k + 1] * c.x[k];
-            fprintf(resid, "%s,%.17g,%.17g,%.17g\n", c.group, los, yhat, los - yhat);
+            fprintf(resid, "%s,%.12g,%.12g,%.12g\n", c.group, los, yhat, los - yhat);
         }
         fclose(again);
     }

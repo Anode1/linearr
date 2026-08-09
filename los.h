@@ -63,12 +63,12 @@ long        los_ngroups(void);
 /* the tables */
 
 /* Load the coefficient table. Its header is
- *   GROUP,Intercept,<one column per term>
+ *   group,intercept,<one column per term>
  * and its term columns BECOME the schema. Returns 0, or -1 if the file will not
  * open or a row is malformed. Calling it again replaces the table and schema. */
 int los_load(const char *coef_path);
 
-/* Load GROUP,trim_addition rows onto the table already loaded, so a caller that
+/* Load group,trim_addition rows onto the table already loaded, so a caller that
  * has no trim table, or does not want one, simply does not call this and every
  * trim addition stays 0. Returns 0, or -1 if there is no table yet, the file
  * will not open, or a row is malformed. A group in this file that the
@@ -87,18 +87,18 @@ void los_free(void);
 
 /* rows */
 
-/* Parse one case, "GROUP,x1,...,xp" against the current schema. Returns 0, or
+/* Parse one case, "group,x1,...,xp" against the current schema. Returns 0, or
  * -1 on a bad group, a wrong field count, or a field that is not a number. */
 int los_parse_case(const char *line, struct los_case *c);
 
-/* Parse one training row, "GROUP,LOS,x1,...,xp": the case with the observed
+/* Parse one training row, "group,value,x1,...,xp": the case with the observed
  * length of stay in front of the terms. Returns 0 or -1, as above. */
 int los_parse_training(const char *line, struct los_case *c, double *los);
 
 /* Write the coefficient file's header line for the current schema. */
 int los_format_header(char *out, size_t outsz);
 
-/* Write a model as a coefficient row, "GROUP,intercept,b1,...,bp". Returns 0,
+/* Write a model as a coefficient row, "group,intercept,b1,...,bp". Returns 0,
  * or -1 if out is too small. */
 int los_format_model(const char *group, const struct los_model *m,
                      char *out, size_t outsz);

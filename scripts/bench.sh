@@ -39,7 +39,7 @@ if /usr/bin/time -f %M true 2>/dev/null; then rss=1; else rss=0; fi
 printf 'generating %s rows, %s groups, %s terms ... ' "$ROWS" "$GROUPS" "$TERMS"
 awk -v terms="$TERMS" -v groups="$GROUPS" -v rows="$ROWS" -v seed=5 'BEGIN {
     srand(seed)
-    printf "GROUP,VALUE"
+    printf "group,value"
     for (j = 1; j <= terms; j++) printf ",x%d", j
     printf "\n"
     for (g = 1; g <= groups; g++) {

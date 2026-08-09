@@ -1,7 +1,7 @@
-# example/together.csv: icu and vent are 1 on exactly the same rows, so the data
-# can say what the PAIR is worth and cannot say how to divide it. See the README,
-# "Least squares in three short pieces", piece one.
-GROUP,VALUE,icu,vent
+# example/together.csv: night and headlights are 1 on exactly the same rows, so
+# the data can say what the pair costs and cannot divide it between them. See
+# the README, "All of least squares, in three short pieces", piece one.
+group,minutes,night,headlights
 A,10,1,1
 A,20,1,1
 A,5,0,0

@@ -25,6 +25,9 @@ public class Linearr {
 
     static final char SEPARATOR = ',';
 
+    /** Significant digits in a published coefficient. See the C's los.c. */
+    static final java.math.MathContext COEF_DIGITS = new java.math.MathContext(12);
+
     /** One group's fit. The C calls this struct group_fit. */
     static class Group {
         String  name;
@@ -100,7 +103,7 @@ public class Linearr {
         }
         reader.close();
 
-        StringBuffer sb = new StringBuffer("GROUP,Intercept");
+        StringBuffer sb = new StringBuffer("group,intercept");
         for (int j = 0; j < p; j++) { sb.append(SEPARATOR); sb.append(names[j]); }
         System.out.println(sb.toString());
 
@@ -120,11 +123,17 @@ public class Linearr {
             sb.append(g.name);
             for (int i = 0; i <= p; i++) {
                 sb.append(SEPARATOR);
-                /* BigDecimal for the printed number, as the 2011 code used it:
-                 * the published figure is a decimal, not a float someone read
-                 * off a double. It is out here, once per group, never in the
-                 * row loop, where it would allocate per value. */
-                sb.append(BigDecimal.valueOf(beta[i]).toString());
+                /* BigDecimal for the printed number, as the 2011 code used
+                 * it: a published coefficient is a decimal, not a float that
+                 * someone read off a double. Twelve significant digits, which
+                 * matches the C and is well below the residual SD of any fit
+                 * that produced it; without the rounding this prints 5 as
+                 * 4.999999999999999, which is the binary representation showing
+                 * through rather than a measurement. It is out here, once per
+                 * group, never in the row loop where it would allocate per
+                 * value. */
+                sb.append(new BigDecimal(beta[i], COEF_DIGITS)
+                              .stripTrailingZeros().toPlainString());
             }
             System.out.println(sb.toString());
             pinned += fit.pinned;

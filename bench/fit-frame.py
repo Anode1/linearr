@@ -44,9 +44,9 @@ def main(path):
             xty[i] += ti * y
 
     out = sys.stdout
-    out.write("GROUP,Intercept," + ",".join(names) + "\n")
+    out.write("group,intercept," + ",".join(names) + "\n")
     for g, (xtx, xty) in groups.items():
-        out.write(g + "," + ",".join(repr(v) for v in solve(xtx, xty, p + 1)) + "\n")
+        out.write(g + "," + ",".join("%.12g" % v for v in solve(xtx, xty, p + 1)) + "\n")
 
 
 if __name__ == "__main__":

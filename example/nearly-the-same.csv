@@ -1,8 +1,8 @@
 # example/nearly-the-same.csv: x2 differs from x1 in the sixth decimal.
-# The truth is 1 + 2*x1 + 3*x2; squaring the data before solving loses
-# about half the digits, so the fit comes back at 2.00002 and 2.99998
-# and says so with cond=. Piece three.
-GROUP,VALUE,x1,x2
+# The true relation is 1 + 2*x1 + 3*x2. Forming the cross-products before
+# solving costs about half the significant digits, so the fit returns
+# 2.00002 and 2.99998 and reports cond=. Piece three.
+group,value,x1,x2
 A,6,1,1
 A,6.050003,1.01,1.010001
 A,6.1,1.02,1.02

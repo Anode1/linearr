@@ -22,7 +22,7 @@ NF == p + 2 {
     }
 }
 END {
-    line = "GROUP,Intercept"
+    line = "group,intercept"
     for (j = 1; j <= p; j++) line = line "," name[j]
     print line
     n = p + 1
@@ -56,7 +56,7 @@ END {
         for (i = 0; i < n; i++) b[i] = 0
         for (i = 0; i < rank; i++) b[pc[i]] = m[i, n]
         line = g
-        for (i = 0; i < n; i++) line = line "," sprintf("%.17g", b[i])
+        for (i = 0; i < n; i++) line = line "," sprintf("%.12g", b[i])
         print line
     }
 }

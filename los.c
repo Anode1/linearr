@@ -422,30 +422,27 @@ static int append_str(char *out, size_t outsz, size_t *used, const char *s) {
     return 0;
 }
 
-/* A coefficient is a model parameter, not a published figure. At the old %.4f
- * every coefficient below 5e-5 was written as 0.0000, so a fit that reported
- * R2=1.0000 wrote a CONSTANT model to disk, and the round trip the README
- * recommends (fit, redirect, score) silently produced a different model
- * from the one that was fitted. predict.scale still governs the PREDICTION,
- * where rounding is part of the answer; it has no business here.
+/* Coefficients are written to 12 significant digits.
  *
- * The fix is the SHORTEST representation that reads back as the same double,
- * not simply the longest available. %.17g always round-trips but prints 5 as
- * 4.9999999999999991, which makes a table of exact values look like noise and
- * invites someone to "clean it up". Trying 15, 16, then 17 gives "5" and "2.5"
- * where the value really is 5 and 2.5, and spends the extra digits only where
- * they carry information. */
+ * Not fixed decimal places: at four decimals every coefficient below 5e-5 was
+ * written as 0.0000, so a fit that reported R2=1.0000 wrote a constant model to
+ * disk and the round trip of fit, redirect, score produced a different model
+ * from the one that was fitted.
+ *
+ * Not the full 17 digits either, which is what a double needs to be reproduced
+ * exactly. That printed 5 as 4.999999999999999 and 1.5 as 1.4999999999999998,
+ * which is the binary representation showing through and not a measurement:
+ * the twelfth significant digit of a coefficient is already far below the
+ * residual standard deviation of any fit that produced it. A table of exact
+ * values should read as exact values.
+ *
+ * Twelve digits prints 5 as 5, 2.5 as 2.5, and 1.5e-06 as 1.5e-06, and the
+ * value read back differs from the fitted double by at most one part in 1e12.
+ * predict.scale governs the PREDICTION, where the rounding is part of the
+ * published answer; it has no business here. */
 static int append_num(char *out, size_t outsz, size_t *used, double v) {
-    char   buf[64];
-    int    prec, w = 0;
-
-    for (prec = 15; prec <= 17; prec++) {
-        w = snprintf(buf, sizeof buf, ",%.*g", prec, v);
-        if (w < 0 || (size_t)w >= sizeof buf) return -1;
-        if (strtod(buf + 1, NULL) == v) break;     /* reads back identical */
-    }
-    if ((size_t)w >= outsz - *used) return -1;
-    memcpy(out + *used, buf, (size_t)w + 1);
+    int w = snprintf(out + *used, outsz - *used, ",%.12g", v);
+    if (w < 0 || (size_t)w >= outsz - *used) return -1;
     *used += (size_t)w;
     return 0;
 }
@@ -455,7 +452,7 @@ int los_format_header(char *out, size_t outsz) {
     int    i;
 
     if (nvars < 1 || outsz == 0) return -1;
-    if (append_str(out, outsz, &used, "GROUP,Intercept") != 0) return -1;
+    if (append_str(out, outsz, &used, "group,intercept") != 0) return -1;
     for (i = 0; i < nvars; i++) {
         if (append_str(out, outsz, &used, ",") != 0) return -1;
         if (append_str(out, outsz, &used, var_name[i]) != 0) return -1;

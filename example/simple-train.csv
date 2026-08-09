@@ -5,7 +5,7 @@
 #
 #   MINUTES = 5 + 2.5*km + 1.5*stops
 #
-GROUP,MINUTES,km,stops
+group,minutes,km,stops
 A,5.0,0,0
 A,30.0,10,0
 A,9.5,0,3

@@ -139,7 +139,7 @@ static void test_csv(void) {
         while ((r = csv_next(fp, big, sizeof big)) == 2)
             ;
         CHECK(r == 1, "csv_next reads the data line after them");
-        CHECK(strncmp(big, "GROUP,LOS,", 10) == 0, "csv_next reached the header");
+        CHECK(strncmp(big, "group,los,", 10) == 0, "csv_next reached the header");
         CHECK(strchr(big, '\n') == NULL, "csv_next stripped the newline");
         /* A line that does not fit is refused, never silently split in two. */
         CHECK(csv_next(fp, big, 8) == -1, "csv_next refuses an over-long line");
@@ -486,7 +486,7 @@ static void test_los_schema(void) {
     CHECK(streq(los_var_name(1), "stops"), "schema: names in order");
     CHECK(los_var_name(2) == NULL, "schema: nothing past the last term");
     CHECK(los_format_header(header, sizeof header) == 0 &&
-          strcmp(header, "GROUP,Intercept,km,stops") == 0, "schema: writes its own header");
+          strcmp(header, "group,intercept,km,stops") == 0, "schema: writes its own header");
     CHECK(los_var_index("stops") == 1, "schema: term by name");
     CHECK(los_var_index("STOPS") == 1, "schema: name lookup ignores case");
     CHECK(los_var_index("nope") == -1, "schema: unknown name");
@@ -661,7 +661,7 @@ static void test_process_train(void) {
     }
 
     /* The fitted output is a coefficient FILE, header and all, so it reads back. */
-    CHECK(strncmp(out, "GROUP,Intercept,Cardioversion,", 30) == 0,
+    CHECK(strncmp(out, "group,intercept,Cardioversion,", 30) == 0,
           "train: output carries its own header");
     CHECK(strchr(out, '\n') != NULL && strstr(out, "\n001,") != NULL,
           "train: header then the fitted row");
@@ -692,7 +692,7 @@ static void test_other_schema(void) {
     CHECK(los_nvars() == 2, "other schema: took its terms from that file's header");
     {
         double got[4];
-        CHECK(strncmp(out, "GROUP,Intercept,km,stops\nA,", 27) == 0,
+        CHECK(strncmp(out, "group,intercept,km,stops\nA,", 27) == 0,
               "other schema: header and group");
         CHECK(coef_row(strchr(out, '\n') + 1, got, 4) == 3 &&
               fabs(got[0] - 5.0) < 1e-9 && fabs(got[1] - 2.5) < 1e-9 &&

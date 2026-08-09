@@ -3,7 +3,7 @@
 # coefficients for its group, so `linearr -t` recovers them to the last
 # digit and R2 comes back 1.0000. That is what makes the fitter testable
 # against a known answer. Real data is noisy and will not do this.
-GROUP,LOS,Cardioversion,Cell_saver,Chemotherapy,Dialysis,Heart_resuscitation,Mech_vent_ge_96_hours,mech_vent,Feeding_tube,Paracentesis,Parenteral_nutrition,Pleurocentesis,Radiotherapy,Tracheostomy,Vascular_access_device,multiple_ie_2ormore,multiple_ie_3ormore,icu_indicator,hc_dad,age_under1,age_under18,age_60plus,age_80plus,obs_gt40,ooh
+group,los,Cardioversion,Cell_saver,Chemotherapy,Dialysis,Heart_resuscitation,Mech_vent_ge_96_hours,mech_vent,Feeding_tube,Paracentesis,Parenteral_nutrition,Pleurocentesis,Radiotherapy,Tracheostomy,Vascular_access_device,multiple_ie_2ormore,multiple_ie_3ormore,icu_indicator,hc_dad,age_under1,age_under18,age_60plus,age_80plus,obs_gt40,ooh
 001,6.4832,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 001,12.5140,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 001,22.4817,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0

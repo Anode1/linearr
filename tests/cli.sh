@@ -134,12 +134,12 @@ rm -f "$tmp/system.properties"
 
 # fit, then score against what was fitted
 "$bin" -t example/simple-train.csv -g A 2>/dev/null > "$tmp/coef.csv"
-check "fit writes a header" "$(head -1 "$tmp/coef.csv")" "GROUP,Intercept,km,stops"
+check "fit writes a header" "$(head -1 "$tmp/coef.csv")" "group,intercept,km,stops"
 check "fit writes the row"  "$(coefs < "$tmp/coef.csv")" "5.000000000 2.500000000 1.500000000"
 
 # THE ROUND TRIP, which %.4f used to break silently: a coefficient below 5e-5
 # was written as 0.0000, so a fit reporting R2=1.0000 published a constant model.
-printf 'GROUP,VALUE,bytes\nA,3.0,0\nA,3.15,100000\nA,3.30,200000\nA,3.45,300000\n' > "$tmp/tiny.csv"
+printf 'group,value,bytes\nA,3.0,0\nA,3.15,100000\nA,3.30,200000\nA,3.45,300000\n' > "$tmp/tiny.csv"
 "$bin" -t "$tmp/tiny.csv" -g A 2>/dev/null > "$tmp/tiny_coef.csv"
 printf 'coef.file = %s/tiny_coef.csv\ntrim.file =\n' "$tmp" > "$tmp/system.properties"
 check "a tiny coefficient survives the round trip" \
@@ -180,7 +180,7 @@ if command -v make >/dev/null 2>&1; then
     # A changed ceiling must reach the objects. A 32-term build has to refuse a
     # 100-term table; if CPPFLAGS is ignored, the stale 256-term binary accepts
     # it and this passes for the wrong reason.
-    awk 'BEGIN{ printf "GROUP,Intercept"; for(i=1;i<=100;i++) printf ",t%d", i; printf "\n";
+    awk 'BEGIN{ printf "group,intercept"; for(i=1;i<=100;i++) printf ",t%d", i; printf "\n";
                 printf "G"; for(i=0;i<=100;i++) printf ",1"; printf "\n" }' > "$src/c100.csv"
     printf 'coef.file = c100.csv\ntrim.file =\n' > "$src/system.properties"
 
@@ -250,7 +250,7 @@ else
 fi
 
 # nan must not reach a coefficient table.
-printf 'GROUP,VALUE,x\nA,1,1\nA,nan,2\nA,3,3\n' > "$tmp/nan.csv"
+printf 'group,value,x\nA,1,1\nA,nan,2\nA,3,3\n' > "$tmp/nan.csv"
 set +e
 "$bin" -t "$tmp/nan.csv" -g A >/dev/null 2>&1; rc=$?
 set -e
@@ -300,14 +300,14 @@ check "a table with pinned notes still loads" \
     "001 prediction=19.9611 trim=20.0"
 
 # tables that used to be misread silently
-printf 'GROUP,Intercept,a\nX,10,1\nX,999,1\n' > "$tmp/dup.csv"
+printf 'group,intercept,a\nX,10,1\nX,999,1\n' > "$tmp/dup.csv"
 set +e
 out=$("$bin" -c "$tmp/dup.csv" --no-trim X a=0 2>&1); rc=$?
 set -e
 check "a duplicate group code is refused" "$rc" "1"
 case "$out" in *twice*) ok ;; *) no "duplicate group message: got [$out]" ;; esac
 
-printf 'GROUP,Intercept,a\n#X,10,1\nY,20,1\n' > "$tmp/hash.csv"
+printf 'group,intercept,a\n#X,10,1\nY,20,1\n' > "$tmp/hash.csv"
 set +e
 out=$("$bin" -c "$tmp/hash.csv" --no-trim Y a=0 2>&1); rc=$?
 set -e
@@ -322,7 +322,7 @@ case "$out" in *header*) ok ;; *) no "headerless message names the header: got [
 
 # a config value that cannot be honoured is an error, not a silent default
 printf 'coef.file = %s/dup2.csv\ntrim.file =\npredict.scale = 99\n' "$tmp" > "$tmp/system.properties"
-printf 'GROUP,Intercept,a\nX,10,1\n' > "$tmp/dup2.csv"
+printf 'group,intercept,a\nX,10,1\n' > "$tmp/dup2.csv"
 set +e
 (cd "$tmp" && "$bin" X a=1 >/dev/null 2>&1); rc=$?
 set -e
@@ -339,7 +339,7 @@ check "the named form tolerates a trailing space, as the row form does" \
 # loads and the trim is applied. The file now says so; this makes sure it stays
 # true whichever way the behaviour changes.
 mkdir -p "$tmp/tf/conf"
-printf 'GROUP,Intercept,a\nX,10,1\n'      > "$tmp/tf/conf/coefficients.csv"
+printf 'group,intercept,a\nX,10,1\n'      > "$tmp/tf/conf/coefficients.csv"
 printf 'GROUP,trim_addition\nX,500\n'     > "$tmp/tf/conf/trim_additions.csv"
 
 printf 'coef.file = conf/coefficients.csv\n# trim.file = conf/trim_additions.csv\n' \
@@ -359,7 +359,7 @@ check "--no-trim turns it off too" \
 # Three transcripts explain what least squares does when it cannot answer. They
 # are the most quoted lines in the documentation and the easiest to leave stale.
 check "piece one: the pair's effect goes to one column, and is marked" \
-    "$("$bin" -t example/together.csv 2>/dev/null | tail -1)" "# pinned A: collinear vent"
+    "$("$bin" -t example/together.csv 2>/dev/null | tail -1)" "# pinned A: collinear headlights"
 case "$("$bin" -t example/three-rows.csv 2>&1)" in
     *"no residual degrees of freedom"*) ok ;;
     *) no "piece two: three rows and three unknowns warns about df" ;;
@@ -371,19 +371,22 @@ esac
 # and the numbers the README prints are the numbers it produces
 check "piece three's coefficients are what the README shows" \
     "$("$bin" -t example/nearly-the-same.csv 2>/dev/null | tail -1)" \
-    "A,1.0000000000062395,2.0000226299291737,2.999977370075073"
+    "A,1.00000000001,2.00002262993,2.99997737008"
 
 # --- residuals: where the model is wrong ------------------------------------
-printf 'GROUP,VALUE,x\nA,26,-4\nA,19,-3\nA,14,-2\nA,11,-1\nA,10,0\nA,11,1\nA,14,2\nA,19,3\nA,26,4\n' \
+printf 'group,value,x\nA,26,-4\nA,19,-3\nA,14,-2\nA,11,-1\nA,10,0\nA,11,1\nA,14,2\nA,19,3\nA,26,4\n' \
     > "$tmp/curve.csv"
 "$bin" -t "$tmp/curve.csv" --residuals "$tmp/r.csv" >/dev/null 2>&1
 check "a residual file has a row per training row, plus a header" \
     "$(wc -l < "$tmp/r.csv" | tr -d ' ')" "10"
-check "and names its columns" "$(head -1 "$tmp/r.csv")" "GROUP,observed,predicted,residual"
+check "and names its columns" "$(head -1 "$tmp/r.csv")" "group,observed,predicted,residual"
 # The residuals must be real numbers from the fitted line. They were once read
 # from uninitialised xmalloc memory and came out around 1e161.
+# Not an exact zero: all three columns are rounded to 12 significant digits, so
+# the identity holds to about 1e-12 rather than to the bit.
 check "the residuals are the observed minus the predicted" \
-    "$(awk -F, 'NR==2{printf "%.6f", $2-$3-$4}' "$tmp/r.csv")" "0.000000"
+    "$(awk -F, 'NR==2{d=$2-$3-$4; if (d<0) d=-d; print (d < 1e-9) ? "ok" : "off by " d}' "$tmp/r.csv")" \
+    "ok"
 case "$(awk -F, 'NR==2{print ($4>0 && $4<100) ? "sane" : "WILD " $4}' "$tmp/r.csv")" in
     sane) ok ;; *) no "residuals are of a plausible size" ;;
 esac

@@ -1,6 +1,6 @@
-# example/three-rows.csv: three rows, three unknowns. It fits perfectly, and
-# would fit perfectly on any numbers at all. Piece two.
-GROUP,VALUE,a,b
+# example/three-rows.csv: three rows, three unknowns. The line passes through
+# every point, and would do so whatever the numbers were. Piece two.
+group,minutes,km,stops
 A,1,0,0
 A,4,1,0
 A,7,0,1
