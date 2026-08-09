@@ -108,7 +108,7 @@ When something is wrong, the message says what:
 - scoring is a pipeline stage: one row in, one line out, exit code and stderr
   behaving the way the rest of your shell does;
 - you are teaching what a least-squares fit actually is, and want the whole of
-  it readable in an afternoon (`regress.c` is about 100 lines).
+  it readable in an afternoon (`regress.c` is about 150 lines of code).
 
 **Reach for something else when:** you need regularization (ridge, lasso,
 elastic net), categorical encoding, missing-value handling, cross-validation,
@@ -146,6 +146,39 @@ The worked example is hospital length of stay: a prediction per case-mix
 group, plus that group's *trim point*, the day count past which a stay stops
 being typical. That is the shape the example data has; the program has no idea
 what a hospital is.
+
+## All of least squares, in three short pieces
+
+Part of the point of this project is to show how little there is to a
+least-squares fit once the libraries are out of the way. The model is a
+polynomial in the terms, and predicting is one line of C:
+
+    double y = m->intercept;
+    for (i = 0; i < nvars; i++) y += m->b[i] * c->x[i];
+
+Fitting is choosing the `b` that makes the squared error over the training rows
+as small as it can be. Differentiate that error with respect to each `b` and set
+the result to zero, and you get the *normal equations*, `(X'X) b = X'y`: one
+equation per term, and no more. The useful thing about them is that `X'X` and
+`X'y` are **sums over rows**, so a row contributes its piece and is never needed
+again. That is why training is a loop with nothing accumulating in it but the
+model:
+
+    while ((n = csv_next(fp, line, sizeof line)) > 0) {   /* process.c, checks elided */
+        los_parse_training(line, &c, &los);
+        regress_add(&r, c.x, los);        /* fold this row in, then forget it */
+    }
+    regress_solve(&r, fit_beta, fit_scratch, &f);
+
+`regress_add` is the sum, kept in centered form so that a large mean cannot
+swamp a small variance. `regress_solve` scales the system so its diagonal is all
+ones, runs Gauss-Jordan with partial pivoting, and scales the answer back. Any
+term the data cannot identify shows up there as a pivot that is not there, and
+is pinned to 0 rather than guessed at.
+
+That is the whole method: a sum you can take one row at a time, and a small
+dense solve at the end. `regress.c` is about 150 lines of code, 234 with the
+comments, and is meant to be read in one sitting.
 
 ## The terms are yours
 
@@ -277,7 +310,8 @@ open source was the intention at the time, and there was never time for it. This
 is that implementation: written from scratch around the same arithmetic,
 generalised so the terms come from your file instead of being fixed in the
 source, and carrying none of the original data. The coefficients shipped here
-are synthetic, and real tables belong to whoever produced them.
+are synthetic, and real tables belong to whoever owns the data and produced the
+coefficients.
 
 That background is why the numerics are written out rather than delegated, and
 why the places where least squares stops being trustworthy (a design the data
