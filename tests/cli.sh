@@ -355,5 +355,23 @@ printf 'coef.file = conf/coefficients.csv\n' > "$tmp/tf/system.properties"
 check "--no-trim turns it off too" \
     "$(cd "$tmp/tf" && "$bin" --no-trim X a=0)" "X prediction=10.0000 trim=10.0"
 
+# --- the README's teaching section must keep saying what the program says -----
+# Three transcripts explain what least squares does when it cannot answer. They
+# are the most quoted lines in the documentation and the easiest to leave stale.
+check "piece one: the pair's effect goes to one column, and is marked" \
+    "$("$bin" -t example/together.csv 2>/dev/null | tail -1)" "# pinned A: collinear vent"
+case "$("$bin" -t example/three-rows.csv 2>&1)" in
+    *"no residual degrees of freedom"*) ok ;;
+    *) no "piece two: three rows and three unknowns warns about df" ;;
+esac
+case "$("$bin" -t example/nearly-the-same.csv 2>&1)" in
+    *"ill-conditioned"*) ok ;;
+    *) no "piece three: near-duplicate columns are reported as ill-conditioned" ;;
+esac
+# and the numbers the README prints are the numbers it produces
+check "piece three's coefficients are what the README shows" \
+    "$("$bin" -t example/nearly-the-same.csv 2>/dev/null | tail -1)" \
+    "A,1.0000000000062395,2.0000226299291737,2.999977370075073"
+
 echo "cliut: $pass passed, $fail failed, $skip skipped"
 [ "$fail" -eq 0 ]

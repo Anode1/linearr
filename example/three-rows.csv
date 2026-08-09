@@ -1,0 +1,6 @@
+# example/three-rows.csv: three rows, three unknowns. It fits perfectly, and
+# would fit perfectly on any numbers at all. Piece two.
+GROUP,VALUE,a,b
+A,1,0,0
+A,4,1,0
+A,7,0,1

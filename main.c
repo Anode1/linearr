@@ -100,7 +100,8 @@ static int train_all(const char *path) {
     }
     (void)fprintf(stderr, "fit: %ld group%s, %ld row%s", sum.groups, s_(sum.groups),
             sum.rows, s_(sum.rows));
-    if (sum.pinned > 0) fprintf(stderr, ", %d term-slots pinned to 0", sum.pinned);
+    if (sum.pinned > 0)
+        fprintf(stderr, ", %d term-slot%s pinned to 0", sum.pinned, s_(sum.pinned));
     (void)fprintf(stderr, ", least df=%ld", sum.min_df);
     if (sum.max_condition > 1.0) fprintf(stderr, ", worst cond=%.3g", sum.max_condition);
     (void)fprintf(stderr, "\n");

@@ -9,6 +9,180 @@ a ten-million-row fit cost the same memory.
     ./linearr -t mydata.csv > model.csv       # fit every group in one pass
     ./linearr -c model.csv --no-trim A x=3    # score a case against it
 
+## Least squares in three short pieces
+
+**What it does.** You have rows: some measurements, and a number you care about.
+It finds the straight line through them that misses by as little as possible --
+squared, so a miss of 2 counts four times a miss of 1. Out come the
+coefficients: how much each measurement moves the answer. That is the whole
+method. It is old, it is cheap, and where the world really is roughly linear it
+is hard to beat.
+
+Three things can go wrong with it, and all three fit perfectly while being
+wrong, which is why this program says them out loud.
+
+**One: the data cannot tell two columns apart.** If `icu` and `vent` are 1 on
+exactly the same rows -- nobody ever had one without the other -- the data can
+say the pair adds 8 days. It cannot say how to split that 8 between them. Every
+split fits equally well, so there is no answer to find:
+
+    $ ./linearr -t example/together.csv
+    fit: 1 group, 5 rows, 1 term-slot pinned to 0, least df=3
+    GROUP,Intercept,icu,vent
+    A,6.000000000000001,8,0
+    # pinned A: collinear vent
+
+All 8 goes to the first column, the second gets 0, and the note says so. That 0
+is a shrug, not a finding, and without the note it would read as "ventilation
+does nothing". A column that never varies at all -- an intervention nobody in
+the group received -- is the same situation: the data has no opinion about it.
+
+**Two: nothing left over.** Three rows and three unknowns will fit perfectly,
+the way two points always define a line exactly. It would fit perfectly on any
+numbers whatsoever, so a perfect fit tells you nothing:
+
+    $ ./linearr -t example/three-rows.csv
+    fit: 1 group, 3 rows, least df=0, worst cond=1.33
+    warning: at least one group has no residual degrees of freedom; its line
+    passes through every row by construction. Fit those groups on more rows.
+    GROUP,Intercept,a,b
+    A,1.0000000000000007,2.999999999999999,5.999999999999998
+
+*Degrees of freedom* is just the slack -- rows minus unknowns. Zero slack, zero
+evidence. Six rows against three unknowns leaves three rows' worth of
+disagreement the line had to survive, and surviving that is what makes a good
+fit mean something.
+
+**Three: the arithmetic squares your data before solving it.** That is what
+gives this program its flat memory -- it keeps a small square of sums instead of
+your file, so ten rows and ten million cost the same. The price is precision:
+squaring costs you about half your digits. Give it two columns that differ in
+the sixth decimal and ask for `1 + 2*x1 + 3*x2`:
+
+    $ ./linearr -t example/nearly-the-same.csv
+    fit: 1 group, 40 rows, least df=37, worst cond=5.34e+10
+    warning: at least one group is ill-conditioned (cond=5.34e+10); the trailing
+    digits of its coefficients are noise.
+    GROUP,Intercept,x1,x2
+    A,1.0000000000062395,2.0000226299291737,2.999977370075073
+
+It found 2.00002 and 2.99998 where the truth is 2 and 3 -- five digits gone,
+and it says so. A method that does not square first (QR, SVD) would keep them
+apart. R2 cannot see this at all: a badly conditioned fit describes its own
+training data beautifully and predicts nothing. The `cond=` number is what
+tells you, and past 1e8 it warns.
+
+## Where this is the right tool, and where it is not
+
+**It fits well when:**
+
+- there is no Python and there is not going to be: an embedded target, a
+  locked-down clinical or lab machine, a container you want under a megabyte, a
+  build with no package manager;
+- the training file is much larger than the machine's memory, and you would
+  rather stream it once than hold a matrix of it (a 40 MB file and a 4 MB file
+  fit in the same 3 MB; see [Scale](#scale));
+- a C or C++ codebase needs a fit without taking on GSL, LAPACK, or a build
+  system to go with them;
+- the coefficients are *published* (a rate, a tariff, an expected value
+  someone else's process consumes), so the rounding and the exact arithmetic
+  are part of the contract and have to be reproducible digit for digit;
+- scoring is a pipeline stage: one row in, one line out, exit code and stderr
+  behaving the way the rest of your shell does;
+- you are teaching what a least-squares fit actually is, and want the whole of
+  it readable in an afternoon (`regress.c` is about 150 lines of code).
+
+**Reach for something else when:** you need regularization (ridge, lasso,
+elastic net), categorical encoding, missing-value handling, cross-validation,
+weighted least squares, or inference: standard errors, confidence intervals,
+prediction intervals, p-values. None of that is here, and neither is the
+residual standard error a prediction consumer usually wants next. The worked
+example is also a modelling choice worth naming: length of stay is a skewed,
+non-negative, count-like response, and unweighted OLS on raw days is not the
+standard treatment for it (a log transform or a Gamma GLM is). Nothing stops
+this tool predicting a negative stay. `scikit-learn` and `statsmodels` do all of it well, and GSL
+(`gsl_multifit_linear`) or LAPACK (`dgels`) give you a fitted line in C with more
+numerical machinery behind it than this has.
+
+**One numerical caveat.** Accumulating `X'X` and solving it is what makes
+the memory bound possible, and it costs conditioning: forming the normal
+equations squares the condition number of the design, so a badly scaled or
+near-collinear problem loses roughly twice the digits a QR or SVD solve would.
+For indicator columns and modestly scaled data (what this is built for) it is
+not the limiting factor; the pinning above handles the singular cases outright.
+If your design is ill-conditioned, use a QR-based fit. A streaming Householder
+QR would keep the memory bound and fix the conditioning, and is the obvious next
+thing to build here.
+
+## The two things that make it different
+
+- **The terms are not compiled in.** The header line of your CSV names them, so
+  adding a term to the polynomial is adding a column to a file. Nothing to edit,
+  nothing to rebuild; the same binary fits a 24-term model and a 2-term one.
+- **Memory is a function of the model, not of the data.** Observations are
+  accumulated into centered cross-products one row at a time and then forgotten.
+  Nothing on the row path allocates. There is a script that tries to falsify
+  this and prints the numbers: see [Scale](#scale).
+
+The worked example is hospital length of stay: a prediction per case-mix
+group, plus that group's *trim point*, the day count past which a stay stops
+being typical. That is the shape the example data has; the program has no idea
+what a hospital is.
+
+## Scale
+
+The default build takes **256 terms** and any number of groups. That ceiling is
+what decides the fitter's footprint, and you set it at build time:
+
+    make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32'
+
+| ceiling | fitter matrices | note |
+| --- | --- | --- |
+| 32 terms | ~17 KB | |
+| 64 | ~68 KB | |
+| 128 | ~266 KB | |
+| 256 (default) | ~1.06 MB | |
+| 510 | ~4.2 MB | the maximum; above this raise `CSV_MAX_FIELDS` too |
+
+Three things that table does **not** cover:
+
+- The fitter's matrices live in **static storage, not on the stack**, so the
+  ceiling costs no stack at all and cannot overflow one.
+- The **stack** requirement is about **190 KB**, and it is the line buffers in
+  `constants.h`, which are derived from the ceiling rather than fixed. Measured
+  at the default: it runs under `ulimit -s 192` and fails under 160. Setting the
+  ceiling is all a small target needs, and it pays twice: a
+  `-DLOS_MAX_VARS=32 -DREGRESS_MAX_VARS=32` build runs under `ulimit -s 64`.
+- Fitting **every** group in one pass holds one accumulator per group, so that
+  path costs `groups x terms^2`, about 6 MB for 580 groups of 35 terms. It is
+  still never a function of how many rows you feed it.
+
+`scripts/scale.sh` exists to falsify the memory claim rather than repeat it: it
+fits the same model over row counts an order of magnitude apart and prints peak
+RSS for each. If those numbers tracked the data, the claim would be wrong and
+this section would have to change. Run at the shape the original production
+model had (35 terms, 580 groups), output verbatim:
+
+    $ sh scripts/scale.sh 35 580 10000 100000
+    linearr scale check: 35 terms, 580 groups
+
+    generating training data (10000 and 100000 rows) ... done (816K, 8.0M)
+    FIT: the same 35-term model, 10000 rows then 100000:
+      rows         seconds  peak RSS (KB)
+      10000        0.02 2432
+      100000       0.24 2432
+      ^ RSS should be flat: 10x the data, the same memory.
+
+    generating a 580-group table and cases ... done
+    SCORE: 100000 cases against 580 groups:
+      cases        seconds  peak RSS (KB)
+      100000       0.16 3712
+
+    The coefficient table is the only thing that grows with the problem:
+      580 groups x (35 + 1) doubles = about 163 KB, held once.
+
+Ten times the data, the same memory. Time scales with the rows, as it must.
+
 ## Build and run
 
     make            # build ./linearr
@@ -90,96 +264,6 @@ When something is wrong, the message says what:
 
 `./linearr -h` prints the options; `-d` traces to stderr.
 
-## Where this is the right tool, and where it is not
-
-**It fits well when:**
-
-- there is no Python and there is not going to be: an embedded target, a
-  locked-down clinical or lab machine, a container you want under a megabyte, a
-  build with no package manager;
-- the training file is much larger than the machine's memory, and you would
-  rather stream it once than hold a matrix of it (a 40 MB file and a 4 MB file
-  fit in the same 3 MB; see [Scale](#scale));
-- a C or C++ codebase needs a fit without taking on GSL, LAPACK, or a build
-  system to go with them;
-- the coefficients are *published* (a rate, a tariff, an expected value
-  someone else's process consumes), so the rounding and the exact arithmetic
-  are part of the contract and have to be reproducible digit for digit;
-- scoring is a pipeline stage: one row in, one line out, exit code and stderr
-  behaving the way the rest of your shell does;
-- you are teaching what a least-squares fit actually is, and want the whole of
-  it readable in an afternoon (`regress.c` is about 150 lines of code).
-
-**Reach for something else when:** you need regularization (ridge, lasso,
-elastic net), categorical encoding, missing-value handling, cross-validation,
-weighted least squares, or inference: standard errors, confidence intervals,
-prediction intervals, p-values. None of that is here, and neither is the
-residual standard error a prediction consumer usually wants next. The worked
-example is also a modelling choice worth naming: length of stay is a skewed,
-non-negative, count-like response, and unweighted OLS on raw days is not the
-standard treatment for it (a log transform or a Gamma GLM is). Nothing stops
-this tool predicting a negative stay. `scikit-learn` and `statsmodels` do all of it well, and GSL
-(`gsl_multifit_linear`) or LAPACK (`dgels`) give you a fitted line in C with more
-numerical machinery behind it than this has.
-
-**One numerical caveat.** Accumulating `X'X` and solving it is what makes
-the memory bound possible, and it costs conditioning: forming the normal
-equations squares the condition number of the design, so a badly scaled or
-near-collinear problem loses roughly twice the digits a QR or SVD solve would.
-For indicator columns and modestly scaled data (what this is built for) it is
-not the limiting factor; the pinning above handles the singular cases outright.
-If your design is ill-conditioned, use a QR-based fit. A streaming Householder
-QR would keep the memory bound and fix the conditioning, and is the obvious next
-thing to build here.
-
-## The two things that make it different
-
-- **The terms are not compiled in.** The header line of your CSV names them, so
-  adding a term to the polynomial is adding a column to a file. Nothing to edit,
-  nothing to rebuild; the same binary fits a 24-term model and a 2-term one.
-- **Memory is a function of the model, not of the data.** Observations are
-  accumulated into centered cross-products one row at a time and then forgotten.
-  Nothing on the row path allocates. There is a script that tries to falsify
-  this and prints the numbers: see [Scale](#scale).
-
-The worked example is hospital length of stay: a prediction per case-mix
-group, plus that group's *trim point*, the day count past which a stay stops
-being typical. That is the shape the example data has; the program has no idea
-what a hospital is.
-
-## All of least squares, in three short pieces
-
-Part of the point of this project is to show how little there is to a
-least-squares fit once the libraries are out of the way. The model is a
-polynomial in the terms, and predicting is one line of C:
-
-    double y = m->intercept;
-    for (i = 0; i < nvars; i++) y += m->b[i] * c->x[i];
-
-Fitting is choosing the `b` that makes the squared error over the training rows
-as small as it can be. Differentiate that error with respect to each `b` and set
-the result to zero, and you get the *normal equations*, `(X'X) b = X'y`: one
-equation per term, and no more. The useful thing about them is that `X'X` and
-`X'y` are **sums over rows**, so a row contributes its piece and is never needed
-again. That is why training is a loop with nothing accumulating in it but the
-model:
-
-    while ((n = csv_next(fp, line, sizeof line)) > 0) {   /* process.c, checks elided */
-        los_parse_training(line, &c, &los);
-        regress_add(&r, c.x, los);        /* fold this row in, then forget it */
-    }
-    regress_solve(&r, fit_beta, fit_scratch, &f);
-
-`regress_add` is the sum, kept in centered form so that a large mean cannot
-swamp a small variance. `regress_solve` scales the system so its diagonal is all
-ones, runs Gauss-Jordan with partial pivoting, and scales the answer back. Any
-term the data cannot identify shows up there as a pivot that is not there, and
-is pinned to 0 rather than guessed at.
-
-That is the whole method: a sum you can take one row at a time, and a small
-dense solve at the end. `regress.c` is about 150 lines of code, 234 with the
-comments, and is meant to be read in one sitting.
-
 ## The terms are yours
 
 `example/simple-train.csv` is the same program with a schema nobody wrote any
@@ -196,20 +280,6 @@ code for: minutes on the road, from distance and stops:
     A,4.999999999999999,2.5,1.4999999999999998
 
 Two terms instead of twenty-four, and the only thing that changed was the file.
-
-## What it does when the data cannot answer
-
-A term the sample cannot identify (a column that never varies, or one that
-duplicates another) has no least-squares answer, and the normal equations are
-singular there. Rather than fail the fit or return a number the data does not
-support, such a term is **pinned to exactly 0** and the rest are fitted around
-it, and the count is reported. This is the ordinary case with indicator columns:
-a group that never sees a given intervention simply has no evidence about it.
-
-The fit summary also reports **df**, the residual degrees of freedom. At zero,
-the line passes through every training row by construction and `R2` is 1 no
-matter what the data says; the program says so out loud rather than letting a
-meaningless 1.0000 read as success.
 
 ## Configuration
 
@@ -237,109 +307,6 @@ Rounding is half away from zero, not `printf`'s half to even, and it is part of
 the answer rather than presentation: the trim point is built on the *rounded*
 prediction, because the published figure is what the next step is entitled to
 use.
-
-## Scale
-
-The default build takes **256 terms** and any number of groups. That ceiling is
-what decides the fitter's footprint, and you set it at build time:
-
-    make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32'
-
-| ceiling | fitter matrices | note |
-| --- | --- | --- |
-| 32 terms | ~17 KB | |
-| 64 | ~68 KB | |
-| 128 | ~266 KB | |
-| 256 (default) | ~1.06 MB | |
-| 510 | ~4.2 MB | the maximum; above this raise `CSV_MAX_FIELDS` too |
-
-Three things that table does **not** cover:
-
-- The fitter's matrices live in **static storage, not on the stack**, so the
-  ceiling costs no stack at all and cannot overflow one.
-- The **stack** requirement is about **190 KB**, and it is the line buffers in
-  `constants.h`, which are derived from the ceiling rather than fixed. Measured
-  at the default: it runs under `ulimit -s 192` and fails under 160. Setting the
-  ceiling is all a small target needs, and it pays twice: a
-  `-DLOS_MAX_VARS=32 -DREGRESS_MAX_VARS=32` build runs under `ulimit -s 64`.
-- Fitting **every** group in one pass holds one accumulator per group, so that
-  path costs `groups x terms^2`, about 6 MB for 580 groups of 35 terms. It is
-  still never a function of how many rows you feed it.
-
-`scripts/scale.sh` exists to falsify the memory claim rather than repeat it: it
-fits the same model over row counts an order of magnitude apart and prints peak
-RSS for each. If those numbers tracked the data, the claim would be wrong and
-this section would have to change. Run at the shape the original production
-model had (35 terms, 580 groups), output verbatim:
-
-    $ sh scripts/scale.sh 35 580 10000 100000
-    linearr scale check: 35 terms, 580 groups
-
-    generating training data (10000 and 100000 rows) ... done (816K, 8.0M)
-    FIT: the same 35-term model, 10000 rows then 100000:
-      rows         seconds  peak RSS (KB)
-      10000        0.02 2432
-      100000       0.24 2432
-      ^ RSS should be flat: 10x the data, the same memory.
-
-    generating a 580-group table and cases ... done
-    SCORE: 100000 cases against 580 groups:
-      cases        seconds  peak RSS (KB)
-      100000       0.16 3712
-
-    The coefficient table is the only thing that grows with the problem:
-      580 groups x (35 + 1) doubles = about 163 KB, held once.
-
-Ten times the data, the same memory. Time scales with the rows, as it must.
-
-## Against Python, and against Java
-
-The same job in the languages you would otherwise write it in: read the file,
-fit one line per group, write the table. `scripts/bench.sh` generates the data,
-runs each one, and checks its coefficients against `linearr`'s before reporting
-a time, because a speed number nobody checked is a speed number for a different
-answer. Every row below agrees to about 1e-13, so this is one answer at
-different prices.
-
-    $ sh scripts/bench.sh 35 580 1000000
-    FIT: 1000000 rows, 35 terms, 580 groups
-      fitter              seconds      peak RSS   agrees with linearr to
-      linearr (C)           1.42s          8 MB
-      java                  2.82s        664 MB   1.4e-12
-      stream-numpy          3.06s        287 MB   4.1e-13
-      pandas-lstsq          2.87s        683 MB   2.4e-13
-      sklearn               3.82s        752 MB   8.6e-14
-      python, no numpy     63.19s         41 MB   1.4e-12
-
-Ten times the data, run the same way:
-
-| 10M rows, 802 MB | seconds | peak RSS |
-| --- | --- | --- |
-| `linearr` | 13.6 | **8 MB** |
-| Java, `BufferedReader` and `split` | 23.3 | 680 MB |
-| pandas + `numpy.linalg.lstsq` | 24.3 | 6.8 GB |
-| scikit-learn `LinearRegression` | 26.0 | 6.8 GB |
-| numpy, chunked accumulation | 28.2 | 295 MB |
-| Python with no numpy | ~630 | 41 MB |
-
-**Read the time column honestly: against numpy it is under 2x, and it would be
-strange if it were more.** pandas reads CSV in C and solves in BLAS, so that row
-is a C program with a Python veneer being compared against a C program. Java,
-JIT-compiled and given the same algorithm, comes within 1.7x. The order of
-magnitude appears only against Python running the loop itself, which is over
-40x, and that is what the comparison is really measuring: whether a C library is
-standing in for the language or not.
-
-The column that does not narrow is memory. **8 MB against 6.8 GB is 850x**, and
-the 8 MB is the model's size: it does not move when the file grows. That is the
-difference between a fit that runs on the machine you have and one that does not
-run at all, and it is the reason to reach for this rather than a faster
-language.
-
-Measured on one 8-core machine with a warm page cache, one run each; numpy's
-BLAS had all eight cores and `linearr` had one. Pinning numpy to a single thread
-made it slightly faster, not slower, so the comparison is if anything generous
-to it. The no-numpy figure at 10M rows is extrapolated from the 1M run.
 
 ## The example data is synthetic
 
@@ -423,7 +390,8 @@ constants.h       buffer sizes (the TERM ceiling lives in regress.h / los.h)
 tests.c           in-place unit tests (make ut)
 tests/cli.sh      black-box tests: the binary through a shell and a pty (make cliut)
 conf/             the example model (synthetic)
-example/          two training files with different schemas (synthetic)
+example/          training files: two schemas, plus the three the README's
+                  "three short pieces" section runs (all synthetic)
 scripts/scale.sh  measures the memory claim at 200 terms and 500 groups
 scripts/bench.sh  the same fit in C, Java and Python, checked against each other
 scripts/hooks/    pre-push: the sanitizers, before anything reaches the remote
