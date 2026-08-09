@@ -143,7 +143,7 @@ static void test_csv(void) {
         CHECK(strchr(big, '\n') == NULL, "csv_next stripped the newline");
         /* A line that does not fit is refused, never silently split in two. */
         CHECK(csv_next(fp, big, 8) == -1, "csv_next refuses an over-long line");
-        fclose(fp);
+        (void)fclose(fp);
     }
 }
 
@@ -346,7 +346,7 @@ static void test_wide_fit(void) {
         static char  names[LOS_MAX_VARS][LOS_NAME_MAX];
         static char *namep[LOS_MAX_VARS];
         for (i = 0; i < LOS_MAX_VARS; i++) {
-            snprintf(names[i], sizeof names[i], "term_%d", i);
+            (void)snprintf(names[i], sizeof names[i], "term_%d", i);
             namep[i] = names[i];
         }
         CHECK(los_schema_set(namep, LOS_MAX_VARS) == 0, "wide: a full-width schema");
@@ -705,7 +705,7 @@ int main(void) {
     test_process_score();
     test_process_train();
     test_other_schema();
-    printf("ut: %d passed, %d failed\n", pass, fail);
+    (void)printf("ut: %d passed, %d failed\n", pass, fail);
     return fail ? 1 : 0;
 }
 

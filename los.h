@@ -44,8 +44,9 @@ struct los_model {
 /* the schema: which terms the polynomial has, and in what order */
 
 /* Adopt n column names as the schema, replacing any previous one. Returns 0, or
- * -1 if n is out of range or a name is empty or too long. */
-int         los_schema_set(char *const *names, int n);
+ * -1 if n is out of range, or a name is empty, too long, or a duplicate of
+ * another ignoring case. The names are only read, and the type says so. */
+int         los_schema_set(const char *const *names, int n);
 
 int         los_nvars(void);            /* 0 until a schema is set */
 const char *los_var_name(int i);        /* NULL if i is out of range */

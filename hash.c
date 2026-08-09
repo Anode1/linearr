@@ -109,7 +109,7 @@ void *hash_put(struct hash *table, const char *key, void *data) {
     return NULL;                                   /* nothing was displaced */
 }
 
-void *hash_get(struct hash *table, const char *key) {
+void *hash_get(const struct hash *table, const char *key) {
     unsigned long val = calc_hash(key) % (unsigned long)table->size;
     hash_bucket *b;
     for (b = table->table[val]; b; b = b->next)

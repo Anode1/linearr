@@ -146,6 +146,14 @@ scaled by 1e6, offset by 1e8, or nearly collinear, and add that case too.
 There are now tests named `units:`, `offset:` and `conditioning:` for exactly
 this, and they should grow rather than be trimmed.
 
+## Marking work done
+
+Task #16 of this project's own review was marked completed with two of its five
+items done. Nothing failed; the remaining three were simply not looked at again,
+because "MISRA tail" had a tick beside it. Finish the list, or leave the item
+open with the remainder written into it -- a partly-done task recorded as done
+is worse than one recorded as pending, because it stops being looked at.
+
 ## The development loop (test-driven)
 
 Tests are the objective gate. Never trust output you have not verified.

@@ -33,6 +33,14 @@ typedef char los_fits_in_regress[(LOS_MAX_VARS <= REGRESS_MAX_VARS) ? 1 : -1];
 /* A case line has to fit in a CSV line, and its fields in the field array. */
 typedef char case_fits_in_csv[(LOS_MAX_VARS + 2 <= CSV_MAX_FIELDS) ? 1 : -1];
 
+/* The line buffers are derived from LOS_MAX_VARS and CSV_FIELD_MAX, which is
+ * only correct while a field really is at most CSV_FIELD_MAX bytes. This is
+ * the file that sees both headers, so it is where raising LOS_NAME_MAX stops
+ * being free: a header of the widest names must still fit in a line. */
+typedef char name_fits_in_field[(LOS_NAME_MAX + 1 <= CSV_FIELD_MAX) ? 1 : -1];
+typedef char header_fits_in_line[
+    ((LOS_MAX_VARS + 2) * (LOS_NAME_MAX + 1) + GROUP_MAX < CSV_LINE_MAX) ? 1 : -1];
+
 #define DEFAULT_COEF_FILE "conf/coefficients.csv"
 #define DEFAULT_TRIM_FILE "conf/trim_additions.csv"
 #define DEFAULT_PREDICT_SCALE 4
@@ -108,7 +116,7 @@ static char err_buf[512] = "no error";
 static int fail(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(err_buf, sizeof err_buf, fmt, ap);
+    (void)vsnprintf(err_buf, sizeof err_buf, fmt, ap);
     va_end(ap);
     debug("%s", err_buf);
     return -1;
@@ -154,7 +162,7 @@ static int ensure_tables(void) {
         return fail("cannot find the coefficient table %s; point coef.file "
                     "in system.properties at yours, or fit one with -t", path);
     if (los_load(path) != 0) return fail("%s", los_error());
-    snprintf(coef_path, sizeof coef_path, "%s", path);
+    (void)snprintf(coef_path, sizeof coef_path, "%s", path);
 
     /* The trim table is optional in three distinguishable ways, and they are
      * not the same thing: named in the config and unreadable is a failure the
@@ -195,7 +203,7 @@ static int ensure_tables(void) {
 
 int process_init(char *err, size_t errsz) {
     if (ensure_tables() != 0) {
-        snprintf(err, errsz, "%s", err_buf);
+        (void)snprintf(err, errsz, "%s", err_buf);
         return -1;
     }
     return 0;
@@ -323,7 +331,7 @@ static int open_training(const char *csv_path, FILE **fpp, int *nvars) {
     if (n < 3)
         return fail("%s needs a header of GROUP, the observed value, and at "
                     "least one term", csv_path);
-    if (los_schema_set(field + 2, n - 2) != 0)
+    if (los_schema_set((const char *const *)(field + 2), n - 2) != 0)
         return fail("%s does not name %d usable terms: they must be 1..%d, "
                     "non-empty, under %d characters, and distinct ignoring case "
                     "(run with -d for which one)", csv_path, n - 2, LOS_MAX_VARS,
@@ -527,7 +535,7 @@ int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum) 
         fail("the header does not fit in %zu bytes", sizeof row);
         goto cleanup;
     }
-    fprintf(out, "%s\n", row);
+    (void)fprintf(out, "%s\n", row);
 
     for (g = head; g; g = g->next) {
         struct regress_fit f;
@@ -543,10 +551,10 @@ int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum) 
             fail("group '%s' does not fit in %zu bytes", g->group, sizeof row);
             goto cleanup;
         }
-        fprintf(out, "%s\n", row);
+        (void)fprintf(out, "%s\n", row);
         {   char note[MAX_OUTPUT];
             if (format_pinned(g->group, &f, nvars, note, sizeof note))
-                fprintf(out, "%s\n", note);
+                (void)fprintf(out, "%s\n", note);
         }
 
         if (sum) {

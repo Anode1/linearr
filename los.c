@@ -37,7 +37,7 @@ const char *los_error(void) { return reason; }
 static int refuse(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(reason, sizeof reason, fmt, ap);
+    (void)vsnprintf(reason, sizeof reason, fmt, ap);
     va_end(ap);
     debug("los: %s", reason);
     return -1;
@@ -61,7 +61,7 @@ static int ci_equal(const char *a, const char *b) {
     return *a == '\0' && *b == '\0';
 }
 
-int los_schema_set(char *const *names, int n) {
+int los_schema_set(const char *const *names, int n) {
     int i;
 
     if (n < 1 || n > LOS_MAX_VARS) {
@@ -233,7 +233,7 @@ static int load_coefficients(const char *path) {
     }
     /* The header IS the model's column order: whatever it names, in that order,
      * is what x[] and b[] mean from here on. */
-    if (los_schema_set(field + 2, n - 2) != 0) {
+    if (los_schema_set((const char *const *)(field + 2), n - 2) != 0) {
         refuse("%s does not name %d usable terms: they must be non-empty, under "
                "%d characters, and distinct ignoring case", path, n - 2, LOS_NAME_MAX);
         goto cleanup;
@@ -301,7 +301,7 @@ static int load_coefficients(const char *path) {
     debug("los: %ld groups from %s", rows, path);
     rc = 0;
 cleanup:
-    fclose(fp);
+    (void)fclose(fp);
     return rc;
 }
 
@@ -358,7 +358,7 @@ int los_load_trims(const char *path) {
     }
     rc = 0;
 cleanup:
-    fclose(fp);
+    (void)fclose(fp);
     return rc;
 }
 

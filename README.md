@@ -257,10 +257,11 @@ Three things that table does **not** cover:
 
 - The fitter's matrices live in **static storage, not on the stack**, so the
   ceiling costs no stack at all and cannot overflow one.
-- The **stack** requirement is about **350 KB** and comes from the line buffers
-  in `constants.h`, not from the ceiling. Measured: it runs under
-  `ulimit -s 352` and fails under 336. Shrink `CSV_LINE_MAX`, `MAX_INPUT` and
-  `MAX_OUTPUT` together with the ceiling on a small target.
+- The **stack** requirement is about **190 KB**, and it is the line buffers in
+  `constants.h`, which are derived from the ceiling rather than fixed. Measured
+  at the default: it runs under `ulimit -s 192` and fails under 160. Setting the
+  ceiling is all a small target needs, and it pays twice: a
+  `-DLOS_MAX_VARS=32 -DREGRESS_MAX_VARS=32` build runs under `ulimit -s 64`.
 - Fitting **every** group in one pass holds one accumulator per group, so that
   path costs `groups x terms^2`, about 6 MB for 580 groups of 35 terms. It is
   still never a function of how many rows you feed it.
@@ -461,6 +462,11 @@ The rules the code already follows, so new code matches:
   stream a message went to) belongs in `tests/cli.sh`.
 - **Sanitizer-clean.** `make ut-asan` and `make ut-ubsan` before tagging; CI and
   the pre-push hook run both.
+- **A discarded return value is stated, not implied.** Where a result is
+  deliberately ignored the call is written `(void)printf(...)` -- MISRA 17.7.
+  It is not decoration: `main` checks `ferror(stdout)` once at the end precisely
+  *because* the individual writes are unchecked, and the casts are what say that
+  was a decision.
 - **A comment is a claim.** Header comments, source comments, the Makefile, and
   the usage text go stale exactly like a README. When behaviour changes they move
   with it. See `AGENTS.md`.

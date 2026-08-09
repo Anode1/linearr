@@ -136,9 +136,9 @@ int resolve_file(const char *name, char *out, size_t outsz) {
     /* Not found: hand back where we looked, so the caller's error can say it
      * instead of leaving the user to guess. */
     if (dir && strcmp(dir, ".") != 0)
-        snprintf(out, outsz, "'%s' (looked in the current directory, in %s, and "
+        (void)snprintf(out, outsz, "'%s' (looked in the current directory, in %s, and "
                  "in %s/../share/linearr)", name, dir, dir);
     else
-        snprintf(out, outsz, "'%s' (looked in the current directory)", name);
+        (void)snprintf(out, outsz, "'%s' (looked in the current directory)", name);
     return -1;
 }

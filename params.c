@@ -34,7 +34,7 @@ int params_load(const char *path) {
         if (line[n] == '\0' && !feof(fp)) {
             debug("params: %s has a line longer than %d bytes", path,
                   PARAMS_LINE_MAX - 1);
-            fclose(fp);
+            (void)fclose(fp);
             return -1;
         }
         line[n] = '\0';
@@ -54,7 +54,7 @@ int params_load(const char *path) {
                                                       free any value displaced
                                                       by a duplicate key */
     }
-    fclose(fp);
+    (void)fclose(fp);
     return 0;
 }
 

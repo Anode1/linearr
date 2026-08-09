@@ -19,7 +19,7 @@
 #ifndef UNIT_TEST   /* the test build (make ut) supplies main() from tests.c */
 
 static void usage(FILE *out, const char *prog) {
-    fprintf(out,
+    (void)fprintf(out,
         "usage: %s [-d] [-h] GROUP [TERM=VALUE ...]     score one case\n"
         "       %s [-d] < cases.csv                     score a stream\n"
         "       %s -t TRAIN.CSV [-g GROUP]              fit the coefficients\n"
@@ -58,20 +58,20 @@ static int score(const char *input) {
     char out[MAX_OUTPUT];
     debug("scoring '%s'", input);
     if (process(input, out, sizeof out) != 0) {
-        fprintf(stderr, "cannot score '%s': %s\n", input, process_error());
+        (void)fprintf(stderr, "cannot score '%s': %s\n", input, process_error());
         return -1;
     }
-    printf("%s\n", out);
+    (void)printf("%s\n", out);
     return 0;
 }
 
 static int score_named(const char *group, char *const *assign, int n) {
     char out[MAX_OUTPUT];
     if (process_named(group, assign, n, out, sizeof out) != 0) {
-        fprintf(stderr, "cannot score group '%s': %s\n", group, process_error());
+        (void)fprintf(stderr, "cannot score group '%s': %s\n", group, process_error());
         return -1;
     }
-    printf("%s\n", out);
+    (void)printf("%s\n", out);
     return 0;
 }
 
@@ -80,11 +80,11 @@ static int score_named(const char *group, char *const *assign, int n) {
 static void print_terms(void) {
     int i, n = process_nterms();
 
-    printf("%d term%s and %ld group%s in %s\n", n, s_(n), process_ngroups(),
+    (void)printf("%d term%s and %ld group%s in %s\n", n, s_(n), process_ngroups(),
            s_(process_ngroups()), process_coef_path());
     for (i = 0; i < n; i++)
-        printf("  %3d  %s\n", i + 1, process_term_name(i));
-    printf("\nname them: GROUP %s=1 ...\n", n > 0 ? process_term_name(0) : "TERM");
+        (void)printf("  %3d  %s\n", i + 1, process_term_name(i));
+    (void)printf("\nname them: GROUP %s=1 ...\n", n > 0 ? process_term_name(0) : "TERM");
 }
 
 /* Every group in one pass. This is the default for -t now, because "one fitted
@@ -95,21 +95,21 @@ static int train_all(const char *path) {
     struct fit_summary sum;
 
     if (process_train_all(path, stdout, &sum) != 0) {
-        fprintf(stderr, "cannot fit: %s\n", process_error());
+        (void)fprintf(stderr, "cannot fit: %s\n", process_error());
         return -1;
     }
-    fprintf(stderr, "fit: %ld group%s, %ld row%s", sum.groups, s_(sum.groups),
+    (void)fprintf(stderr, "fit: %ld group%s, %ld row%s", sum.groups, s_(sum.groups),
             sum.rows, s_(sum.rows));
     if (sum.pinned > 0) fprintf(stderr, ", %d term-slots pinned to 0", sum.pinned);
-    fprintf(stderr, ", least df=%ld", sum.min_df);
+    (void)fprintf(stderr, ", least df=%ld", sum.min_df);
     if (sum.max_condition > 1.0) fprintf(stderr, ", worst cond=%.3g", sum.max_condition);
-    fprintf(stderr, "\n");
+    (void)fprintf(stderr, "\n");
     if (sum.min_df <= 0)
-        fprintf(stderr, "warning: at least one group has no residual degrees of "
+        (void)fprintf(stderr, "warning: at least one group has no residual degrees of "
                         "freedom; its line passes through every row by "
                         "construction. Fit those groups on more rows.\n");
     if (sum.max_condition > 1e8)
-        fprintf(stderr, "warning: at least one group is ill-conditioned (cond=%.3g); "
+        (void)fprintf(stderr, "warning: at least one group is ill-conditioned (cond=%.3g); "
                         "the trailing digits of its coefficients are noise.\n",
                 sum.max_condition);
     return 0;
@@ -120,33 +120,33 @@ static int train(const char *path, const char *group) {
     struct fit_info info;
 
     if (process_train(path, group, out, sizeof out, &info) != 0) {
-        fprintf(stderr, "cannot fit: %s\n", process_error());
+        (void)fprintf(stderr, "cannot fit: %s\n", process_error());
         return -1;
     }
-    printf("%s\n", out);
-    fprintf(stderr, "fit: %ld row%s", info.rows, s_(info.rows));
+    (void)printf("%s\n", out);
+    (void)fprintf(stderr, "fit: %ld row%s", info.rows, s_(info.rows));
     if (info.r2 >= 0.0) fprintf(stderr, ", R2=%.4f", info.r2);
     if (info.pinned > 0)
-        fprintf(stderr, ", %d term%s unidentified and set to 0",
+        (void)fprintf(stderr, ", %d term%s unidentified and set to 0",
                 info.pinned, s_(info.pinned));
-    fprintf(stderr, ", df=%ld", info.df);
+    (void)fprintf(stderr, ", df=%ld", info.df);
     if (info.condition > 1.0) fprintf(stderr, ", cond=%.3g", info.condition);
-    fprintf(stderr, "\n");
+    (void)fprintf(stderr, "\n");
     /* R2 cannot see this failure: an ill-conditioned design fits its own sample
      * beautifully and predicts nothing. Normal equations square the condition
      * number, so this is the diagnostic that has to be said out loud. */
     if (info.condition > 1e8)
-        fprintf(stderr, "warning: the design is ill-conditioned (cond=%.3g). The "
+        (void)fprintf(stderr, "warning: the design is ill-conditioned (cond=%.3g). The "
                         "trailing digits of these coefficients are noise; rescale "
                         "your columns or drop a near-duplicate one.\n", info.condition);
     if (info.r2 < 0.0)
-        fprintf(stderr, "warning: R2 is not reportable here: the response "
+        (void)fprintf(stderr, "warning: R2 is not reportable here: the response "
                         "does not vary, or the fit consumed all of its "
                         "variance.\n");
     /* Said plainly, because an R2 of 1 from a saturated fit reads like success
      * and is the easiest way to publish a model that knows nothing. */
     if (info.df <= 0)
-        fprintf(stderr, "warning: no residual degrees of freedom; this line "
+        (void)fprintf(stderr, "warning: no residual degrees of freedom; this line "
                         "passes through every row by construction, and its R2 "
                         "means nothing. Fit it on more rows.\n");
     return 0;
@@ -245,7 +245,7 @@ int main(int argc, char **argv) {
                 int ch;
                 while ((ch = fgetc(stdin)) != EOF && ch != '\n')
                     ;
-                fprintf(stderr, "cannot score: a line longer than %d bytes\n",
+                (void)fprintf(stderr, "cannot score: a line longer than %d bytes\n",
                         MAX_INPUT - 1);
                 bad = 1;
                 continue;
