@@ -79,6 +79,13 @@ found by reading a claim against the code rather than by running anything:
   mandatory, which meant a coefficient file produced by `-t` could not be scored
   against at all. The loader was split (`los_load` / `los_load_trims`) so the
   comment became true.
+- And then the same line was wrong a second time, for a year's worth of commits
+  in one afternoon: it said "comment this out and the trim point is just the
+  prediction", when an absent key means the built-in default, so the table loads
+  and the trim is applied. The README got the correction; the config file that
+  originally made the claim did not. Three independent reviews missed it.
+  **When you correct a claim, grep for the other places that make it** -- a
+  fixed sentence in one file is not a fixed claim.
 
 ## Nullable returns, and the segfault this project already had
 

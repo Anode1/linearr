@@ -306,5 +306,27 @@ rm -f "$tmp/system.properties"
 check "the named form tolerates a trailing space, as the row form does" \
     "$("$bin" 001 'icu_indicator=1 ' 2>&1)" "$("$bin" '001,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0 ' 2>&1)"
 
+# --- the three ways to have no trim table, and the one that is not a way ------
+# system.properties said "comment this out and the trim point is just the
+# prediction". It is not: an absent key means the built-in default, so the table
+# loads and the trim is applied. The file now says so; this makes sure it stays
+# true whichever way the behaviour changes.
+mkdir -p "$tmp/tf/conf"
+printf 'GROUP,Intercept,a\nX,10,1\n'      > "$tmp/tf/conf/coefficients.csv"
+printf 'GROUP,trim_addition\nX,500\n'     > "$tmp/tf/conf/trim_additions.csv"
+
+printf 'coef.file = conf/coefficients.csv\n# trim.file = conf/trim_additions.csv\n' \
+    > "$tmp/tf/system.properties"
+check "a commented-out trim.file still loads the default table" \
+    "$(cd "$tmp/tf" && "$bin" X a=0)" "X prediction=10.0000 trim=510.0"
+
+printf 'coef.file = conf/coefficients.csv\ntrim.file =\n' > "$tmp/tf/system.properties"
+check "an EMPTY trim.file is how you turn it off" \
+    "$(cd "$tmp/tf" && "$bin" X a=0)" "X prediction=10.0000 trim=10.0"
+
+printf 'coef.file = conf/coefficients.csv\n' > "$tmp/tf/system.properties"
+check "--no-trim turns it off too" \
+    "$(cd "$tmp/tf" && "$bin" --no-trim X a=0)" "X prediction=10.0000 trim=10.0"
+
 echo "cliut: $pass passed, $fail failed, $skip skipped"
 [ "$fail" -eq 0 ]
