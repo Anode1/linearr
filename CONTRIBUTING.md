@@ -29,5 +29,5 @@ result of specific defects rather than taste.
 ## Reporting a bug
 
 The exact command, the input that reproduces it, what you expected, and what
-happened. A reproduction that fits in a shell snippet is worth more than a
+happened. A reproduction that fits in a shell snippet is more useful than a
 description of the problem.

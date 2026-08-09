@@ -177,7 +177,7 @@ failed, the first question is which gate could not have caught it.
 
 Red -> green -> refactor. Every change keeps the whole suite green.
 
-## Numbers in tests are not decoration
+## The numbers in the tests are load-bearing
 
 `example/train.csv` was generated from `conf/coefficients.csv`, so the fit must
 return those coefficients to the last printed digit; `example/simple-train.csv`
