@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- =================================================================== -->
+<!-- ANT build for the Java implementation.                              -->
+<!--                                                                     -->
+<!-- The same job as the C in the directory above: read a training CSV,   -->
+<!-- fit one line per group, write the coefficient table. Regress.java is -->
+<!-- regress.c line for line; the two are meant to be read side by side.  -->
+<!--                                                                     -->
+<!-- NOTE: all directories are relative to this file's directory.         -->
+<!-- =================================================================== -->
+
+<project basedir="." default="jar" name="linearr">
+
+  <property name="build"       value="classes"/>
+  <property name="jar"         value="lib/linearr.jar"/>
+  <property name="release_num" value="0.1.0"/>
+
+  <property name="javadoc.dir"         value="doc/javadoc"/>
+  <property name="javadoc.header"      value="${ant.project.name}"/>
+  <property name="javadoc.windowtitle" value="${ant.project.name} ver ${release_num} API Documentation"/>
+
+  <target name="init">
+    <tstamp/>
+  </target>
+
+  <path id="run.classpath">
+    <pathelement location="."/>
+    <pathelement location="${build}"/>
+  </path>
+
+  <!-- The sources are deliberately old-style: no generics, Hashtable and
+       Vector, StringBuffer, one reused record per run rather than one object
+       per row. source/target are set low to keep it that way honestly, and
+       -nowarn suppresses the raw-type notes that style produces. -->
+  <target name="compile" depends="init">
+    <mkdir dir="${build}"/>
+    <javac srcdir="." destdir="${build}" includeantruntime="false"
+           debug="true" nowarn="true">
+      <compilerarg value="-Xlint:none"/>
+    </javac>
+  </target>
+
+  <target name="jar" depends="compile">
+    <mkdir dir="lib"/>
+    <jar jarfile="${jar}" basedir="${build}">
+      <manifest>
+        <attribute name="Main-Class" value="Linearr"/>
+        <attribute name="Implementation-Version" value="${release_num}"/>
+      </manifest>
+    </jar>
+  </target>
+
+  <!-- Fit the example the C ships, and print the table. -->
+  <target name="run" depends="compile">
+    <java classname="Linearr" classpathref="run.classpath" fork="true">
+      <arg value="../example/train.csv"/>
+    </java>
+  </target>
+
+  <target name="javadoc" depends="init">
+    <mkdir dir="${javadoc.dir}"/>
+    <javadoc sourcepath="." destdir="${javadoc.dir}"
+             header="${javadoc.header}" windowtitle="${javadoc.windowtitle}"/>
+  </target>
+
+  <target name="clean">
+    <delete dir="${build}"/>
+    <delete dir="lib"/>
+    <delete dir="${javadoc.dir}"/>
+    <delete><fileset dir="." includes="*.class"/></delete>
+  </target>
+
+</project>

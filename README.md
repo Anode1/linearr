@@ -9,7 +9,7 @@ a ten-million-row fit cost the same memory.
     ./linearr -t mydata.csv > model.csv       # fit every group in one pass
     ./linearr -c model.csv --no-trim A x=3    # score a case against it
 
-## Least squares in three short pieces
+## All of least squares, in three short pieces
 
 **What it does.** You have rows: some measurements, and a number you care about.
 It finds the straight line through them that misses by as little as possible --
@@ -182,6 +182,57 @@ model had (35 terms, 580 groups), output verbatim:
       580 groups x (35 + 1) doubles = about 163 KB, held once.
 
 Ten times the data, the same memory. Time scales with the rows, as it must.
+
+## The same job in other languages
+
+Read the file, fit a line per group, write the table. `scripts/bench.sh` checks
+each one's coefficients against linearr's before timing it -- an unchecked speed
+number may be timing a different answer. All agree: one answer, different prices.
+
+    $ sh scripts/bench.sh 8 50 500000        # 8 terms, 50 groups, 500k rows
+
+    implementation   shape        time     peak RSS   check
+    linearr (C)      streaming    0.10s    2432 KB    agrees to 0
+    Java             streaming    0.26s    105700 KB  agrees to 0
+    Python           streaming    2.42s    10240 KB   agrees to 1.2e-13
+    awk              streaming    10.55s   5632 KB    agrees to 1.2e-13
+    Python           frame        3.01s    315904 KB  agrees to 1.2e-13
+
+Every one of these streams except the last, because every one of these languages
+*can*. Writing the C as a stream and the Python as pandas would measure the two
+styles and call it a language comparison. So the materialising row is Python
+too: same language, same machine, same algorithm, one variable changed. At ten
+times the data the streaming rows do not move and that row goes 41 MB -> 316 MB.
+
+The JVM's number is mostly the JVM. Capping its heap separates the runtime's
+appetite from what the algorithm needs -- 500,000 rows fit in a 16 MB heap at
+the same speed:
+
+    -Xmx16m   0.27s  61772 KB
+    -Xmx64m   0.27s  88564 KB
+
+`bench/fit.R` is the ecosystem case, and it says so in its own header: `read.csv`
+materialises the frame because that is R's idiom. It SKIPs unless R is
+installed.
+
+## Two implementations
+
+`java/` fits the same model, in the style this project's C came from --
+`BufferedReader` and a `readLine` loop, `Hashtable`, `Vector`, `StringBuffer`,
+and one reused record rather than one object per row. `Regress.java` is
+`regress.c` line for line: the same centered accumulation, the same equilibrated
+rank test, the same intercept-from-the-means. They are meant to be read side by
+side, and they agree to the last bit rather than merely closely.
+
+    cd java && ant jar          # or: javac -nowarn *.java
+    java Linearr ../example/train.csv
+
+Reusing the record instead of allocating one per row is an optimisation from
+when its author started writing Java, and it is still the reason the memory
+column is flat. `String.split()` in that loop allocates an array and a string
+per field; over 500,000 rows that is five million short-lived objects, and the
+heap that grows to hold them gets read as "Java needs 400 MB for this". It does
+not.
 
 ## Build and run
 
@@ -393,6 +444,9 @@ conf/             the example model (synthetic)
 example/          training files: two schemas, plus the three the README's
                   "three short pieces" section runs (all synthetic)
 scripts/scale.sh  measures the memory claim at 200 terms and 500 groups
+scripts/bench.sh  the same job in Java, Python, awk and R, answers checked first
+java/             the second implementation; Regress.java mirrors regress.c
+bench/            the other languages' versions, and the coefficient comparator
 scripts/bench.sh  the same fit in C, Java and Python, checked against each other
 scripts/hooks/    pre-push: the sanitizers, before anything reaches the remote
 Makefile          the build

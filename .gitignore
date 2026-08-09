@@ -4,3 +4,11 @@ linearr_ut
 *.o
 *.d
 .build-flags
+
+# java
+java/classes/
+java/lib/
+java/doc/
+*.class
+__pycache__/
+*.pyc
