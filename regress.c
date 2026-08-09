@@ -1,5 +1,5 @@
 /* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
-/* regress.c -- see regress.h. Online centered co-moments, then Gauss-Jordan
+/* regress.c: see regress.h. Online centered co-moments, then Gauss-Jordan
  * with partial pivoting on the equilibrated system. */
 #include "regress.h"
 #include "common.h"
@@ -10,7 +10,7 @@
 /* Rank tolerance on the EQUILIBRATED matrix, whose diagonal is all ones. A
  * pivot this small means the column is a linear combination of the others to
  * within twelve digits. Because the matrix is scaled first, this is a pure
- * rank statement and carries no units -- which is the whole point; the absolute
+ * rank statement and carries no units, which is the whole point; the absolute
  * version of this constant deleted well-identified columns for being measured
  * in the wrong unit. */
 #define RANK_EPS 1e-12
@@ -19,6 +19,14 @@
  * square the condition number of the design, so a reported 1e8 here is roughly
  * cond(X) = 1e4 and about half the mantissa is gone. */
 #define CONDITION_WARN 1e8
+
+/* Both matrices here are row-major in a flat array the caller owns, so every
+ * access used to spell out (size_t)i * (size_t)stride + (size_t)j at the point
+ * of use. This is the one place that knows the layout; the code below takes a
+ * row and indexes it by column, which is how the arithmetic reads on paper. */
+static double *row_of(double *m, int stride, int i) {
+    return m + (size_t)i * (size_t)stride;
+}
 
 size_t regress_storage(int nvars) {
     if (nvars < 1) return 0;
@@ -54,8 +62,9 @@ int regress_init(struct regress *r, int nvars, double *storage) {
 }
 
 int regress_add(struct regress *r, const double *x, double y) {
-    int i, j, p = r->nvars;
-    double dy;
+    double dnew[REGRESS_MAX_VARS];         /* the after-update deviation, per term */
+    int    i, j, p = r->nvars;
+    double dy, dy_new;
 
     /* Refuse non-finite input at the door. One nan admitted here reaches every
      * coefficient, and the resulting table of "nan" used to load cleanly and
@@ -69,14 +78,23 @@ int regress_add(struct regress *r, const double *x, double y) {
 
     /* Online covariance: each co-moment is updated with one deviation taken
      * BEFORE its mean moves and one taken AFTER, which is what makes the
-     * running form exact rather than merely close. */
+     * running form exact rather than merely close.
+     *
+     * The AFTER deviation depends on the column and not on the cell, so it is
+     * computed once per row. Inside the inner loop it was p*p subtractions and
+     * DIVISIONS per row where p of each are enough, and at 35 terms that was
+     * the fit: 12 billion divisions over a ten-million-row file. The
+     * expressions are character for character the ones that were there, so
+     * every coefficient is bit-for-bit what it was. */
+    for (j = 0; j < p; j++)
+        dnew[j] = x[j] - (r->mean[j] + (x[j] - r->mean[j]) / (double)r->n);
+    dy_new = y - (r->my + dy / (double)r->n);
+
     for (i = 0; i < p; i++) {
-        double dxi = x[i] - r->mean[i];
-        for (j = 0; j < p; j++) {
-            double dxj_new = x[j] - (r->mean[j] + (x[j] - r->mean[j]) / (double)r->n);
-            r->c[(size_t)i * (size_t)p + (size_t)j] += dxi * dxj_new;
-        }
-        r->cxy[i] += dxi * (y - (r->my + dy / (double)r->n));
+        double  dxi = x[i] - r->mean[i];
+        double *ci  = row_of(r->c, p, i);
+        for (j = 0; j < p; j++) ci[j] += dxi * dnew[j];
+        r->cxy[i] += dxi * dy_new;
     }
     for (i = 0; i < p; i++) r->mean[i] += (x[i] - r->mean[i]) / (double)r->n;
     r->my  += dy / (double)r->n;
@@ -101,35 +119,35 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
     /* Equilibrate: divide row i and column j by the square roots of their own
      * variances, so the matrix has a unit diagonal and the pivot test below is
      * about rank rather than about units. A column with no variance at all gets
-     * scale 0 and is pinned -- correctly: it is collinear with the intercept. */
+     * scale 0 and is pinned, correctly: it is collinear with the intercept. */
     for (i = 0; i < p; i++) {
-        double cii = r->c[(size_t)i * (size_t)p + (size_t)i];
+        double cii = row_of(r->c, p, i)[i];
         d[i] = (cii > 0.0) ? sqrt(cii) : 0.0;
     }
     for (i = 0; i < p; i++) {
-        for (j = 0; j < p; j++) {
-            double v = r->c[(size_t)i * (size_t)p + (size_t)j];
-            scratch[(size_t)i * (size_t)stride + (size_t)j] =
-                (d[i] > 0.0 && d[j] > 0.0) ? v / (d[i] * d[j]) : 0.0;
-        }
-        scratch[(size_t)i * (size_t)stride + (size_t)p] =
-            (d[i] > 0.0) ? r->cxy[i] / d[i] : 0.0;
+        const double *ci = row_of(r->c, p, i);
+        double       *si = row_of(scratch, stride, i);
+        for (j = 0; j < p; j++)
+            si[j] = (d[i] > 0.0 && d[j] > 0.0) ? ci[j] / (d[i] * d[j]) : 0.0;
+        si[p] = (d[i] > 0.0) ? r->cxy[i] / d[i] : 0.0;
     }
 
     for (col = 0; col < p; col++) {
-        int    best = rank;
-        double piv;
+        double *prow;                          /* the pivot row, once found */
+        int     best = rank;
+        double  piv;
 
-        if (rank >= p) break;
-        for (i = rank; i < p; i++)
-            if (fabs(scratch[(size_t)i * (size_t)stride + (size_t)col]) >
-                fabs(scratch[(size_t)best * (size_t)stride + (size_t)col])) best = i;
+        if (rank >= p) break;                  /* before any row is touched */
+        piv = fabs(row_of(scratch, stride, rank)[col]);
+        for (i = rank + 1; i < p; i++) {
+            double v = fabs(row_of(scratch, stride, i)[col]);
+            if (v > piv) { piv = v; best = i; }
+        }
 
-        piv = scratch[(size_t)best * (size_t)stride + (size_t)col];
-        if (d[col] == 0.0 || fabs(piv) <= RANK_EPS) {
+        if (d[col] == 0.0 || piv <= RANK_EPS) {
             /* Two reasons, and they are not the same claim. A column with no
              * variance carries no evidence about anything. A column collinear
-             * with another has evidence that cannot be attributed -- and which
+             * with another has evidence that cannot be attributed, and which
              * of the pair keeps it depends on the order they were listed in. */
             if (fit) fit->term[col] = (d[col] == 0.0) ? REGRESS_CONSTANT
                                                       : REGRESS_COLLINEAR;
@@ -138,28 +156,30 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
             continue;                        /* beta stays 0 */
         }
 
-        if (best != rank)
+        prow = row_of(scratch, stride, rank);
+        if (best != rank) {
+            double *brow = row_of(scratch, stride, best);
             for (j = col; j <= p; j++) {
-                double tmp = scratch[(size_t)rank * (size_t)stride + (size_t)j];
-                scratch[(size_t)rank * (size_t)stride + (size_t)j] =
-                    scratch[(size_t)best * (size_t)stride + (size_t)j];
-                scratch[(size_t)best * (size_t)stride + (size_t)j] = tmp;
+                double tmp = prow[j];
+                prow[j]    = brow[j];
+                brow[j]    = tmp;
             }
+        }
 
-        piv = scratch[(size_t)rank * (size_t)stride + (size_t)col];
+        piv = prow[col];
         if (pivmax == 0.0 || fabs(piv) > pivmax) pivmax = fabs(piv);
         if (pivmin == 0.0 || fabs(piv) < pivmin) pivmin = fabs(piv);
 
-        for (j = col; j <= p; j++) scratch[(size_t)rank * (size_t)stride + (size_t)j] /= piv;
+        for (j = col; j <= p; j++) prow[j] /= piv;
 
         for (i = 0; i < p; i++) {
-            double f;
+            double *irow;
+            double  f;
             if (i == rank) continue;
-            f = scratch[(size_t)i * (size_t)stride + (size_t)col];
+            irow = row_of(scratch, stride, i);
+            f    = irow[col];
             if (f == 0.0) continue;
-            for (j = col; j <= p; j++)
-                scratch[(size_t)i * (size_t)stride + (size_t)j] -=
-                    f * scratch[(size_t)rank * (size_t)stride + (size_t)j];
+            for (j = col; j <= p; j++) irow[j] -= f * prow[j];
         }
         pivot_col[rank] = col;
         if (fit) fit->term[col] = REGRESS_FITTED;
@@ -169,7 +189,7 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
     /* Unscale: the solved vector is in equilibrated units. */
     for (k = 0; k < rank; k++) {
         int c = pivot_col[k];
-        beta[c + 1] = scratch[(size_t)k * (size_t)stride + (size_t)p] / d[c];
+        beta[c + 1] = row_of(scratch, stride, k)[p] / d[c];
     }
 
     /* The intercept falls out of the means, so it is never a candidate for
@@ -194,9 +214,9 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
 
             /* Two different things look alike here and must not be conflated.
              * A fit that is exact leaves an SSE of a few ulps, negative as
-             * often as positive -- that is rounding, and R2 really is 1. An
+             * often as positive; that is rounding, and R2 really is 1. An
              * SSE meaningfully below zero is arithmetic that has lost its
-             * meaning, and the honest answer is to say so rather than clamp to
+             * meaning, and the right answer is to say so rather than clamp to
              * zero and report a perfect score, which is what the old code did:
              * it turned a true R2 of 0 into a printed 1.0000. */
             if (sse < -1e-9 * r->cyy) {

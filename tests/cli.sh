@@ -1,5 +1,5 @@
 #!/bin/sh
-# cli.sh -- black-box tests: the built binary, driven through the shell, the way
+# cli.sh: black-box tests: the built binary, driven through the shell, the way
 # a user meets it. `make ut` cannot see any of this. It exists because of one
 # defect it would have caught instantly: a bare `./linearr` sat reading stdin
 # and looked hung, and only printed its usage after a Ctrl-C. Every unit test
@@ -25,11 +25,11 @@ EXPECT1='001 prediction=19.9611 trim=46.5'
 
 cd "$root"
 
-# --- an argument is scored -------------------------------------------------
+# an argument is scored
 check "argument"      "$("$bin" "$CASE1")" "$EXPECT1"
 check "argument exit" "$?" "0"
 
-# --- a pipe is a filter ----------------------------------------------------
+# a pipe is a filter
 check "pipe" "$(printf '%s\n%s\n' "$CASE1" "$CASE1" | "$bin" | wc -l | tr -d ' ')" "2"
 check "redirect" "$(printf '%s\n' "$CASE1" > "$tmp/c.csv"; "$bin" < "$tmp/c.csv")" "$EXPECT1"
 
@@ -37,12 +37,12 @@ check "redirect" "$(printf '%s\n' "$CASE1" > "$tmp/c.csv"; "$bin" < "$tmp/c.csv"
 check "pipe skips comments" \
     "$(printf '# a note\n\n%s\n' "$CASE1" | "$bin" | wc -l | tr -d ' ')" "1"
 
-# --- an empty pipe is an ordinary outcome, not an error --------------------
+# an empty pipe is an ordinary outcome, not an error
 out=$(printf '' | "$bin" 2>&1); rc=$?
 check "empty pipe output" "$out" ""
 check "empty pipe exit"   "$rc"  "0"
 
-# --- a bad row is reported, and the exit code says so ----------------------
+# a bad row is reported, and the exit code says so
 set +e
 out=$(printf '001,1,2\n' | "$bin" 2>&1); rc=$?
 set -e
@@ -53,11 +53,11 @@ case "$out" in *"cannot score"*) ok ;; *) no "bad row message: got [$out]" ;; es
 check "bad row does not stop the batch" \
     "$(printf '%s\n001,1,2\n%s\n' "$CASE1" "$CASE1" 2>/dev/null | "$bin" 2>/dev/null | wc -l | tr -d ' ')" "2"
 
-# --- -h ---------------------------------------------------------------------
+# -h
 check "-h exit" "$("$bin" -h >/dev/null 2>&1; echo $?)" "0"
 case "$("$bin" -h 2>&1)" in usage:*) ok ;; *) no "-h prints usage" ;; esac
 
-# --- THE regression: a bare run on a terminal ------------------------------
+# THE regression: a bare run on a terminal
 # It must print the usage and exit at once. Reading stdin here is the bug: the
 # program looks hung. Needs a pty; if we cannot allocate one, say SKIP rather
 # than quietly passing.
@@ -75,7 +75,7 @@ if [ -n "$flavour" ] && command -v timeout >/dev/null 2>&1; then
     fi
     rc=$?
     set -e
-    # timeout exits 124 when it had to kill the command -- that is the hang.
+    # timeout exits 124 when it had to kill the command; that is the hang.
     check "bare run does not hang" "$rc" "0"
     out=$(head -1 "$tmp/bare.txt" | tr -d '\r')
     case "$out" in usage:*) ok ;; *) no "bare run prints usage: got [$out]" ;; esac
@@ -83,7 +83,7 @@ else
     skip=$((skip+2)); echo "  SKIP bare-run-on-a-terminal (no pty or no timeout here)"
 fi
 
-# --- naming the terms instead of counting commas ---------------------------
+# naming the terms instead of counting commas
 check "named form" "$("$bin" 001 Cardioversion=1 icu_indicator=1)" "$EXPECT1"
 # The two ways of writing one case must agree, or having two is a liability.
 check "named form agrees with the row form" \
@@ -91,14 +91,14 @@ check "named form agrees with the row form" \
 check "named form is case-insensitive" \
     "$("$bin" 001 CARDIOVERSION=1 icu_indicator=1)" "$EXPECT1"
 
-# --- --terms: the answer to "what am I supposed to type?" ------------------
+# --terms: the answer to "what am I supposed to type?"
 check "--terms exit" "$("$bin" --terms >/dev/null 2>&1; echo $?)" "0"
 case "$("$bin" --terms)" in *"24 terms and 12 groups"*) ok ;;
     *) no "--terms reports the size of the model" ;; esac
 case "$("$bin" --terms)" in *icu_indicator*) ok ;;
     *) no "--terms lists the term names" ;; esac
 
-# --- errors name the thing that was wrong ----------------------------------
+# errors name the thing that was wrong
 # The old message was "cannot score: <the whole case>" whatever went wrong,
 # which sent the user to check data that was never the problem.
 set +e
@@ -111,17 +111,17 @@ for probe in "001 nosuchterm=1|nosuchterm" \
 done
 set -e
 
-# --- it runs from somewhere else, like an installed program ----------------
+# it runs from somewhere else, like an installed program
 # This is the defect that made the tool usable only inside its own source tree.
 check "runs from another directory" "$(cd "$tmp" && "$bin" 001 Cardioversion=1 icu_indicator=1)" "$EXPECT1"
 # Coefficients are written at full precision, so compare the VALUES. The old
-# %.4f made this a string match -- and made any coefficient below 5e-5 a zero.
+# %.4f made this a string match, and made any coefficient below 5e-5 a zero.
 coefs() { tail -1 | cut -d, -f2- | tr ',' '\n' | awk '{printf "%.9f\n", $1}' | paste -sd' ' -; }
 check "-t finds its example from another directory" \
     "$(cd "$tmp" && "$bin" -t example/simple-train.csv -g A 2>/dev/null | coefs)" \
     "5.000000000 2.500000000 1.500000000"
 
-# --- a missing table is one fatal message, not one complaint per row -------
+# a missing table is one fatal message, not one complaint per row
 printf 'coef.file = definitely-not-here.csv\n' > "$tmp/system.properties"
 set +e
 out=$(cd "$tmp" && printf '%s\n%s\n%s\n' "$CASE1" "$CASE1" "$CASE1" | "$bin" 2>&1); rc=$?
@@ -132,7 +132,7 @@ check "missing table is reported once, not per row" \
 case "$out" in *"looked in"*) ok ;; *) no "missing table says where it looked: got [$out]" ;; esac
 rm -f "$tmp/system.properties"
 
-# --- fit, then score against what was fitted -------------------------------
+# fit, then score against what was fitted
 "$bin" -t example/simple-train.csv -g A 2>/dev/null > "$tmp/coef.csv"
 check "fit writes a header" "$(head -1 "$tmp/coef.csv")" "GROUP,Intercept,km,stops"
 check "fit writes the row"  "$(coefs < "$tmp/coef.csv")" "5.000000000 2.500000000 1.500000000"
@@ -155,14 +155,14 @@ printf 'coef.file = %s\ntrim.file =\n' "$tmp/coef.csv" > "$tmp/system.properties
 check "score against the fitted table" \
     "$(cd "$tmp" && "$bin" 'A,10,3')" "A prediction=34.5000 trim=34.5"
 
-# --- an unreadable table named in the config is an error, not a shrug ------
+# an unreadable table named in the config is an error, not a shrug
 printf 'coef.file = %s/nope.csv\n' "$tmp" > "$tmp/system.properties"
 set +e
 (cd "$tmp" && "$bin" 'A,10,3' >/dev/null 2>&1); rc=$?
 set -e
 check "missing coefficient file exits nonzero" "$rc" "1"
 
-# --- the build's own claims ------------------------------------------------
+# the build's own claims
 # Twice now this Makefile has said it did something and not done it: the default
 # goal was `modeclean`, so a bare `make` deleted the build and exited 0; and
 # CPPFLAGS was recorded nowhere, so the README's own command for setting the
@@ -196,7 +196,7 @@ else
     skip=$((skip+3)); echo "  SKIP build-claims (no make)"
 fi
 
-# --- what the reviewers found: each of these printed a confident wrong answer --
+# What the reviewers found: each of these printed a confident wrong answer.
 # An over-long stdin line must not become two predictions.
 python3 -c "
 import sys
@@ -250,7 +250,7 @@ set +e
 set -e
 check "-g without -t is an error" "$rc" "1"
 
-# --- fitting every group in one pass ---------------------------------------
+# fitting every group in one pass
 "$bin" -t example/train.csv > "$tmp/all.csv" 2>/dev/null
 check "a fit-all writes one row per group" \
     "$(grep -c '^00' "$tmp/all.csv")" "2"
@@ -260,7 +260,7 @@ check "and the round trip reproduces the reference prediction" \
 check "-g '*' still pools on request" \
     "$("$bin" -t example/train.csv -g '*' 2>/dev/null | grep -c '^\*,')" "1"
 
-# --- a pinned term is marked, so a redirect does not launder it into a zero ---
+# a pinned term is marked, so a redirect does not launder it into a zero
 check "the fitted table records which zeroes are silences" \
     "$("$bin" -t example/train.csv 2>/dev/null | grep -c '^# pinned')" "2"
 case "$("$bin" -t example/train.csv 2>/dev/null | grep '^# pinned 001')" in
@@ -272,7 +272,7 @@ check "a table with pinned notes still loads" \
     "$("$bin" -c "$tmp/pinned.csv" --no-trim 001 Cardioversion=1 icu_indicator=1)" \
     "001 prediction=19.9611 trim=20.0"
 
-# --- tables that used to be misread silently --------------------------------
+# tables that used to be misread silently
 printf 'GROUP,Intercept,a\nX,10,1\nX,999,1\n' > "$tmp/dup.csv"
 set +e
 out=$("$bin" -c "$tmp/dup.csv" --no-trim X a=0 2>&1); rc=$?
@@ -293,7 +293,7 @@ set -e
 check "a headerless coefficient file is refused" "$rc" "1"
 case "$out" in *header*) ok ;; *) no "headerless message names the header: got [$out]" ;; esac
 
-# --- a config value that cannot be honoured is an error, not a silent default -
+# a config value that cannot be honoured is an error, not a silent default
 printf 'coef.file = %s/dup2.csv\ntrim.file =\npredict.scale = 99\n' "$tmp" > "$tmp/system.properties"
 printf 'GROUP,Intercept,a\nX,10,1\n' > "$tmp/dup2.csv"
 set +e
@@ -302,7 +302,7 @@ set -e
 check "an out-of-range predict.scale is refused" "$rc" "1"
 rm -f "$tmp/system.properties"
 
-# --- the two case forms must agree about whitespace --------------------------
+# the two case forms must agree about whitespace
 check "the named form tolerates a trailing space, as the row form does" \
     "$("$bin" 001 'icu_indicator=1 ' 2>&1)" "$("$bin" '001,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0 ' 2>&1)"
 

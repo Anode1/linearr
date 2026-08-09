@@ -1,4 +1,4 @@
-# example/simple-train.csv -- nothing medical about it: minutes on the road as a
+# example/simple-train.csv: nothing medical about it, minutes on the road as a
 # function of distance and stops, two terms instead of twenty-four. The point of
 # this file is that the program never had to change to fit it: the header names
 # the terms, so this IS the whole schema.

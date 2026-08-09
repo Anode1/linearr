@@ -1,7 +1,7 @@
 /* Copyright (C) 2001 Vasili Gavrilov. GNU GPL v2 or later. Hardened 2026. */
-/* common.h -- safe primitives shared by every module: fatal exit, gated debug,
- * and checked allocation. Functions, not macros, so they type-check and are
- * greppable. See README.md for the style these encode. */
+/* common.h, the safe primitives shared by every module: fatal exit, gated
+ * debug, and checked allocation. Functions, not macros, so they type-check
+ * and are greppable. See README.md for the style these encode. */
 #ifndef COMMON_H
 #define COMMON_H
 

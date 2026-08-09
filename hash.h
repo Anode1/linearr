@@ -1,5 +1,5 @@
 /* Copyright (C) 2001 Vasili Gavrilov. GNU GPL v2 or later. Hardened 2026. */
-/* hash.h -- a generic string -> void* hash table (separate chaining). The table
+/* hash.h: a generic string -> void* hash table (separate chaining). The table
  * owns a copy of each key; the caller owns the stored data. */
 #ifndef HASH_H
 #define HASH_H

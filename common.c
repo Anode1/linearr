@@ -1,5 +1,5 @@
 /* Copyright (C) 2001 Vasili Gavrilov. GNU GPL v2 or later. Hardened 2026. */
-/* common.c -- see common.h. */
+/* common.c: see common.h. */
 #include "common.h"
 
 #include <stdio.h>

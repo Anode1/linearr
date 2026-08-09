@@ -1,5 +1,5 @@
 /* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
-/* process.h -- THE slot. Two directions of the same model: score a case against
+/* process.h: THE slot. Two directions of the same model: score a case against
  * the fitted coefficients, or fit the coefficients from a training file.
  * main.c calls one or the other and prints the result; nothing here prints. */
 #ifndef PROCESS_H
@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <stdio.h>
 
-/* --- scoring --------------------------------------------------------------
+/* scoring
  *
  * Load the coefficient table (and the trim additions, if configured) so the
  * program can score. Call it once, before the first process()/process_named().
@@ -25,18 +25,18 @@ int process_init(char *err, size_t errsz);
  * Call before process_init. process_use_trim(NULL) means deliberately none.
  * These exist because the only way to score against a model you had just
  * fitted was to create a conf/ directory and redirect into a hardcoded
- * relative path -- a dead end a first-time user hit within five minutes. */
+ * relative path: a dead end a first-time user hit within five minutes. */
 void process_use_coef(const char *path);
 void process_use_trim(const char *path);
 
 /* Score one case written as a row: "GROUP,x1,...,xp", one value per term in the
- * coefficient file's column order. Returns 0, or -1 -- process_error() then
+ * coefficient file's column order. Returns 0, or -1; process_error() then
  * says why. */
 int process(const char *input, char *out, size_t outsz);
 
 /* Score one case written by name: a group, plus n assignments of the form
  * "term=value". Any term not mentioned is 0, which is what makes this usable
- * with a wide model -- naming the two things that are true beats typing 254
+ * with a wide model: naming the two things that are true beats typing 254
  * zeroes. Returns 0, or -1 (see process_error). */
 int process_named(const char *group, char *const *assign, int n,
                   char *out, size_t outsz);
@@ -45,14 +45,14 @@ int process_named(const char *group, char *const *assign, int n,
  * NULL; a sentence fragment fit to follow "cannot score X: ". */
 const char *process_error(void);
 
-/* --- the loaded schema, for `--terms` -------------------------------------- */
+/* the loaded schema, for `--terms` */
 
 int         process_nterms(void);          /* terms in the loaded table       */
 long        process_ngroups(void);         /* groups in the loaded table      */
 const char *process_term_name(int i);      /* NULL if i is out of range       */
 const char *process_coef_path(void);       /* the table actually opened       */
 
-/* --- fitting --------------------------------------------------------------- */
+/* fitting */
 
 /* What the fit found, for the report on stderr. */
 struct fit_info {
@@ -67,15 +67,15 @@ struct fit_info {
     double condition;   /* conditioning proxy: the ratio of the largest to
                            the smallest pivot the fit accepted. Past ~1e8
                            the trailing digits of the coefficients are
-                           noise -- and R2 will not tell you, because an
+                           noise, and R2 will not tell you, because an
                            ill-conditioned design fits its own sample
                            beautifully.                                    */
 };
 
 /* Fit one group's line from a training CSV of "GROUP,VALUE,<terms>" rows, whose
  * header names the terms. group selects the rows; "*" pools every row in the
- * file under that name. Writes a complete two-line coefficient file into out --
- * the header, a newline, then the fitted row -- so
+ * file under that name. Writes a complete two-line coefficient file into out:
+ * the header, a newline, then the fitted row, so
  *   linearr -t train.csv -g 001 > conf/coefficients.csv
  * produces a table the scorer can read straight back. info may be NULL.
  * Returns 0, or -1 (see process_error). A group with few rows still fits: see
@@ -84,14 +84,14 @@ int process_train(const char *csv_path, const char *group,
                   char *out, size_t outsz, struct fit_info *info);
 
 /* Fit EVERY group in the training file, in one pass, writing a complete
- * coefficient file to out. This is what the model is actually for -- one line
- * per group -- and doing it with repeated -g invocations cost one full re-read
+ * coefficient file to out. This is what the model is actually for (one line
+ * per group), and doing it with repeated -g invocations cost one full re-read
  * of the training file per group.
  *
  * Memory here is the one place this program's footprint depends on something
  * other than the term count: one accumulator per group, each
  * regress_storage(nvars) doubles. That is bounded by (groups x terms^2) and
- * never by the number of rows -- 580 groups of 35 terms is about 6 MB -- and it
+ * never by the number of rows (580 groups of 35 terms is about 6 MB), and it
  * is freed on every path. sum may be NULL.
  *
  * Returns 0, or -1 (see process_error). */

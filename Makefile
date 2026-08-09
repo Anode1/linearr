@@ -3,7 +3,7 @@
 # ais-style build. Honors the standard variables (CC CFLAGS CPPFLAGS LDFLAGS
 # LDLIBS); project-required flags are APPENDED, never override yours. The one
 # library the project adds for you is -lm, which the fit and the rounding need.
-# Drop in a .c -- here or one directory down -- and it compiles, no editing
+# Drop in a .c (here or one directory down) and it compiles, no editing
 # this file.
 #   make | release | debug | pedantic | check | ut | cliut | ut-asan | ut-ubsan
 #   | hooks | clean
@@ -40,7 +40,7 @@ release  : CFLAGS = -O2
 # .build-flags records the flags the objects were compiled with, and every .o
 # depends on it. Without this, `make` then
 #     make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32'
-# -- the exact command the README gives for setting the term ceiling -- printed
+# (the exact command the README gives for setting the term ceiling) printed
 # "Nothing to be done for 'all'", exited 0, and left you the 256-term binary
 # while you believed you had a 32-term one. Nothing in a .o file records the
 # macros it was built with, so make had no way to know. The stamp gives it one.
@@ -67,8 +67,8 @@ DESTDIR ?=
 
 # all comes FIRST on purpose: make's default goal is the first non-special
 # target in the file, and .PHONY / .SUFFIXES / pattern rules do not count. With
-# modeclean written above this line, a bare `make` -- the command the README
-# leads with -- quietly ran `rm -f` on the objects and the binary and reported
+# modeclean written above this line, a bare `make` (the command the README
+# leads with) quietly ran `rm -f` on the objects and the binary and reported
 # success, building nothing. It looked like an up-to-date no-op.
 all: $(BIN)
 
@@ -86,7 +86,7 @@ release debug pedantic: modeclean
 $(BIN): $(OBJS)
 	$(CC) $(PROJ) $(CFLAGS) $(LDFLAGS) -o $(BIN) $(OBJS) $(LDLIBS) $(LIBM)
 
-# ut: all sources with -DUNIT_TEST -- main.c's main() compiles out, tests.c's in.
+# ut: all sources with -DUNIT_TEST: main.c's main() compiles out, tests.c's in.
 # Run from the project root: the tests read conf/ and example/ by relative path.
 $(TESTBIN): $(SOURCES.c)
 	$(CC) $(PROJ) -g -DUNIT_TEST $(CPPFLAGS) $(SOURCES.c) -o $(TESTBIN) $(LDLIBS) $(LIBM)
@@ -125,7 +125,7 @@ hooks:
 	@echo "hooks enabled: scripts/hooks/pre-push runs ut-asan + ut-ubsan"
 
 # install: the binary on PATH, its data in share. resolve.c looks in the current
-# directory, then beside the binary, then <bindir>/../share/linearr -- so this
+# directory, then beside the binary, then <bindir>/../share/linearr, so this
 # layout works and a symlink into a bin directory works too (the program
 # resolves the link before looking beside itself).
 #   make install                      -> /usr/local

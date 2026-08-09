@@ -1,5 +1,5 @@
 /* Copyright (C) 2001 Vasili Gavrilov. GNU GPL v2 or later. Hardened 2026. */
-/* params.h -- a tiny key=value config store, backed by the hash table. Load a
+/* params.h: a tiny key=value config store, backed by the hash table. Load a
  * .properties file once, then look up keys. This is where a project adds its
  * configurable knobs: put them in the file, read them with params_get. */
 #ifndef PARAMS_H

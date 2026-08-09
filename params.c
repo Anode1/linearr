@@ -1,5 +1,5 @@
 /* Copyright (C) 2001 Vasili Gavrilov. GNU GPL v2 or later. Hardened 2026. */
-/* params.c -- see params.h. Parses "key = value" lines: blank lines and lines
+/* params.c: see params.h. Parses "key = value" lines: blank lines and lines
  * starting with '#' are ignored; the key is split at the first '='; surrounding
  * spaces are trimmed. Values are heap copies owned by the table. */
 #include "params.h"

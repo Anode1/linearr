@@ -1,5 +1,5 @@
 /* Copyright (C) 2001 Vasili Gavrilov. GNU GPL v2 or later. Hardened 2026. */
-/* utils.h -- small bounded string helpers. */
+/* utils.h: small bounded string helpers. */
 #ifndef UTILS_H
 #define UTILS_H
 

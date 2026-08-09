@@ -1,5 +1,5 @@
 /* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
-/* main.c -- the CLI front end: parse options, get the input (arguments, or
+/* main.c, the CLI front end: parse options, get the input (arguments, or
  * lines from stdin so it works as a filter), run process(), print the result.
  * The scaffolding stays; the model lives in process.c, los.c and regress.c.
  * This is the only file that exits: the modules return -1 and let it decide. */
@@ -106,7 +106,7 @@ static int train_all(const char *path) {
     fprintf(stderr, "\n");
     if (sum.min_df <= 0)
         fprintf(stderr, "warning: at least one group has no residual degrees of "
-                        "freedom -- its line passes through every row by "
+                        "freedom; its line passes through every row by "
                         "construction. Fit those groups on more rows.\n");
     if (sum.max_condition > 1e8)
         fprintf(stderr, "warning: at least one group is ill-conditioned (cond=%.3g); "
@@ -140,12 +140,13 @@ static int train(const char *path, const char *group) {
                         "trailing digits of these coefficients are noise; rescale "
                         "your columns or drop a near-duplicate one.\n", info.condition);
     if (info.r2 < 0.0)
-        fprintf(stderr, "warning: R2 is not reportable here -- the response does not "
-                        "vary, or the fit consumed all of its variance.\n");
+        fprintf(stderr, "warning: R2 is not reportable here: the response "
+                        "does not vary, or the fit consumed all of its "
+                        "variance.\n");
     /* Said plainly, because an R2 of 1 from a saturated fit reads like success
      * and is the easiest way to publish a model that knows nothing. */
     if (info.df <= 0)
-        fprintf(stderr, "warning: no residual degrees of freedom -- this line "
+        fprintf(stderr, "warning: no residual degrees of freedom; this line "
                         "passes through every row by construction, and its R2 "
                         "means nothing. Fit it on more rows.\n");
     return 0;
@@ -211,7 +212,7 @@ int main(int argc, char **argv) {
         bad = (group ? train(train_file, group) : train_all(train_file)) != 0;
     } else if (optind < argc) {
         need_model();
-        /* A comma in the first argument means the row form -- and then every
+        /* A comma in the first argument means the row form, and then every
          * argument is a row. Otherwise it is a group, and what follows are its
          * term=value assignments. */
         if (strchr(argv[optind], ',')) {
@@ -226,7 +227,7 @@ int main(int argc, char **argv) {
         /* Nothing to read and a terminal on stdin: the user typed the bare
          * command and wants to know what it does. Reading stdin here made the
          * program sit there silently looking hung, and only showed the usage
-         * after a Ctrl-C -- the worst possible first impression. A filter still
+         * after a Ctrl-C: the worst possible first impression. A filter still
          * gets its filter behaviour below, because a pipe is not a terminal. */
         usage(stdout, argv[0]);
     } else {
@@ -262,7 +263,7 @@ int main(int argc, char **argv) {
     params_free();
 
     /* Every printf above was unchecked, so `linearr -t train.csv > model.csv` on
-     * a full disk or over quota wrote nothing, said nothing, and exited 0 --
+     * a full disk or over quota wrote nothing, said nothing, and exited 0,
      * installing an empty coefficient table while reporting success. stdout is
      * an output the caller is relying on; a failure to produce it is a failure. */
     if (fflush(stdout) != 0 || ferror(stdout))

@@ -1,4 +1,4 @@
-# example/train.csv -- one row per case: GROUP,LOS,<the terms>.
+# example/train.csv: one row per case, GROUP,LOS,<the terms>.
 # SYNTHETIC and exactly linear: each LOS was computed from the synthetic
 # coefficients for its group, so `linearr -t` recovers them to the last
 # digit and R2 comes back 1.0000. That is what makes the fitter testable

@@ -1,5 +1,5 @@
 /* Copyright (C) 2001 Vasili Gavrilov. GNU GPL v2 or later. Hardened 2026. */
-/* utils.c -- see utils.h. Both are O(n) and bounded by the string length. */
+/* utils.c: see utils.h. Both are O(n) and bounded by the string length. */
 #include "utils.h"
 #include <string.h>
 

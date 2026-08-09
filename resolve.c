@@ -1,7 +1,15 @@
 /* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
-/* resolve.c -- see resolve.h. Everything here is a fixed stack buffer; the
+/* resolve.c: see resolve.h. Everything here is a fixed stack buffer; the
  * result is copied into the caller's. */
-#define _POSIX_C_SOURCE 200809L  /* access */
+/* _XOPEN_SOURCE 700, not _POSIX_C_SOURCE 200809L, and the difference is not
+ * cosmetic: glibc guards realpath() with __USE_XOPEN_EXTENDED, which only
+ * _XOPEN_SOURCE sets. Under -O2 the fortifying header declared it anyway, so
+ * the release build was clean and `make ut` (built with -g) warned about an
+ * implicit declaration: an implicitly declared realpath returns int, and the
+ * pointer it really returns was being truncated to 32 bits before the test
+ * against NULL. 700 implies POSIX.1-2008, so access() and stat() are still
+ * declared. */
+#define _XOPEN_SOURCE 700
 
 #include "resolve.h"
 #include "common.h"
@@ -15,7 +23,7 @@
 
 /* Readable AND a regular file. Without the second half, naming a FIFO as
  * coef.file or as -t's argument made the program block forever on open with no
- * output and no diagnostic -- indistinguishable from a hang. Directories,
+ * output and no diagnostic, indistinguishable from a hang. Directories,
  * /dev/zero and unreadable files were already handled; the FIFO was the one
  * input that could take the process away and not give it back. */
 static int readable(const char *path) {
@@ -59,7 +67,7 @@ const char *resolve_program_dir(void) {
     }
 
     /* Invoked by bare name: the installed case. Walk PATH for the first entry
-     * that holds an executable of that name -- the same one the shell ran. */
+     * that holds an executable of that name: the same one the shell ran. */
     path = getenv("PATH");
     if (!path) return NULL;
     while (*path) {

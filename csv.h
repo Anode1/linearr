@@ -1,5 +1,5 @@
 /* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
-/* csv.h -- the minimum CSV a training file needs: read a line, split it on
+/* csv.h, the minimum CSV a training file needs: read a line, split it on
  * commas. Splitting is in place and allocates nothing, so a caller streams a
  * file of any size through one stack buffer. No quoting and no embedded commas:
  * the files this reads are numeric tables, and a reader that pretends to handle
@@ -10,7 +10,7 @@
 #include <stdio.h>
 
 /* Read the next line into buf (capacity bufsz), stripping the trailing CR/LF.
- * Blank lines are skipped -- they are never data. A line beginning with '#' is
+ * Blank lines are skipped; they are never data. A line beginning with '#' is
  * NOT skipped; it is returned with a 2, so the caller can look at it.
  *
  * That distinction matters: silently swallowing '#' lines meant a group code

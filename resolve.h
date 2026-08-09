@@ -1,14 +1,14 @@
 /* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
-/* resolve.h -- find a data file the program needs.
+/* resolve.h: find a data file the program needs.
  *
  * A tool that only works from its own source directory is not installed, it is
  * merely built. `linearr` used to fail from anywhere else, because it opened
  * "conf/coefficients.csv" relative to the current directory and nowhere else.
  *
  * So a name is looked for in three places, in this order:
- *   1. relative to the current directory -- your files win, always;
- *   2. beside the program itself -- a build tree, or an unpacked release;
- *   3. <bindir>/../share/linearr -- where `make install` puts them.
+ *   1. relative to the current directory: your files win, always;
+ *   2. beside the program itself: a build tree, or an unpacked release;
+ *   3. <bindir>/../share/linearr: where `make install` puts them.
  * An absolute path is used as given, and a symlinked binary is resolved first,
  * because linking one binary into a bin directory is how people install one. */
 #ifndef RESOLVE_H
@@ -18,7 +18,7 @@
 
 /* Fill out[outsz] with a readable path for `name`, and return 0. Returns -1 if
  * neither location has it, in which case out gets a human-readable account of
- * where it looked -- the caller can put that straight in the error. */
+ * where it looked; the caller can put that straight in the error. */
 int resolve_file(const char *name, char *out, size_t outsz);
 
 /* The directory the running program sits in, or NULL if it cannot be worked

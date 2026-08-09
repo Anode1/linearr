@@ -1,12 +1,12 @@
 /* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
-/* los.c -- see los.h.
+/* los.c: see los.h.
  *
  * One of this program's three heap users is here: the coefficient table, one
  * struct los_model per group, held in the hash table for the life of the run.
  * It is bounded by the number of GROUPS in the table, never by the number of
  * cases scored, and it is freed on every path by los_free(). The schema is a
  * fixed array. Cases themselves are stack objects, processed one at a time and
- * forgotten -- scoring ten cases and scoring ten million cost the same memory.
+ * forgotten: scoring ten cases and scoring ten million cost the same memory.
  *
  * The other two are params.c's config table and, while `-t` fits every group,
  * one accumulator per group in process.c. This comment used to say "nothing
@@ -29,8 +29,8 @@
 
 static char reason[256] = "";
 
-/* Why the last load failed. The caller used to print one sentence -- "X is not
- * a coefficient table" -- for about ten distinct causes, with the real one
+/* Why the last load failed. The caller used to print one sentence ("X is not
+ * a coefficient table") for about ten distinct causes, with the real one
  * visible only under -d. */
 const char *los_error(void) { return reason; }
 
@@ -110,7 +110,7 @@ int los_var_index(const char *name) {
 long los_ngroups(void) { return ngroups; }
 
 /* strtod that refuses what atof would have accepted silently: an empty field,
- * trailing text -- and the three the earlier version of this comment claimed to
+ * trailing text, and the three the earlier version of this comment claimed to
  * catch and did not. strtod happily returns nan for "nan", inf for "inf" and
  * for 1e400 (with ERANGE), and reads "0x10" as 16. Each of those loaded into a
  * coefficient table without complaint, scored "prediction=nan", and exited 0.
@@ -194,7 +194,7 @@ static int load_coefficients(const char *path) {
         if (n == 2) {
             if (comment_is_data_shaped(line, nvars + 2)) {
                 refuse("%s has a line beginning with '#' that has the shape of a "
-                       "data row -- a group code cannot start with '#', because "
+                       "data row: a group code cannot start with '#', because "
                        "the line reads as a comment", path);
                 goto cleanup;
             }
@@ -266,7 +266,7 @@ int los_load_trims(const char *path) {
 
     /* Read the first line, and only DISCARD it if it is a header. It used to be
      * eaten unconditionally, so a headerless trim table silently lost its first
-     * group's trim addition -- a wrong number, quietly, for one group only. */
+     * group's trim addition: a wrong number, quietly, for one group only. */
     while ((n = csv_next(fp, line, sizeof line)) == 2)
         ;
     if (n != 1) {
@@ -372,7 +372,7 @@ static int append_str(char *out, size_t outsz, size_t *used, const char *s) {
 /* A coefficient is a model parameter, not a published figure. At the old %.4f
  * every coefficient below 5e-5 was written as 0.0000, so a fit that reported
  * R2=1.0000 wrote a CONSTANT model to disk, and the round trip the README
- * recommends -- fit, redirect, score -- silently produced a different model
+ * recommends (fit, redirect, score) silently produced a different model
  * from the one that was fitted. predict.scale still governs the PREDICTION,
  * where rounding is part of the answer; it has no business here.
  *
@@ -441,14 +441,14 @@ double los_round(double v, int scale) {
     if (!isfinite(v)) return v;
     for (i = 0; i < scale; i++) p *= 10.0;
 
-    /* v*p overflowed to inf for a perfectly finite v -- 1.8e304 at scale 4 --
+    /* v*p overflowed to inf for a perfectly finite v (1.8e304 at scale 4),
      * and the infinity was then printed as a prediction. Nothing useful is lost
      * by declining to round a number with no fractional part left to round. */
     if (fabs(v) > DBL_MAX / p) return v;
 
     /* round() is round-half-away-from-zero and correctly rounded. The old
      * floor(v*p + 0.5) form did the rounding twice: the addition itself rounds,
-     * so 0.49999999999999994 -- the largest double below one half -- became
+     * so 0.49999999999999994, the largest double below one half, became
      * exactly 1.0 before floor() ever saw it, and rounded up. */
     return round(v * p) / p;
 }

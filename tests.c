@@ -1,5 +1,5 @@
 /* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
-/* tests.c -- in-place unit tests, run by `make ut` (which builds every source
+/* tests.c: in-place unit tests, run by `make ut` (which builds every source
  * with -DUNIT_TEST; this file is empty otherwise, and main.c's main() is then
  * compiled out). Add a CHECK when you add a feature. Idempotent, and run from
  * the project root: conf/ and example/ are read by relative path. */
@@ -32,7 +32,7 @@ static int pass, fail;
 /* A NULL where a string was expected is a FAIL, not a crash that takes the
  * whole run down and tells you nothing about the other tests. Use this for
  * EVERY comparison against a function documented as possibly returning NULL
- * (los_var_name, process_term_name, params_get, ...) -- a bare strcmp on one of
+ * (los_var_name, process_term_name, params_get, ...); a bare strcmp on one of
  * those is how this suite once turned a wrong return value into a SEGV. */
 static int streq(const char *a, const char *b) {
     return a && b && strcmp(a, b) == 0;
@@ -58,7 +58,7 @@ static int coef_row(const char *row, double *v, int max) {
 #define TRIM "conf/trim_additions.csv"
 
 /* The pair, as the scorer loads them. They are two calls because the trim
- * table is optional -- see test_los_trims. */
+ * table is optional; see test_los_trims. */
 static int los_load_both(void) {
     if (los_load(COEF) != 0) return -1;
     return los_load_trims(TRIM);
@@ -183,7 +183,7 @@ static void test_regress(void) {
     CHECK(f.r2 < 1.0 && f.r2 > 0.99, "regress: R2 below 1 once points are not collinear");
 
     /* THE UNITS TEST. y = 1 + 2e-6*big + 5*flag. The two columns differ by six
-     * orders of magnitude, so their X'X diagonals differ by twelve -- and the
+     * orders of magnitude, so their X'X diagonals differ by twelve, and the
      * old absolute rank tolerance deleted the indicator for being small,
      * reporting a constant model with a straight face. Whether a term exists
      * must not depend on whether you write dollars or thousands. */
@@ -204,7 +204,7 @@ static void test_regress(void) {
 
     /* THE OFFSET TEST. y carries a 1e8 offset. Uncentered sums of squares are
      * differences of huge nearly-equal numbers, so this used to report R2=1.0000
-     * for a model with a true R2 of 0 -- the clamp at sse<0 manufactured the
+     * for a model with a true R2 of 0: the clamp at sse<0 manufactured the
      * perfect score. Centered accumulation makes the offset cancel first. */
     {
         int i;
@@ -292,7 +292,7 @@ static void test_regress(void) {
     regress_init(&r, 2, t_store);
     CHECK(regress_solve(&r, t_beta, t_scratch, &f) == -1, "regress: refuses an empty sample");
 
-    /* Fewer rows than terms is NOT refused -- ordinary here, and pinning answers
+    /* Fewer rows than terms is NOT refused: ordinary here, and pinning answers
      * it. One row identifies the intercept and nothing else. */
     regress_init(&r, 2, t_store);
     x[0] = 1; x[1] = 1; regress_add(&r, x, 4.0);
@@ -358,7 +358,7 @@ static void test_wide_fit(void) {
 }
 
 /* Finding the files: the reason `linearr` used to work only in its own source
- * directory. g_prog must be set before the first call -- the program directory
+ * directory. g_prog must be set before the first call: the program directory
  * is worked out once and remembered. */
 static void test_resolve(void) {
     char path[RESOLVE_PATH_MAX];
@@ -438,7 +438,7 @@ static void test_named_case(void) {
 }
 
 static void test_los_round(void) {
-    /* Half away from zero -- NOT printf's round half to even, which would make
+    /* Half away from zero, NOT printf's round half to even, which would make
      * these 2 and -2. */
     CHECK(NEAR(los_round(2.5, 0), 3.0), "round: half up");
     CHECK(NEAR(los_round(-2.5, 0), -3.0), "round: half away from zero when negative");
@@ -602,7 +602,7 @@ static void test_process_train(void) {
     const struct los_model *m;
 
     /* example/train.csv was generated from the example coefficients, so fitting
-     * it must give those coefficients back -- to every printed digit, which is
+     * it must give those coefficients back, to every printed digit, which is
      * the strongest statement the fitter can make about itself. */
     CHECK(los_load(COEF) == 0, "train: reference table loads");
     m = los_model_get("001");

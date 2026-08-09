@@ -1,4 +1,4 @@
-# Sanitizers -- run the unit tests under AddressSanitizer and Undefined-
+# Sanitizers: run the unit tests under AddressSanitizer and Undefined-
 # BehaviorSanitizer on Linux and macOS, on every push and PR. This is the
 # automatic backstop for the memory-safety class of bug (buffer overflow,
 # use-after-free, signed overflow, bad shift, misaligned access) that a plain

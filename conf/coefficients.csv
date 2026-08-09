@@ -1,9 +1,9 @@
-# conf/coefficients.csv -- the fitted model, one line per group.
+# conf/coefficients.csv: the fitted model, one line per group.
 # Columns: GROUP,Intercept,<one column per term, in the model's order>.
 # Add a term by adding a column here and in the training file; nothing in
 # the program has to change.
 #
-# THESE NUMBERS ARE SYNTHETIC -- generated for the example, fitted to nothing.
+# THESE NUMBERS ARE SYNTHETIC: generated for the example, fitted to nothing.
 # Point coef.file at your own table (or produce one with `linearr -t`) before
 # any of this means anything.
 GROUP,Intercept,Cardioversion,Cell_saver,Chemotherapy,Dialysis,Heart_resuscitation,Mech_vent_ge_96_hours,mech_vent,Feeding_tube,Paracentesis,Parenteral_nutrition,Pleurocentesis,Radiotherapy,Tracheostomy,Vascular_access_device,multiple_ie_2ormore,multiple_ie_3ormore,icu_indicator,hc_dad,age_under1,age_under18,age_60plus,age_80plus,obs_gt40,ooh

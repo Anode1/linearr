@@ -1,5 +1,5 @@
 /* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
-/* csv.c -- see csv.h. */
+/* csv.c: see csv.h. */
 #include "csv.h"
 #include "utils.h"
 

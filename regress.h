@@ -1,5 +1,5 @@
 /* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
-/* regress.h -- ordinary least squares for y = b0 + b1*x1 + ... + bp*xp.
+/* regress.h: ordinary least squares for y = b0 + b1*x1 + ... + bp*xp.
  *
  * Observations are ADDED and then forgotten: the fitter holds cross-products,
  * never rows, so ten observations and ten million are fitted in the same
@@ -11,13 +11,13 @@
  * 1. CENTERED accumulation, not raw X'X. Sums of squares about zero are
  *    differences of large nearly-equal numbers, so a response with an offset
  *    (a price, an epoch timestamp, a population) destroyed R^2 while leaving
- *    the coefficients correct -- and always in the flattering direction. With
+ *    the coefficients correct, and always in the flattering direction. With
  *    a 1e8 offset the fit reported R2=1.0000 for a model whose true R2 was 0.
  *    Means and co-moments are updated online (Welford), so the offset cancels
  *    before it can cancel anything else.
  *
  * 2. EQUILIBRATED rank test. The tolerance used to be absolute, taken from the
- *    largest diagonal of X'X -- and those diagonals scale as the SQUARE of a
+ *    largest diagonal of X'X, and those diagonals scale as the SQUARE of a
  *    column's units. A column measured in dollars sat 1e12 above an indicator,
  *    so the indicator was declared unidentifiable and silently deleted, however
  *    strong its effect. Whether a term existed depended on whether you wrote
@@ -69,14 +69,14 @@ size_t regress_solve_storage(int nvars);
 int regress_init(struct regress *r, int nvars, double *storage);
 
 /* Add one observation: x[nvars] regressors and the response y. Returns 0, or
- * -1 if any value is not finite -- a NaN admitted here poisons every
+ * -1 if any value is not finite: a NaN admitted here poisons every
  * coefficient, and used to do so silently, all the way to a published table of
  * "nan" that scored "prediction=nan" and exited 0. */
 int regress_add(struct regress *r, const double *x, double y);
 
 /* Why a term carries no coefficient. These are different verdicts with
  * different consequences, and the fitter is the only thing that knows which is
- * which -- so it says, rather than leaving both as an indistinguishable 0. */
+ * which, so it says, rather than leaving both as an indistinguishable 0. */
 enum regress_term {
     REGRESS_FITTED = 0,   /* estimated from the data                        */
     REGRESS_CONSTANT,     /* the column never varies: no evidence at all     */
@@ -100,19 +100,19 @@ struct regress_fit {
                            beautifully. This is the number that says so.     */
 };
 
-/* Solve for beta[nvars+1] -- beta[0] is the intercept -- using
+/* Solve for beta[nvars+1], where beta[0] is the intercept, using
  * scratch[regress_solve_storage(nvars)]. Fills fit if it is not NULL.
  *
  * A term the sample cannot identify (a regressor that never varies, or one
  * collinear with the others) has no least-squares answer, so it is pinned to
  * exactly 0 and the rest are fitted around it. Which of a collinear PAIR gets
- * pinned depends on column order -- there is no answer to that question in the
+ * pinned depends on column order; there is no answer to that question in the
  * data, and fit->pinned is how the caller learns not to read the zero as an
  * estimated effect.
  *
  * Returns 0, or -1 if nothing was added or the fit is not finite. Note what is
- * NOT refused: fewer rows than terms. That is ordinary here -- 25 terms and 15
- * rows, because a group never sees most interventions -- and pinning answers
+ * NOT refused: fewer rows than terms. That is ordinary here (25 terms and 15
+ * rows, because a group never sees most interventions), and pinning answers
  * it. Judge that case by fit->df, which goes to zero when the line is passing
  * through every point by construction. */
 int regress_solve(const struct regress *r, double *beta, double *scratch,

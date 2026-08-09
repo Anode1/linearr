@@ -1,16 +1,16 @@
 /* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
-/* los.h -- the worked example: length of stay as a linear function of what was
+/* los.h, the worked example: length of stay as a linear function of what was
  * done to the patient and who they are.
  *
  *   LOS = b0 + b1*term1 + ... + bp*termp
  *
- * One fitted line per group, plus that group's trim addition -- the day count
+ * One fitted line per group, plus that group's trim addition: the day count
  * past which a stay stops being typical.
  *
  * THE TERMS ARE NOT COMPILED IN. The column names, and how many there are, come
  * from the header line of the coefficient or training file, so adding a term to
  * the polynomial is adding a column to a CSV: no edit here, no rebuild. That is
- * what makes this a length-of-stay program only by its example data -- point it
+ * what makes this a length-of-stay program only by its example data: point it
  * at a different table with different columns and it fits and scores that
  * instead. The ceiling is LOS_MAX_VARS. */
 #ifndef LOS_H
@@ -28,7 +28,7 @@
 #define LOS_NAME_MAX  64        /* longest column name we will hold */
 
 /* One case: its group, and one value per term of the current schema. Fixed
- * size -- cases are processed one at a time, never collected. */
+ * size: cases are processed one at a time, never collected. */
 struct los_case {
     char   group[GROUP_MAX];
     double x[LOS_MAX_VARS];
@@ -41,7 +41,7 @@ struct los_model {
     double trim_addition;       /* 0 when no trim table was loaded */
 };
 
-/* --- the schema: which terms the polynomial has, and in what order --------- */
+/* the schema: which terms the polynomial has, and in what order */
 
 /* Adopt n column names as the schema, replacing any previous one. Returns 0, or
  * -1 if n is out of range or a name is empty or too long. */
@@ -59,7 +59,7 @@ int         los_var_index(const char *name);
 /* How many groups the loaded table holds. */
 long        los_ngroups(void);
 
-/* --- the tables ----------------------------------------------------------- */
+/* the tables */
 
 /* Load the coefficient table. Its header is
  *   GROUP,Intercept,<one column per term>
@@ -84,13 +84,13 @@ const struct los_model *los_model_get(const char *group);
 /* Release the tables and the schema. Idempotent. */
 void los_free(void);
 
-/* --- rows ----------------------------------------------------------------- */
+/* rows */
 
 /* Parse one case, "GROUP,x1,...,xp" against the current schema. Returns 0, or
  * -1 on a bad group, a wrong field count, or a field that is not a number. */
 int los_parse_case(const char *line, struct los_case *c);
 
-/* Parse one training row, "GROUP,LOS,x1,...,xp" -- the case with the observed
+/* Parse one training row, "GROUP,LOS,x1,...,xp": the case with the observed
  * length of stay in front of the terms. Returns 0 or -1, as above. */
 int los_parse_training(const char *line, struct los_case *c, double *los);
 
@@ -102,7 +102,7 @@ int los_format_header(char *out, size_t outsz);
 int los_format_model(const char *group, const struct los_model *m,
                      char *out, size_t outsz);
 
-/* --- the arithmetic ------------------------------------------------------- */
+/* the arithmetic */
 
 /* The prediction: the intercept plus every coefficient times its term. */
 double los_predict(const struct los_model *m, const struct los_case *c);
@@ -110,7 +110,7 @@ double los_predict(const struct los_model *m, const struct los_case *c);
 /* The trim point: the prediction plus the group's trim addition. */
 double los_trim_point(const struct los_model *m, double prediction);
 
-/* Round half away from zero to `scale` digits -- NOT what printf's %.*f does,
+/* Round half away from zero to `scale` digits, NOT what printf's %.*f does,
  * which rounds half to even, so a published figure could differ in the last
  * digit. The rounded number is the answer, not its presentation. */
 double los_round(double v, int scale);

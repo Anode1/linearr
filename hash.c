@@ -1,5 +1,5 @@
 /* Copyright (C) 2001 Vasili Gavrilov. GNU GPL v2 or later. Hardened 2026. */
-/* hash.c -- see hash.h. Djb/Berkeley string hash (chosen for low collisions on
+/* hash.c: see hash.h. Djb/Berkeley string hash (chosen for low collisions on
  * dictionary words), separate chaining. Allocation is checked via xmalloc. */
 #include "hash.h"
 #include "common.h"
@@ -56,7 +56,7 @@ void hash_delete(struct hash *table) {
 }
 
 /* Double the table when it is full, so N insertions cost O(N) and not O(N^2).
- * With a fixed 1024 buckets, loading 400,000 groups took 26 seconds -- clean
+ * With a fixed 1024 buckets, loading 400,000 groups took 26 seconds: clean
  * 4x time for every 2x groups, which is the signature of chains that never stop
  * growing. Keys are moved, not recomputed, and nothing is reallocated. */
 static void hash_grow(struct hash *table) {

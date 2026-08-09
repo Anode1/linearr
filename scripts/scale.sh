@@ -1,5 +1,5 @@
 #!/bin/sh
-# scale.sh -- measure the claim instead of repeating it.
+# scale.sh: measure the claim instead of repeating it.
 #
 # The README says memory is a function of the model and not of the data. That is
 # the kind of sentence every project writes, so this script tries to falsify it:
@@ -90,7 +90,7 @@ gen_cases() {                              # gen_cases FILE COUNT
     }' > "$1"
 }
 
-echo "linearr scale check -- $TERMS terms, $GROUPS groups"
+echo "linearr scale check: $TERMS terms, $GROUPS groups"
 echo
 
 printf "generating training data (%s and %s rows) ... " "$SMALL" "$BIG"
@@ -98,7 +98,7 @@ gen_train "$tmp/small.csv" "$SMALL"
 gen_train "$tmp/big.csv"   "$BIG"
 echo "done ($(du -h "$tmp/small.csv" | cut -f1), $(du -h "$tmp/big.csv" | cut -f1))"
 
-echo "FIT -- the same $TERMS-term model, ${SMALL} rows then ${BIG}:"
+echo "FIT: the same $TERMS-term model, ${SMALL} rows then ${BIG}:"
 printf "  %-12s %s\n" "rows" "seconds  peak RSS (KB)"
 printf "  %-12s %s\n" "$SMALL"  "$(run "$bin" -t "$tmp/small.csv" -g G001)"
 printf "  %-12s %s\n" "$BIG"    "$(run "$bin" -t "$tmp/big.csv"   -g G001)"
@@ -111,7 +111,7 @@ gen_cases "$tmp/cases.csv" "$BIG"
 printf 'coef.file = %s\ntrim.file =\n' "$tmp/coef.csv" > "$tmp/system.properties"
 echo "done"
 
-echo "SCORE -- $BIG cases against $GROUPS groups:"
+echo "SCORE: $BIG cases against $GROUPS groups:"
 cd "$tmp"
 printf "  %-12s %s\n" "cases" "seconds  peak RSS (KB)"
 printf "  %-12s %s\n" "$BIG" "$(run sh -c "'$bin' < '$tmp/cases.csv' > /dev/null")"
