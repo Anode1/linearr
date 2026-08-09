@@ -109,6 +109,58 @@ int los_var_index(const char *name) {
 
 long los_ngroups(void) { return ngroups; }
 
+/* Every power of ten up to 1e22 is exactly representable as a double. Past
+ * that they are not, which is where the fast path below stops. */
+static const double pow10_exact[] = {
+    1e0,  1e1,  1e2,  1e3,  1e4,  1e5,  1e6,  1e7,  1e8,  1e9,  1e10, 1e11,
+    1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22
+};
+#define POW10_MAX ((int)(sizeof pow10_exact / sizeof pow10_exact[0]) - 1)
+
+/* A plain integer or short decimal, read without strtod, or -1 to say "not
+ * mine" so the general parser gets it. Reading a training file costs more than
+ * fitting it, and strtod is why: it is correctly rounded and fully general,
+ * handling exponents, hexadecimal, inf, nan and the locale's decimal point,
+ * and it gets called once per field to read what is usually the single
+ * character '0' or '1'.
+ *
+ * This is exact, not approximate, which is the only version of it worth
+ * having: a mantissa under 10^16 is below 2^53 and converts to double with no
+ * rounding at all, and 10^frac is exact for frac <= 22. IEEE division of two
+ * exactly represented values is correctly rounded by definition, and the
+ * correctly rounded quotient IS what strtod returns for the same digits. So
+ * where this path answers, it answers with strtod's bits. Anything else --
+ * exponents, hex, over-long mantissas, leading spaces, trailing junk -- it
+ * declines, and nothing about those cases changes. */
+static int fast_num(const char *s, double *out) {
+    const char        *p = s;
+    unsigned long long m = 0;
+    int digits = 0, frac = 0, dot = 0, neg = 0;
+    double v;
+
+    if (*p == '-') { neg = 1; p++; } else if (*p == '+') { p++; }
+
+    for (;; p++) {
+        if (*p >= '0' && *p <= '9') {
+            if (++digits > 15) return -1;       /* keep the mantissa under 2^53 */
+            m = m * 10u + (unsigned)(*p - '0');
+            if (dot) frac++;
+        } else if (*p == '.' && !dot) {
+            dot = 1;
+        } else {
+            break;
+        }
+    }
+    if (digits == 0 || frac > POW10_MAX) return -1;
+    while (*p == ' ') p++;
+    if (*p != '\0') return -1;
+
+    v = (double)m;
+    if (frac > 0) v /= pow10_exact[frac];
+    *out = neg ? -v : v;
+    return 0;
+}
+
 /* strtod that refuses what atof would have accepted silently: an empty field,
  * trailing text, and the three the earlier version of this comment claimed to
  * catch and did not. strtod happily returns nan for "nan", inf for "inf" and
@@ -120,6 +172,7 @@ static int parse_num(const char *s, double *out) {
     double v;
 
     if (s[0] == '\0') return -1;
+    if (fast_num(s, out) == 0) return 0;
     errno = 0;
     v = strtod(s, &end);
     if (errno == ERANGE) return -1;             /* 1e400, and denormal underflow */

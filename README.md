@@ -291,6 +291,55 @@ model had (35 terms, 580 groups), output verbatim:
 
 Ten times the data, the same memory. Time scales with the rows, as it must.
 
+## Against Python, and against Java
+
+The same job in the languages you would otherwise write it in: read the file,
+fit one line per group, write the table. `scripts/bench.sh` generates the data,
+runs each one, and checks its coefficients against `linearr`'s before reporting
+a time, because a speed number nobody checked is a speed number for a different
+answer. Every row below agrees to about 1e-13, so this is one answer at
+different prices.
+
+    $ sh scripts/bench.sh 35 580 1000000
+    FIT: 1000000 rows, 35 terms, 580 groups
+      fitter              seconds      peak RSS   agrees with linearr to
+      linearr (C)           1.42s          8 MB
+      java                  2.82s        664 MB   1.4e-12
+      stream-numpy          3.06s        287 MB   4.1e-13
+      pandas-lstsq          2.87s        683 MB   2.4e-13
+      sklearn               3.82s        752 MB   8.6e-14
+      python, no numpy     63.19s         41 MB   1.4e-12
+
+Ten times the data, run the same way:
+
+| 10M rows, 802 MB | seconds | peak RSS |
+| --- | --- | --- |
+| `linearr` | 13.6 | **8 MB** |
+| Java, `BufferedReader` and `split` | 23.3 | 680 MB |
+| pandas + `numpy.linalg.lstsq` | 24.3 | 6.8 GB |
+| scikit-learn `LinearRegression` | 26.0 | 6.8 GB |
+| numpy, chunked accumulation | 28.2 | 295 MB |
+| Python with no numpy | ~630 | 41 MB |
+
+**Read the time column honestly: against numpy it is under 2x, and it would be
+strange if it were more.** pandas reads CSV in C and solves in BLAS, so that row
+is a C program with a Python veneer being compared against a C program. Java,
+JIT-compiled and given the same algorithm, comes within 1.7x. The order of
+magnitude appears only against Python running the loop itself, which is over
+40x, and that is what the comparison is really measuring: whether a C library is
+standing in for the language or not.
+
+The column that does not narrow is memory. **8 MB against 6.8 GB is 850x**, and
+the 8 MB is the model's size: it does not move when the file grows. That is the
+difference between a fit that runs on the machine you have and one that does not
+run at all, and it is the reason to reach for this rather than a faster
+language.
+
+Measured on one 8-core machine with a warm page cache, one run each; numpy's
+BLAS had all eight cores and `linearr` had one. Pinning numpy to a single thread
+made it slightly faster, not slower, so the comparison is if anything generous
+to it. The no-numpy figure at 10M rows is extrapolated from the 1M run.
+
 ## The example data is synthetic
 
 `conf/coefficients.csv`, `conf/trim_additions.csv` and both files under
@@ -375,6 +424,7 @@ tests/cli.sh      black-box tests: the binary through a shell and a pty (make cl
 conf/             the example model (synthetic)
 example/          two training files with different schemas (synthetic)
 scripts/scale.sh  measures the memory claim at 200 terms and 500 groups
+scripts/bench.sh  the same fit in C, Java and Python, checked against each other
 scripts/hooks/    pre-push: the sanitizers, before anything reaches the remote
 Makefile          the build
 ```

@@ -20,17 +20,23 @@ int csv_next(FILE *fp, char *buf, size_t bufsz) {
     return 0;
 }
 
+/* The trimming is rtrim/ltrim's, done here against the end this loop already
+ * knows: the comma it just replaced. Calling rtrim() meant a strlen() per
+ * field to re-find that end, and ltrim() meant a memmove() to shift a field
+ * left when advancing the pointer says the same thing. At 37 fields a row that
+ * was 370 million strlen calls over a ten-million-row file. */
 int csv_split(char *line, char **field, int maxf) {
     int n = 0;
     char *p = line;
 
     for (;;) {
-        char *comma;
+        char *comma, *end;
         if (n >= maxf) return -1;
         comma = strchr(p, ',');
-        if (comma) *comma = '\0';
-        rtrim(p, ' ');
-        ltrim(p, ' ');
+        if (comma) { *comma = '\0'; end = comma; }
+        else       { end = p + strlen(p); }
+        while (end > p && end[-1] == ' ') *--end = '\0';
+        while (*p == ' ') p++;
         field[n++] = p;
         if (!comma) break;
         p = comma + 1;
