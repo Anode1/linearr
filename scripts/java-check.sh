@@ -37,19 +37,24 @@ if grep -E "(warning|error):" "$tmp/javac.err" >/dev/null 2>&1; then
     exit 1
 fi
 
-pass=0; fail=0
+pass=0; fail=0; skip=0
 for f in example/*.csv; do
     # Only training files: a training header is group, the value, then terms,
     # and the scoring examples have neither.
     head=$(grep -v '^#' "$f" | head -1)
-    case "$head" in group,*) ;; *) continue ;; esac
+    case "$head" in group,*) ;; *) skip=$((skip+1)); continue ;; esac
     # A coefficient table also begins with "group,". It is a model, not training
     # data, and fitting it produces nonsense in both implementations rather than
     # a disagreement worth reading.
-    case "$head" in group,intercept,*) continue ;; esac
+    case "$head" in group,intercept,*) skip=$((skip+1)); continue ;; esac
     # And a training file needs a group, a value and at least one term, so
     # anything narrower is not one. The trim table is two columns.
-    [ "$(printf '%s' "$head" | tr ',' '\n' | wc -l)" -ge 3 ] || continue
+    #
+    # Counted with tr | wc -w and not wc -l: tr turns N fields into N-1
+    # newlines, so the first version of this dropped every THREE-column file,
+    # which is anscombe.csv and curve.csv, from both gates. It reported
+    # agreement on what was left and said nothing about what it had skipped.
+    [ "$(printf '%s' "$head" | tr ',' ' ' | wc -w)" -ge 3 ] || { skip=$((skip+1)); continue; }
     # The Java fits every group in one pass and takes no options, so compare it
     # against the C's default. Both streams, since the summary is on stderr.
     ./linearr -t "$f"                     >"$tmp/c.out"  2>"$tmp/c.err"  || true
@@ -63,5 +68,5 @@ for f in example/*.csv; do
         diff "$tmp/c.err" "$tmp/j.err" | sed 's/^/      err: /' | head -6 || true
     fi
 done
-echo "java: $pass agreed, $fail differed"
+echo "java: $pass agreed, $fail differed, $skip not a training file"
 [ "$fail" -eq 0 ]

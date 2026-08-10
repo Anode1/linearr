@@ -71,21 +71,26 @@ cat(sprintf("%.2e", worst))
 if (worst > tol) quit(status = 1)
 RS
 
-pass=0; fail=0
+pass=0; fail=0; skip=0
 printf "%-28s %-12s %s\n" "file" "--qr vs lm()" "default vs lm()"
 for f in example/*.csv; do
     head=$(grep -v '^#' "$f" | head -1)
-    case "$head" in group,*) ;; *) continue ;; esac
+    case "$head" in group,*) ;; *) skip=$((skip+1)); continue ;; esac
     # A coefficient table also begins with "group,". It is a model, not training
     # data, and fitting it produces nonsense in both implementations rather than
     # a disagreement worth reading.
-    case "$head" in group,intercept,*) continue ;; esac
+    case "$head" in group,intercept,*) skip=$((skip+1)); continue ;; esac
     # And a training file needs a group, a value and at least one term, so
     # anything narrower is not one. The trim table is two columns.
-    [ "$(printf '%s' "$head" | tr ',' '\n' | wc -l)" -ge 3 ] || continue
+    #
+    # Counted with tr | wc -w and not wc -l: tr turns N fields into N-1
+    # newlines, so the first version of this dropped every THREE-column file,
+    # which is anscombe.csv and curve.csv, from both gates. It reported
+    # agreement on what was left and said nothing about what it had skipped.
+    [ "$(printf '%s' "$head" | tr ',' ' ' | wc -w)" -ge 3 ] || { skip=$((skip+1)); continue; }
     # The refusal examples are meant to fail; they are not fits to compare.
-    ./linearr -t "$f" --qr > "$tmp/qr.csv" 2>/dev/null || continue
-    ./linearr -t "$f"       > "$tmp/ne.csv" 2>/dev/null || continue
+    ./linearr -t "$f" --qr > "$tmp/qr.csv" 2>/dev/null || { skip=$((skip+1)); continue; }
+    ./linearr -t "$f"       > "$tmp/ne.csv" 2>/dev/null || { skip=$((skip+1)); continue; }
 
     set +e
     q=$(Rscript --vanilla "$tmp/cmp.R" "$f" "$tmp/qr.csv" 1e-6 2>"$tmp/rerr"); qrc=$?
@@ -100,5 +105,5 @@ for f in example/*.csv; do
         printf "%-28s %-12s %s\n" "$f" "$q" "${n:-error}"
     fi
 done
-echo "R: $pass agreed with lm() to 1e-6 under --qr, $fail differed"
+echo "R: $pass agreed with lm() to 1e-6 under --qr, $fail differed, $skip not a training file"
 [ "$fail" -eq 0 ]

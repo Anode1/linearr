@@ -14,6 +14,90 @@ memory the fit uses. The number of GROUPS does, and
     ./linearr -t mydata.csv > model.csv       # fit every group in one pass
     ./linearr -c model.csv --no-trim A x=3    # score a case against it
 
+## What it is, and what it is not
+
+Three things it does that a small OLS implementation usually does not:
+
+**The arithmetic is checkable, not asserted.** It reproduces the NIST
+Statistical Reference Datasets to eleven digits, and agrees with R's `lm()` to
+1e-11 under `--qr`. Both run in `make check`, not in a paragraph:
+
+    $ sh scripts/r-check.sh
+    file                         --qr vs lm() default vs lm()
+    example/anscombe.csv         1.51e-12     1.51e-12
+    example/curve.csv            1.32e-08     1.05e-07
+    example/longley.csv          4.97e-12     3.48e-12
+    example/nearly-the-same.csv  1.30e-11     1.13e-05
+    example/routes.csv           3.20e-15     3.20e-15
+    example/simple-train.csv     1.18e-15     1.18e-15
+    example/three-rows.csv       6.66e-16     6.66e-16
+    example/together.csv         4.44e-16     4.44e-16
+    example/train.csv            4.25e-15     4.25e-15
+    example/wampler1.csv         3.35e-10     4.53e-09
+    R: 10 agreed with lm() to 1e-6 under --qr, 0 differed, 5 not a training file
+
+`lm()` solves by QR with column pivoting, a different method from the default
+here, so agreement is evidence rather than a tautology. The one file where the
+two columns differ by six orders of magnitude is the one that exists to show
+what squaring `X'X` costs. See [Checked against answers somebody else
+certified](#checked-against-answers-somebody-else-certified).
+
+**It reads the residuals, not just the summary.** R2 and a residual SD are
+averages over the residuals, so neither can see structure *in* them. This names
+the term whose square explains what is left, tests the fitted value for a
+missing interaction, and tests whether the error grows with the prediction:
+
+    warning: in group II the residuals still depend on x after the line is
+    subtracted (t=-2219.2). A straight line is probably the wrong shape in that
+    term; consider adding its square as a column.
+
+It also names the three ways a fit succeeds and misleads: two columns the data
+cannot separate, a line with no residual freedom, and a design whose trailing
+digits are noise. See [Where the model is wrong](#where-the-model-is-wrong).
+
+**Memory is bounded by the model, not by the data.** Rows are read one at a time
+and forgotten, so a 40 MB file and a 4 GB file cost the same. What memory does
+scale with is the number of GROUPS, one accumulator each, and `--footprint`
+prints the figure rather than leaving you to trust a sentence:
+
+    $ ./linearr --footprint 24 400000
+    24 terms, 400000 groups
+
+    fitting, -t, one accumulator per group
+      per group   8456 bytes
+      in total    3.15 GB
+
+    scoring, a loaded coefficient table
+      per group   2064 bytes
+      in total    787.4 MB
+
+    The scoring figure does not move with the term count: the
+    coefficient array is sized at this build's ceiling of 256, so a
+    small model pays for a large one. The fitting figure does move.
+
+    Neither depends on the number of ROWS, which is the point:
+    the same figures cover a thousand rows and a trillion.
+
+### What it does not do
+
+Said here rather than discovered later.
+
+- **No inference.** No standard errors, no confidence or prediction intervals,
+  no p-values, no cross-validation, no regularization. The residual SD is
+  reported and is an in-sample figure. If you need any of that, `statsmodels`
+  and R are the right tools and this is not competing with them.
+- **One thread, one stream.** No sharding, no parallelism, no restart from a
+  partial fit. At roughly 4.7 million rows a second it is bound by parsing
+  text, not by arithmetic, so a second core would help more than a faster
+  solver would.
+- **A comma splitter, not a CSV parser.** No quoting, no embedded line breaks,
+  no separator but the comma, no missing values, no categorical columns. Each
+  is refused with a message naming the row, the column and the reason; see
+  [What it will not read](#what-it-will-not-read).
+- **A fixed column order.** Column 1 the group, column 2 the value being
+  predicted, the rest terms. Nothing in the data can say which is which, so the
+  program prints what it took on every fit.
+
 ## All of least squares, in three short pieces
 
 **What it does.** Ordinary least squares (OLS), which is linear regression
