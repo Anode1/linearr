@@ -1130,6 +1130,14 @@ certified](#checked-against-answers-somebody-else-certified)); on embedded and
 small ARM targets where no interpreter is going to be installed; and in cloud
 batch work, where the memory a process holds is what it costs.
 
+The same work can be done for other tools. If you have a model or a numeric
+routine that runs in Python, R, SAS or Matlab and needs to run somewhere none
+of those can be installed, it can be ported to C the way this was: no
+dependencies, memory bounded by the model rather than the data, and the
+arithmetic checked against the original before anything is trusted. Open an
+issue on [this repository](https://github.com/Anode1/linearr/issues) to reach
+the author.
+
 ### The limitations of that, stated
 
 One core and one stream: no threading, no sharding, no restart from a partial
