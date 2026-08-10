@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.4.2
+
+The 0.4.1 release built on three platforms and published nothing.
+
+- **A Windows test asserted that an absolute path starts with `/`.** It starts
+  with a drive letter or a UNC prefix there. `resolve_program_dir()` had been
+  returning the right answer; the test was wrong.
+- **One failing platform withheld the whole release.** The publish job waits on
+  the build job, so three working builds shipped nothing. It runs regardless
+  now, and attaches whatever was produced.
+- Origin is on the first screen, so a reader knows this is a rewrite of
+  something that ran in production rather than a demonstration.
+
 ## 0.4.1
 
 Three CI failures in the 0.4.0 release, and the documentation split.

@@ -90,8 +90,8 @@ jobs:
     name: attach the binaries to the release
     needs: build
     # always(), so a platform that fails does not withhold the binaries the
-    # others produced. fail-fast is already off for that reason; without this
-    # the publish job was skipped anyway and a tag with three good builds
+    # other platforms produced. fail-fast is already off for that reason; without
+    # it the publish job was skipped anyway, and a tag with three working builds
     # shipped nothing.
     if: always() && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
