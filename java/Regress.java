@@ -182,14 +182,22 @@ public final class Regress {
                     if (sse < 0.0) sse = 0.0;
                     fit.r2 = 1.0 - sse / cyy;
                     if (fit.r2 < 0.0) fit.r2 = 0.0;
-                    /* The floor under sse. Each y is held to |my|*eps, so the
-                     * centred deviations carry that error and Cyy accumulates
-                     * n of them: the subtraction cannot resolve below about
-                     * |my|*eps*sqrt(n*Cyy). Below it, report the floor as an
-                     * upper bound rather than a value that may be anything.
-                     * regress.c carries the measurement. */
+                    /* The floor under sse, in two terms because there are two
+                     * error sources. Each y is held to |my|*eps, so the centred
+                     * deviations carry that error and Cyy accumulates n of
+                     * them: |my|*eps*sqrt(n*Cyy). That term vanishes for a
+                     * response centred on zero, where the second does not: sse
+                     * is Cyy minus a sum of products each of size Cyy, so the
+                     * subtraction itself carries about eps*Cyy however the
+                     * response is centred. With only the first term a zero-mean
+                     * response was stamped with a '<' bound five orders of
+                     * magnitude below its own residual file. regress.c carries
+                     * the measurement, and this must match it byte for byte:
+                     * scripts/java-check.sh diffs the two implementations'
+                     * stderr, and caught this divergence immediately. */
                     double floor = Math.abs(my) * 2.220446049250313e-16
-                                 * Math.sqrt((double) n * cyy);
+                                 * Math.sqrt((double) n * cyy)
+                                 + 2.220446049250313e-16 * cyy;
                     if (sse < floor) { sse = floor; fit.sigmaIsBound = true; }
                     fit.rss = sse;
                     if (fit.df > 0) fit.sigma = Math.sqrt(sse / (double) fit.df);

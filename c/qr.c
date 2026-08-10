@@ -320,6 +320,14 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
          * the same data with the redundant column removed by hand. */
         fit->rss   = q->rss + drop_rss;
         fit->sigma = (fit->df > 0) ? sqrt(fit->rss / (double)fit->df) : -1.0;
+        /* Never a bound here, always a value: this residual comes out of the
+         * rotation rather than from cancelling two large sums, so there is
+         * nothing to floor and nothing to hedge. Said explicitly because the
+         * caller declares `struct regress_fit f;` uninitialised and prints '<'
+         * or '=' from this field: leaving it unassigned was a read of an
+         * indeterminate value that happened to be 0 at -O2, and every QR fit
+         * printed 'resid SD<' under -ftrivial-auto-var-init=pattern. */
+        fit->sigma_is_bound = 0;
         /* The clamp belongs INSIDE the cyy > 0 branch. Outside it, it ate the
          * -1 that had just been set to mean "the response never varies", and
          * printed R2=0.0000, which reads as "the model explains nothing" where

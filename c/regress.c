@@ -267,8 +267,30 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
                  * cyy gives an R2 that is right to the digits printed. */
                 fit->r2 = 1.0 - sse / r->cyy;
                 if (fit->r2 < 0.0) fit->r2 = 0.0;
+                /* TWO error sources, and the floor has to carry both.
+                 *
+                 * The first is the one derived above: a response held around a
+                 * large mean loses |my|*eps per row, and centring accumulates
+                 * n of those. It vanishes when the mean is near zero.
+                 *
+                 * The second does not vanish there. sse is Cyy minus a sum of
+                 * products each of size Cyy, so the subtraction itself carries
+                 * about eps*Cyy however the response is centred. With only the
+                 * first term, a response centred on zero got a floor of nearly
+                 * nothing while the cancellation was at full strength, and the
+                 * garbage that came out was stamped as a BOUND: 201 rows of
+                 * y = 2x with 1e-7 noise reported `resid SD<8.8e-12` when the
+                 * residual file written by the same run said 6.7e-07, and --qr
+                 * agreed with the file. Five orders of magnitude, in the one
+                 * direction a '<' promises cannot happen.
+                 *
+                 * Summed rather than maxed because both are present at once,
+                 * and a floor that is too high costs only a '<' where a value
+                 * would have done, while one that is too low prints a false
+                 * claim. */
                 {   double floor = fabs(r->my) * DBL_EPSILON
-                                  * sqrt((double)r->n * r->cyy);
+                                  * sqrt((double)r->n * r->cyy)
+                                  + DBL_EPSILON * r->cyy;
                     if (sse < floor) { sse = floor; fit->sigma_is_bound = 1; }
                 }
                 fit->rss = sse;

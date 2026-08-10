@@ -161,8 +161,16 @@ static void test_csv(void) {
 
 /* Storage for the fitter, which allocates nothing itself. Static, because the
  * matrices are ~1 MB at the default ceiling and this is exactly where the
- * program used to blow a small stack. */
-static double t_store[REGRESS_MAX_VARS * REGRESS_MAX_VARS + 2 * REGRESS_MAX_VARS];
+ * program used to blow a small stack.
+ *
+ * Sized for the LARGER of the two solvers, not for regress alone. It was the
+ * regress formula, which is smaller than qr_storage() once column pivoting
+ * added four vectors of nvars+1 -- the same undersizing that let qr_init()
+ * write 8 KB past process.c's buffer. Every qr test here passes small nvars,
+ * so nothing reached the end of it; a test at the ceiling does, which is what
+ * caught this. */
+static double t_store[(REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2)
+                      + 4 * (REGRESS_MAX_VARS + 1)];
 static double t_scratch[(REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2)];
 static double t_beta[REGRESS_MAX_TERMS];
 static double t_store2[(REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2)];
@@ -725,6 +733,31 @@ static void test_qr(void) {
     CHECK(qr_add(&q, x, 0.0 / 0.0) == -1, "qr: a NaN response is refused");
     CHECK(qr_solve(&q, t_beta, t_scratch, &fq) == -1, "qr: an empty sample is not a fit");
     CHECK(qr_init(&q, REGRESS_MAX_VARS + 1, t_store) == -1, "qr: refuses too many terms");
+
+    /* The residual here comes out of the rotation rather than from cancelling
+     * two large sums, so it is never a bound. The field was simply never
+     * assigned, and the caller declares the struct uninitialised and prints
+     * '<' or '=' from it: at -O2 it happened to be 0, and under
+     * -ftrivial-auto-var-init=pattern every QR fit printed 'resid SD<'. */
+    qr_init(&q, 1, t_store);
+    x[0] = 0.0; qr_add(&q, x, 1.0);
+    x[0] = 1.0; qr_add(&q, x, 3.0);
+    x[0] = 2.0; qr_add(&q, x, 5.0);
+    x[0] = 3.0; qr_add(&q, x, 7.5);
+    fq.sigma_is_bound = 1;                  /* poisoned: the solver must clear it */
+    CHECK(qr_solve(&q, t_beta, t_scratch, &fq) == 0, "qr: solves for the bound flag");
+    CHECK(fq.sigma_is_bound == 0, "qr: reports a residual value, never a bound");
+
+    /* Storage. qr_storage() grew four vectors of nvars+1 when column pivoting
+     * arrived, and the single static buffer both solvers share did not: at the
+     * ceiling qr_init() memset 8 KB past its end, silently, and the release
+     * build then printed a plausible table. process.c now asserts the sizing at
+     * compile time; this is the same claim at run time, where a reader can see
+     * it fail. */
+    CHECK(qr_storage(REGRESS_MAX_VARS) <= (size_t)(sizeof t_store / sizeof t_store[0]),
+          "qr: the shared fit buffer holds the QR at the term ceiling");
+    CHECK(qr_storage(REGRESS_MAX_VARS) > (size_t)(REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2),
+          "qr: and needs more than R alone, which is what the old sizing assumed");
 }
 
 /* The residual checks. Structure in the residuals is what says a straight line
@@ -937,7 +970,15 @@ static void test_canonical(void) {
      * Neither is wrong about its own arithmetic; only one of them is close to
      * the answer, and this is what --qr is for. */
     canon_fit(&canon_wampler1, 0, &rel, &sigma, &r2);
-    CHECK(rel < 1e-7, "Wampler1: normal equations recover the quintic");
+    /* 1e-4, not the 1e-7 this used to be. Wampler1 is where the normal
+     * equations are at the edge of what a double can do -- x^5 times x^5
+     * reaches 1e16 -- and how far over that edge they fall depends on the
+     * compiler. x86-64 with gcc gives 4.4e-9; arm64 with clang failed 1e-7,
+     * which is not a defect in either, it is fused multiply-add and a
+     * different summation order on an expression that has no digits to spare.
+     * The ORDERING is the property worth asserting and it is checked below:
+     * QR must beat this, on every platform, by orders of magnitude. */
+    CHECK(rel < 1e-4, "Wampler1: normal equations roughly recover the quintic");
     CHECK(sigma > 1e-4 && sigma < 1.0,
           "Wampler1: and report a residual SD that is visibly not zero");
     canon_fit(&canon_wampler1, 1, &rel, &sigma, &r2);

@@ -57,8 +57,31 @@ typedef char header_fits_in_line[
  * The consequence is that a fit is not reentrant, which is true of this
  * single-threaded CLI anyway and is now written down instead of implied. */
 /* Big enough for whichever solver is chosen. Both are O(terms^2) and neither
- * depends on the data, so one buffer serves both. */
-#define FIT_STORE_DOUBLES ((REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2))
+ * depends on the data, so one buffer serves both.
+ *
+ * "Big enough" was a comment and not a check, and it stopped being true when
+ * the QR gained column pivoting: qr_storage() grew four vectors of p+1, for
+ * each column's range and its running 2-norm, and this figure did not. At the
+ * default ceiling qr_init() then memset 8 KB past the end of this array. The
+ * release build printed a plausible table and exited 0; only ASan saw it, and
+ * only at 255 terms or more, which nothing tested.
+ *
+ * So the two solvers' own formulas are written out here and the array takes
+ * the larger, with the asserts below tying it to them. A solver that grows its
+ * storage again now fails to compile instead of writing past this. */
+#define REGRESS_STORE_DOUBLES ((size_t)REGRESS_MAX_VARS * (size_t)REGRESS_MAX_VARS \
+                               + 2u * (size_t)REGRESS_MAX_VARS)
+#define QR_STORE_DOUBLES (((size_t)REGRESS_MAX_VARS + 1u) * ((size_t)REGRESS_MAX_VARS + 2u) \
+                          + 4u * ((size_t)REGRESS_MAX_VARS + 1u))
+#define FIT_STORE_DOUBLES (QR_STORE_DOUBLES > REGRESS_STORE_DOUBLES \
+                           ? QR_STORE_DOUBLES : REGRESS_STORE_DOUBLES)
+/* If either solver's storage grows again, this stops compiling, which is the
+ * diagnostic whose absence cost 8 KB of silent overwrite. */
+typedef char fit_store_holds_regress[
+    (FIT_STORE_DOUBLES >= REGRESS_STORE_DOUBLES) ? 1 : -1];
+typedef char fit_store_holds_qr[
+    (FIT_STORE_DOUBLES >= QR_STORE_DOUBLES) ? 1 : -1];
+
 static double fit_store[FIT_STORE_DOUBLES];
 /* Large enough for either solver: regress_solve's elimination workspace, and
  * qr_solve's re-triangularisation of the kept columns when a design turns out
