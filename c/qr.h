@@ -11,7 +11,9 @@
  * triangular factor R with Givens rotations, one row at a time. The row is used
  * and dropped, exactly as in regress.c, so the memory is still a function of
  * the model alone: p^2 + 7p + 6 doubles, against the normal equations' p^2 +
- * 2p. It is 5p + 6 doubles MORE, not less. This header said less, and the
+ * 2p. The ACCUMULATOR is 5p + 6 doubles more, not less. What a caller
+ * allocates is the other way round, because regress_solve needs a p^2 + p
+ * elimination workspace and this does not: 750 doubles against 1224 at p=24. This header said less, and the
  * README said more, and neither counted the three per-column vectors this
  * module keeps; the figures now come from qr_storage() and regress_storage(),
  * which are what the callers allocate. What it does not do is square anything, so the digits lost are the

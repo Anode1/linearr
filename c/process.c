@@ -162,7 +162,7 @@ static int format_pinned(const char *group, const struct regress_fit *f,
 }
 
 static char coef_path[RESOLVE_PATH_MAX];
-static char err_buf[512] = "no error";
+static char err_buf[RESOLVE_PATH_MAX + 512] = "no error";
 
 /* Set the reason and fail in one statement, so no path can return -1 while
  * leaving the previous run's explanation behind. */

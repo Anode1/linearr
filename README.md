@@ -627,8 +627,10 @@ squares the condition number of the design, so a near-collinear or badly scaled
 problem loses about twice the digits it needs to. `--qr` rotates each row into a
 triangular factor instead, with Givens rotations, one row at a time. It squares
 nothing. It is still streaming. Its factor is `p^2 + 7p + 6` doubles against the
-normal equations' `p^2 + 2p`, so it is LARGER by `5p + 6`, not smaller. At 24
-terms that is 750 doubles against 624.
+normal equations' `p^2 + 2p`, so the accumulator is larger by `5p + 6`: at 24
+terms, 750 doubles against 624. Counting what a caller actually has to
+allocate reverses that, because the elimination needs a `p^2 + p` workspace
+that the rotation does not: 750 against 1224 at 24 terms.
 
 On `example/nearly-the-same.csv`, where two columns differ in the sixth decimal
 and the answer is `1 + 2*x1 + 3*x2`:

@@ -13,6 +13,7 @@
  * else allocates", which was false the day it was written: params.c was already
  * there. A count is a claim like any other. */
 #include "los.h"
+#include "resolve.h"
 #include "csv.h"
 #include "hash.h"
 #include "common.h"
@@ -27,7 +28,7 @@
 
 #define GROUP_BUCKETS 1024
 
-static char reason[256] = "";
+static char reason[RESOLVE_PATH_MAX + 512] = "";
 
 /* Why the last load failed. The caller used to print one sentence ("X is not
  * a coefficient table") for about ten distinct causes, with the real one
@@ -525,7 +526,11 @@ static int parse_row(const char *line, struct los_case *c, double *los,
     int   i, n;
 
     parse_why[0] = '\0';
-    if (nvars < 1) { debug("los: no schema yet"); return -1; }
+    if (nvars < 1) {
+        (void)snprintf(parse_why, sizeof parse_why,
+                       "there is no schema yet: no header has been read");
+        return -1;
+    }
     if (strlen(line) >= sizeof buf) {
         (void)snprintf(parse_why, sizeof parse_why,
                        "the line is longer than this build reads (%d bytes)",

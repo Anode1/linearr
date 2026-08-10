@@ -5,6 +5,7 @@
 #include "common.h"
 
 #include <string.h>
+#include <limits.h>
 #include <stdlib.h>
 
 typedef struct hash_bucket {
@@ -60,10 +61,14 @@ void hash_delete(struct hash *table) {
  * 4x time for every 2x groups, which is the signature of chains that never stop
  * growing. Keys are moved, not recomputed, and nothing is reallocated. */
 static void hash_grow(struct hash *table) {
-    long i, newsize = table->size * 2;
+    long i, newsize;
     hash_bucket **nt;
 
-    if (newsize <= table->size) return;            /* overflow: stay as we are */
+    /* Tested BEFORE the multiply: computing it and then looking is signed
+     * overflow, which is undefined, and is the shape MISRA and the Power of
+     * Ten both forbid. Unreachable at any real table size; still wrong. */
+    if (table->size > LONG_MAX / 2) return;
+    newsize = table->size * 2;
     nt = malloc(sizeof(hash_bucket *) * (size_t)newsize);
     if (!nt) return;                               /* growing is an optimisation */
     for (i = 0; i < newsize; i++) nt[i] = NULL;

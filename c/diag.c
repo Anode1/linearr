@@ -172,8 +172,16 @@ static double t_of(double r, double n, int nvars) {
      * 9.0e7, 8.6e7, 7.3e7 and 9999 at four offsets of the same column, which is
      * rounding noise in 1 - r^2 and nothing else. A test that compared those
      * four failed, correctly, and the fault was here. */
-    if (denom <= 1e-12) return (r < 0.0 ? -9999.0 : 9999.0);
-    return r * sqrt(df) / sqrt(denom);
+    if (denom <= 1e-12) return (r < 0.0 ? -DIAG_T_CAP : DIAG_T_CAP);
+    {   double t = r * sqrt(df) / sqrt(denom);
+        /* Clamped at the same place. The cap used to be reachable only through
+         * the branch above, while ordinary data produced 40387 and 1237430, so
+         * the sentinel meaning "exact" sorted BELOW values meaning "strong",
+         * and diag_result picks by |t|. */
+        if (t >  DIAG_T_CAP) t =  DIAG_T_CAP;
+        if (t < -DIAG_T_CAP) t = -DIAG_T_CAP;
+        return t;
+    }
 }
 
 /* The bound |t| must pass, given how many probes are being read.

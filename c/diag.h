@@ -74,6 +74,11 @@
  * once without a correction of its own. */
 #define DIAG_T 3.5
 
+/* Every reported t is clamped here, so the value that means "exact" is the
+ * largest one and not a number in the middle of the range. Past this the
+ * digits are the summation order rather than the evidence. */
+#define DIAG_T_CAP 9999.0
+
 /* Rows below which nothing is reported: a handful of points can look like
  * anything. Ten rather than twelve, measured rather than guessed: on 200
  * correctly specified models of ELEVEN rows each, three produced a warning,
