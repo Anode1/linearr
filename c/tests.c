@@ -1126,6 +1126,35 @@ static void test_diag_probe_isolation(void) {
     }
 }
 
+/* The probes take their powers about a centre the CALLER supplies, from the
+ * completed fit. Taken from the first row instead, an outlier arriving first
+ * became the centre and every other value was measured from it: the same rows
+ * in a different order gave t=9999 one way and t=78.8 the other. */
+static void test_diag_center(void) {
+    struct diag d;
+    struct diag_result r;
+    double x[1], ctr[1], t_first = 0.0, t_last = 0.0;
+    int pass_no, i;
+
+    for (pass_no = 0; pass_no < 2; pass_no++) {
+        diag_init(&d, 1, t_diag);
+        ctr[0] = 0.0;                     /* the fit's mean of x, near zero */
+        diag_center(&d, ctr, 0.0);
+        if (pass_no == 0) { x[0] = 30.0; diag_add(&d, x, 900.0, 0.0); }
+        for (i = -100; i <= 100; i++) {
+            double u = i * 0.05;
+            x[0] = u;
+            diag_add(&d, x, u * u, 0.0);
+        }
+        if (pass_no == 1) { x[0] = 30.0; diag_add(&d, x, 900.0, 0.0); }
+        diag_result(&d, DIAG_T, &r);
+        if (pass_no == 0) t_first = r.curved_t; else t_last = r.curved_t;
+    }
+    CHECK(t_first != 0.0, "diag centre: the curve is found either way round");
+    CHECK(fabs(t_first - t_last) < 1e-9 * fabs(t_first),
+          "diag centre: and to the same value, whichever row arrives first");
+}
+
 static void test_diag_offsets(void) {
     /* DEFECT TWO. The probes accumulated raw powers of the column, up to the
      * sixth, and recovered variances by subtracting: the naive formula
@@ -1538,6 +1567,7 @@ int main(int argc, char **argv) {
     test_qr();
     test_diag();
     test_diag_probe_isolation();
+    test_diag_center();
     test_diag_offsets();
     test_progress();
     test_footprint();

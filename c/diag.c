@@ -16,6 +16,7 @@ int diag_init(struct diag *d, int nvars, double *storage) {
     if (nvars < 1 || !storage) return -1;
     memset(storage, 0, diag_storage(nvars) * sizeof *storage);
     d->nvars       = nvars;
+    d->shifted     = 0;
     d->n           = 0;
     d->s           = storage;
     d->resid_sd    = -1.0;
@@ -43,10 +44,18 @@ void diag_scale(struct diag *d, double resid_sd, double response_sd) {
  *
  * Layout: [0] shift, [1] n, then sums of u, u^2, u^3, u^4, u^5, u^6, r*u,
  * r*u^2, r*u^3 where u = v - shift. */
-static void probe_add(double *b, double v, double r) {
+void diag_center(struct diag *d, const double *shift, double yhat) {
+    int j;
+    if (!d || !shift || d->n != 0) return;   /* only before any row is added */
+    for (j = 0; j < d->nvars; j++) B(d, j)[0] = shift[j];
+    FIT(d)[0] = yhat;
+    d->shifted = 1;
+}
+
+static void probe_add(double *b, double v, double r, int preset) {
     double u, u2, u3;
 
-    if (b[1] == 0.0) b[0] = v;              /* the shift, from the first row */
+    if (b[1] == 0.0 && !preset) b[0] = v;   /* else the caller set the centre */
     b[1] += 1.0;
     u  = v - b[0];
     u2 = u * u;
@@ -69,8 +78,8 @@ void diag_add(struct diag *d, const double *x, double resid, double fitted) {
 
     if (!isfinite(resid) || !isfinite(fitted)) return;
     d->n++;
-    for (j = 0; j < d->nvars; j++) probe_add(B(d, j), x[j], resid);
-    probe_add(FIT(d), fitted, resid);
+    for (j = 0; j < d->nvars; j++) probe_add(B(d, j), x[j], resid, d->shifted);
+    probe_add(FIT(d), fitted, resid, d->shifted);
 
     sh = SH(d);
     {   /* The fitted value shifted by the same constant the fit probe uses, so

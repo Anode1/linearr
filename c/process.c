@@ -100,6 +100,20 @@ static int fitter_init(struct fitter *f, int nvars, double *storage) {
                     : regress_init(&f->u.r, nvars, storage);
 }
 
+/* Where each column sits, for the residual probes to take their powers about.
+ * The normal equations already hold the means; QR does not centre, so the
+ * midpoint of each column's range stands in, which is what its rank test
+ * already keeps. Either is enormously better than the first row's value. */
+static void fitter_centers(const struct fitter *f, int nvars, double *out) {
+    int j;
+    if (!f->is_qr) {
+        for (j = 0; j < nvars; j++) out[j] = f->u.r.mean[j];
+    } else {
+        for (j = 0; j < nvars; j++)
+            out[j] = 0.5 * (f->u.q.colmin[j + 1] + f->u.q.colmax[j + 1]);
+    }
+}
+
 static int fitter_add(struct fitter *f, const double *x, double y) {
     return f->is_qr ? qr_add(&f->u.q, x, y) : regress_add(&f->u.r, x, y);
 }
@@ -872,8 +886,13 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             fail("cannot re-read %s for the residuals", csv_path);
             goto cleanup;
         }
-        /* Each group against its OWN spread, so a residual of rounding error
-         * can be told from one with structure in it. */
+        /* Each group's probes centred on its own fit, and each judged against
+         * its own spread. */
+        for (g = head; g; g = g->next) {
+            double ctr[REGRESS_MAX_VARS];
+            fitter_centers(&g->r, nvars, ctr);
+            diag_center(&g->d, ctr, (g->ny > 0) ? g->ymean : 0.0);
+        }
         for (g = head; g; g = g->next)
             diag_scale(&g->d, g->sigma,
                        (g->ny > 1) ? sqrt(g->ym2 / (double)(g->ny - 1)) : -1.0);

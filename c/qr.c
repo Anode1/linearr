@@ -6,33 +6,30 @@
 #include <math.h>
 #include <string.h>
 
-/* Rank tolerance, relative to the largest diagonal of R after each column is
- * divided by its own 2-norm.
+/* Rank tolerance: the fraction of a column that must survive projection onto
+ * the columns before it. |R_ii| is what is left of column i, and colss[i] is
+ * what it started with, so |R_ii|/||col_i|| is that fraction directly.
  *
- * It is 1e-9 and NOT the 1e-12 regress.c uses, and the difference is not an
- * oversight in either file. regress.c centres its co-moments, so by the time it
- * tests rank the intercept is out of the way and the columns are about their
- * own means. This module does not centre -- that is what makes it a one-pass
- * QR -- so a column sitting far from zero is numerically close to the intercept
- * column, and the factorisation loses digits in proportion to how far out it
- * sits. Below 1e-9 those lost digits look like rank.
+ * Compared against the tolerance DIRECTLY. It used to be scaled by the largest
+ * surviving diagonal, which made the threshold depend on whichever column
+ * happened to survive best.
  *
- * Measured, on a design of two columns where the second is exactly a linear
- * function of the first, so the right answer is always "drop one":
+ * The value is 1e-9 and not R's 1e-7, though R tests the same quantity
+ * (LINPACK dqrdc2, tol = 1e-7). R pivots during the factorisation, so its
+ * comparison is against a remainder that has already had the strong columns
+ * taken out; this factorises in the order the columns arrive, because the rows
+ * arrive one at a time and there is no second look. Measured with 1e-7 on that
+ * un-pivoted factor, an identifiable column at an offset of 1e8 was deleted
+ * where 1e-9 keeps it. Of the two ways to be wrong, keeping a column that
+ * should have gone leaves an unstable fit that cond= reports, and deleting one
+ * that should have stayed silently zeroes a real coefficient. This errs
+ * toward keeping.
  *
- *     offset of the columns     1e-12    1e-10    1e-9    1e-8    1e-7
- *              0                 drop     drop     drop    drop    drop
- *              1e3               drop     drop     drop    drop    drop
- *              1e6               MISSED   drop     drop    drop    drop
- *              1e9               MISSED   MISSED   MISSED  MISSED  MISSED
- *
- * and at 1e-8 and looser a design whose columns are genuinely independent
- * starts being pinned instead, so there is no threshold that rescues 1e9.
- *
- * THE LIMITATION, stated: with columns near 1e9 this module cannot tell an
- * exactly dependent column from an independent one. cond= still reports the
- * ill-conditioning, so the fit is not silent about it, but the rank test does
- * not cut. Centre such columns before fitting, or use the normal equations,
+ * THE LIMITATION, stated: around 1e9 the test is uninformative in BOTH
+ * directions, because the surviving fraction is about 1e-9 whether the column
+ * is dependent or not. Do not expect cond= to cover for it: cond is computed
+ * over the pivots that were ACCEPTED, so deleting a column removes the
+ * evidence. Centre such columns before fitting, or use the normal equations,
  * which centre for you. */
 #define QR_RANK_EPS 1e-9
 
@@ -190,7 +187,14 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
         rel[i] = d;
         if (d > dmax) dmax = d;
     }
-    eps = (dmax > 0.0 ? dmax : 1.0) * QR_RANK_EPS;
+    /* Compared against the tolerance directly, not against dmax * tolerance.
+     * rel[i] is already dimensionless: |R_ii| is what is left of column i once
+     * the columns before it are projected out, and the divisor is that
+     * column's own norm, so rel is the fraction of the column that survived.
+     * That is the quantity LINPACK's dqrdc2 tests, which is what R's lm()
+     * uses, and it compares it to tol directly. Scaling by dmax made the
+     * threshold depend on whichever column happened to survive best. */
+    eps = QR_RANK_EPS;
 
     for (i = 0; i <= p; i++) {
         /* The intercept is never dropped. Dropping it silently set beta[0] to 0

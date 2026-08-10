@@ -117,6 +117,7 @@
 
 struct diag {
     int     nvars;
+    int     shifted;    /* the caller supplied the centres */
     long long n;
     double *s;
     double  resid_sd, response_sd;
@@ -133,6 +134,21 @@ struct diag_result {
 
 size_t diag_storage(int nvars);
 int    diag_init(struct diag *d, int nvars, double *storage);
+
+/* The centre each term's powers are taken about, from the FIT rather than from
+ * the first row. Optional, and worth doing: taken from the first row, an
+ * outlier arriving first became the centre and every other value was measured
+ * from it. The same 201 rows in a different order then gave t=9999 in one
+ * order and t=78.8 in the other, on the same data and the same model.
+ *
+ * A running mean cannot be used instead, because moving the centre means
+ * re-normalising every power sum already accumulated through a binomial
+ * expansion, six of them per row. This costs nothing: diag_add runs in the
+ * second pass, and the first pass has already computed these.
+ *
+ * shift holds nvars term centres; yhat is the centre for the fitted value,
+ * which for a least-squares fit is the mean of the response. */
+void diag_center(struct diag *d, const double *shift, double yhat);
 
 /* The response's own spread, so a residual can be told from rounding error. */
 void diag_scale(struct diag *d, double resid_sd, double response_sd);

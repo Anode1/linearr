@@ -573,10 +573,28 @@ noise produced no warning and AR(1) noise at rho=0.85 produced 20. On ordered
 data, read a curvature warning as a reason to look at the residual file, not as
 a conclusion.
 
-`--residuals` costs a second pass over the training file rather than a copy of
-it in memory: the fit forgets each row as it reads it, so the rows are read
-again to be subtracted from. Memory stays a function of the model, and a pipe
-is refused because it cannot be rewound.
+**Two passes, and the second one is why the checks are trustworthy.**
+`--residuals` reads the training file again rather than keeping a copy: the fit
+forgets each row as it reads it, so the rows have to be read a second time to
+be subtracted from. Memory stays a function of the model, and a pipe is refused
+because it cannot be rewound.
+
+The second pass gets something the first cannot have. Each probe takes its
+term's powers about a centre, and that centre is the term's mean **from the
+completed fit**. A single pass would have to guess it from the first row, and
+that is what this used to do: an outlier arriving first became the centre, and
+the same 201 rows in a different order gave t=9999 in one order and t=78.8 in
+the other. A running mean is not an alternative, because moving the centre
+means re-normalising every power sum already accumulated, six per row, through
+a binomial expansion. Two passes make it free.
+
+Both passes report progress on a long run, separately, since the second is a
+second run over the same rows:
+
+    fitting:   314572800 rows in 1m 4s, 4.91M rows/s
+    residuals: 104857600 rows in 1m 2s, 1.69M rows/s
+
+Nothing that finishes inside a minute prints either.
 
 ## Where this is the right tool, and where it is not
 
