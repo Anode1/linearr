@@ -67,6 +67,92 @@ training sample closely, so its in-sample error stays small while its
 predictions do not. The `cond=` figure is the diagnostic, and a warning is
 printed above 1e8.
 
+## The textbook case: Anscombe's quartet
+
+Anscombe's quartet, fitted four at once, which is what groups are for:
+
+    $ ./linearr -t example/anscombe.csv
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term. Use -y NAME if that is the wrong column
+    fit: 4 groups, 44 rows, worst R2=0.6662, worst resid SD=1.237, least df=9
+    # response: y
+    group,intercept,x
+    I,3.00009090909,0.500090909091
+    II,3.00090909091,0.5
+    III,3.00245454545,0.499727272727
+    IV,3.00172727273,0.499909090909
+
+The same line four times to two decimals, and each set on its own gives
+`R2=0.666`, `resid SD=1.24`, `df=9`. Twelve significant digits are printed, so
+the small differences between the four are visible here and are not in most
+tools.
+
+    $ ./linearr -t example/anscombe.csv --residuals r.csv
+    residuals: r.csv
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term. Use -y NAME if that is the wrong column
+    fit: 4 groups, 44 rows, worst R2=0.6662, worst resid SD=1.237, least df=9
+    warning: in group II the residuals still depend on x after the line is subtracted (t=-2219.2). A straight line is probably the wrong shape in that term; consider adding its square as a column.
+    # response: y
+    group,intercept,x
+    I,3.00009090909,0.500090909091
+    II,3.00090909091,0.5
+    III,3.00245454545,0.499727272727
+    IV,3.00172727273,0.499909090909
+
+Set II is named. **Sets III and IV are not, and should not be taken as
+passing:** neither is a wrong shape, both are single points with more influence
+than the other ten together, and this program has no measure of leverage or
+influence to find them with. The silence there is a gap, not approval.
+
+### What the residuals of set II actually look like
+
+The warning is a number. The residuals are the evidence, and set II is the case
+every course uses to show what a line cannot do. Fit that set alone and keep
+them:
+
+    $ ./linearr -t example/anscombe.csv -g II --residuals r.csv
+    residuals: r.csv
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term. Use -y NAME if that is the wrong column
+    fit: 11 rows, R2=0.6662, resid SD=1.237, df=9
+    warning: in group II the residuals still depend on x after the line is subtracted (t=-2219.2). A straight line is probably the wrong shape in that term; consider adding its square as a column.
+    # response: y
+    group,intercept,x
+    II,3.00090909091,0.5
+
+The file has no x column, but with one term the prediction is a straight
+increasing function of x, so sorting on it puts the rows in x order:
+
+    $ sort -t, -k3 -g r.csv
+    group,observed,predicted,residual
+    II,3.1,5.00090909091,-1.90090909091
+    II,4.74,5.50090909091,-0.760909090909
+    II,6.13,6.00090909091,0.129090909091
+    II,7.26,6.50090909091,0.759090909091
+    II,8.14,7.00090909091,1.13909090909
+    II,8.77,7.50090909091,1.26909090909
+    II,9.14,8.00090909091,1.13909090909
+    II,9.26,8.50090909091,0.759090909091
+    II,9.13,9.00090909091,0.129090909091
+    II,8.74,9.50090909091,-0.760909090909
+    II,8.1,10.0009090909,-1.90090909091
+
+The last column is an arch: negative at both ends, positive through the middle,
+symmetric about the sixth row to every digit printed. That is a parabola with
+its line taken away, and it is the shape a residual plot is read for. The eleven
+numbers say it without a plot.
+
+Note the sum of that column is zero and its mean is zero, as least squares
+guarantees; the residual SD is 1.237 whichever of the four sets you fit. No
+summary of these numbers can see the arch. Only their order can, and order is
+what a single figure throws away.
+
+The remedy is the one the warning names. Add a column holding x squared to the
+training file and fit again, and the arch goes; the header names the terms, so
+nothing else changes.
+
+So the quartet exercises all three parts at once: groups fit in one pass, a
+summary that cannot tell the four apart, and a residual check that separates the
+one case it is built for and says plainly that it does not catch the other two.
+
 ## Two solvers, and how accurate each one is
 
 What each solver does, where each one loses digits, and what the answers were
