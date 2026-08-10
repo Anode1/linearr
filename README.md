@@ -480,8 +480,9 @@ author ran in production in 2011, with the terms kept and the data replaced.
 Its purpose is different from the sets above and it is not a substitute for
 them: it shows the program at a width and a shape that came from a real
 problem rather than from a book, including a trim table, twelve groups, and
-term names that came from the problem. The numbers in it are **generated**, chosen so that fitting `train.csv` returns exactly the
-coefficients in `coefficients.csv`. They are fitted to nothing and mean nothing.
+term names that came from the problem. The numbers in it are **generated**,
+chosen so that fitting `train.csv` returns exactly the coefficients in
+`coefficients.csv`.
 
 **Files built to fail in one specific way**, each used by a teaching section:
 
