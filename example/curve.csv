@@ -1,0 +1,18 @@
+# example/curve.csv: a parabola, offered to a program that fits straight lines.
+# The fit succeeds and its summary looks ordinary; the residuals do not. With
+# --residuals the shape of the error is checked and reported. See the README,
+# "Where the model is wrong".
+group,value,x
+A,46,-6
+A,35,-5
+A,26,-4
+A,19,-3
+A,14,-2
+A,11,-1
+A,10,0
+A,11,1
+A,14,2
+A,19,3
+A,26,4
+A,35,5
+A,46,6

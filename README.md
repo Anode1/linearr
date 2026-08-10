@@ -156,6 +156,52 @@ It costs a second pass over the training file rather than a copy of it in
 memory: the fit forgets each row as it reads it, so the rows have to be read
 again to be subtracted from. Memory stays a function of the model.
 
+## Two solvers
+
+The fit accumulates `X'X` and solves it. That is what bounds the memory, and it
+squares the condition number of the design, so a near-collinear or badly scaled
+problem loses about twice the digits it needs to. `--qr` rotates each row into a
+triangular factor instead, with Givens rotations, one row at a time. It squares
+nothing. It is still streaming, and its factor is slightly smaller than the
+normal equations it replaces.
+
+On `example/nearly-the-same.csv`, where two columns differ in the sixth decimal
+and the answer is `1 + 2*x1 + 3*x2`:
+
+    normal equations   A,1.00000000001,2.00002262993,2.99997737008
+    --qr               A,1,1.99999999974,3.00000000026
+
+Five correct digits against ten. Both report `cond=`, but on different scales:
+the normal equations report cond(X'X) and QR reports cond(X), so the QR figure
+is about the square root of the other. The summary names the solver for that
+reason. On a well-conditioned design the two agree and the default is faster,
+which is why it is the default; when `cond=` is large the fit says to try `--qr`.
+
+## When a straight line is the wrong shape
+
+Every number in the fit summary is an average over the residuals, so none of
+them can see structure IN the residuals, and that is where a wrong shape is
+written. With `--residuals` the pass that writes them also checks two things.
+
+    $ ./linearr -t example/curve.csv --residuals r.csv
+    fit: 1 group, 13 rows, least df=11, worst resid SD=13.49
+    warning: the residuals correlate with x squared (r=1.00). A straight line is
+    probably the wrong shape in that term; look at the residual file, and
+    consider adding its square as a column.
+
+That file is a parabola. The fit succeeds, and the warning names the term to
+look at rather than only reporting that something is wrong. The second check is
+the size of the error against the size of the prediction: when it grows, the
+residual SD is not a typical error at either end of the range.
+
+Neither is a hypothesis test. Both are correlations against a threshold that is
+the larger of 0.4 and 3/sqrt(n), which is roughly what unstructured residuals
+produce by chance at that sample size, and neither reports anything when the
+residuals are already negligible against the response's own spread. Both guards
+came from a false positive: `example/routes.csv` is exactly linear, its
+residuals are rounding error at 1e-7, and correlating rounding error with
+anything over 18 rows found r = -0.44.
+
 ## Where this is the right tool, and where it is not
 
 **It fits well when:**
@@ -190,15 +236,12 @@ this tool predicting a negative stay. `scikit-learn` and `statsmodels` do all of
 (`gsl_multifit_linear`) or LAPACK (`dgels`) give you a fitted line in C with more
 numerical machinery behind it than this has.
 
-**One numerical caveat.** Accumulating `X'X` and solving it is what makes
-the memory bound possible, and it costs conditioning: forming the normal
-equations squares the condition number of the design, so a badly scaled or
-near-collinear problem loses roughly twice the digits a QR or SVD solve would.
-For indicator columns and modestly scaled data it is usually not the limiting
-factor, and exactly singular cases are detected and reported. Near-singular ones
-are not removed by that, only measured, which is what `cond=` is for. For an
-ill-conditioned design, use a QR-based fit. A streaming Householder QR would
-keep the memory bound and remove the conditioning cost.
+**One numerical caveat**, now with a remedy in the box. The default solver
+accumulates `X'X`, which squares the condition number of the design, so a badly
+scaled or near-collinear problem loses roughly twice the digits it needs to. For
+indicator columns and modestly scaled data that is usually not the limiting
+factor, and `cond=` says when it is. `--qr` solves the same fit without squaring
+anything and remains streaming; see [Two solvers](#two-solvers).
 
 ## Two properties
 
@@ -506,6 +549,8 @@ main.c            CLI front end: options, one case or a stream, print the result
 process.c/.h      THE slot: score a case (process), fit from a CSV (process_train)
 los.c/.h          the model: the schema, the coefficient tables, predict + trim
 regress.c/.h      ordinary least squares by accumulated normal equations
+qr.c/.h           the same fit by Givens rotations, without squaring (--qr)
+diag.c/.h         reads the residuals: curvature, and error that grows
 csv.c/.h          bounded CSV: read a line, split it in place
 resolve.c/.h      find a data file: the current directory, then beside the binary
 common.c/.h       safe primitives: die(), debug(), xmalloc(), xstrdup()

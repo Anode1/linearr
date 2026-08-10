@@ -29,6 +29,16 @@ int process_init(char *err, size_t errsz);
 void process_use_coef(const char *path);
 void process_use_trim(const char *path);
 
+/* Solve by QR (qr.h) instead of by normal equations (regress.h). Same answer on
+ * a well-conditioned design, and the right answer on one that is not: forming
+ * X'X squares the condition number, and QR does not. Slower per row. */
+void process_use_qr(int on);
+
+/* "normal equations" or "QR": which solver produced the last fit. The two
+ * report cond= on different scales (cond(X'X) against cond(X)), so a summary
+ * that prints one without the other invites a comparison that is not valid. */
+const char *process_solver(void);
+
 /* Score one case written as a row: "group,x1,...,xp", one value per term in the
  * coefficient file's column order. Returns 0, or -1; process_error() then
  * says why. */
@@ -104,6 +114,11 @@ struct fit_summary {
     long   min_df;      /* the least residual freedom any group had       */
     double max_sigma;   /* the worst group's residual standard deviation  */
     double max_condition;  /* the worst-conditioned group                 */
+    /* From the residual pass, when one was made (see process_train_residuals).
+     * curved_term is an index into the schema, or -1. */
+    int    curved_term;
+    double curved_r;
+    double spread_r;
     int    pinned;      /* total terms pinned across all groups           */
 };
 int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum);

@@ -11,6 +11,8 @@
 #include "params.h"
 #include "csv.h"
 #include "regress.h"
+#include "qr.h"
+#include "diag.h"
 #include "los.h"
 #include "process.h"
 #include "resolve.h"
@@ -153,6 +155,8 @@ static void test_csv(void) {
 static double t_store[REGRESS_MAX_VARS * REGRESS_MAX_VARS + 2 * REGRESS_MAX_VARS];
 static double t_scratch[REGRESS_MAX_VARS * (REGRESS_MAX_VARS + 1)];
 static double t_beta[REGRESS_MAX_TERMS];
+static double t_store2[(REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2)];
+static double t_beta2[REGRESS_MAX_TERMS];
 
 static void test_regress(void) {
     struct regress r;
@@ -466,6 +470,114 @@ static void test_named_case(void) {
     process_free();
 }
 
+/* QR reaches the same answer without forming X'X, so it keeps the digits that
+ * squaring the condition number throws away. On a well-conditioned design the
+ * two agree; on a bad one QR is right and the normal equations are not. */
+static void test_qr(void) {
+    struct qr q;
+    struct regress r;
+    struct regress_fit fq, fr;
+    double x[2];
+    int i;
+
+    /* Agreement where it should not matter. */
+    qr_init(&q, 2, t_store);
+    x[0] = 0; x[1] = 0; qr_add(&q, x, 2.0);
+    x[0] = 1; x[1] = 0; qr_add(&q, x, 5.0);
+    x[0] = 0; x[1] = 1; qr_add(&q, x, 1.0);
+    x[0] = 2; x[1] = 3; qr_add(&q, x, 5.0);
+    CHECK(qr_solve(&q, t_beta, NULL, &fq) == 0, "qr: solves");
+    CHECK(NEAR(t_beta[0], 2.0) && NEAR(t_beta[1], 3.0) && NEAR(t_beta[2], -1.0),
+          "qr: recovers y = 2 + 3x1 - x2");
+    CHECK(fq.pinned == 0 && fq.df == 1, "qr: rank and df");
+    CHECK(fq.r2 > 0.999999, "qr: R2");
+
+    /* The case the module exists for: two columns alike to the sixth decimal.
+     * The normal equations lose about five digits here and QR loses about one. */
+    {
+        double eq, eqr;
+        qr_init(&q, 2, t_store);
+        regress_init(&r, 2, t_store2);
+        for (i = 0; i < 40; i++) {
+            x[0] = 1.0 + i * 0.01;
+            x[1] = x[0] + ((i % 2) ? 1.0e-6 : 0.0);
+            qr_add(&q, x, 1.0 + 2.0 * x[0] + 3.0 * x[1]);
+            regress_add(&r, x, 1.0 + 2.0 * x[0] + 3.0 * x[1]);
+        }
+        qr_solve(&q, t_beta, NULL, &fq);
+        eqr = fabs(t_beta[1] - 2.0);
+        regress_solve(&r, t_beta2, t_scratch, &fr);
+        eq = fabs(t_beta2[1] - 2.0);
+        CHECK(eqr < eq / 100.0, "qr: at least two orders more accurate here");
+        CHECK(eqr < 1e-7, "qr: and close to the truth in absolute terms");
+        /* cond(X) rather than cond(X'X), so it is the smaller number. */
+        CHECK(fq.condition < fr.condition, "qr: reports the unsquared conditioning");
+    }
+
+    /* A column that never varies is dropped, as in the normal equations. */
+    qr_init(&q, 2, t_store);
+    x[0] = 0; x[1] = 7; qr_add(&q, x, 1.0);
+    x[0] = 1; x[1] = 7; qr_add(&q, x, 3.0);
+    x[0] = 2; x[1] = 7; qr_add(&q, x, 5.0);
+    CHECK(qr_solve(&q, t_beta, NULL, &fq) == 0, "qr: solves a rank-deficient design");
+    CHECK(fq.pinned == 1, "qr: the constant column is pinned");
+    CHECK(NEAR(t_beta[1], 2.0), "qr: the identified slope is right");
+
+    /* Non-finite input is refused at the door, as in regress.c. */
+    qr_init(&q, 1, t_store);
+    x[0] = 1.0;
+    CHECK(qr_add(&q, x, 0.0 / 0.0) == -1, "qr: a NaN response is refused");
+    CHECK(qr_solve(&q, t_beta, NULL, &fq) == -1, "qr: an empty sample is not a fit");
+    CHECK(qr_init(&q, REGRESS_MAX_VARS + 1, t_store) == -1, "qr: refuses too many terms");
+}
+
+/* The residual checks. Structure in the residuals is what says a straight line
+ * was the wrong shape, and every number in the fit summary is an average over
+ * them, so none of those can see it. */
+static void test_diag(void) {
+    static double dstore[REGRESS_MAX_VARS * 3 + 8];
+    struct diag d;
+    struct diag_result r;
+    double x[1];
+    int i;
+
+    /* A parabola fitted with a line: the residual is x^2 up to a constant. */
+    diag_init(&d, 1, dstore);
+    for (i = -10; i <= 10; i++) {
+        x[0] = (double)i;
+        diag_add(&d, x, (double)(i * i) - 38.5, 24.0);
+    }
+    diag_result(&d, &r);
+    CHECK(r.curved_term == 0, "diag: names the term whose shape is wrong");
+    CHECK(r.curved_r > 0.9, "diag: and the correlation is strong");
+
+    /* An error that grows with the prediction. */
+    diag_init(&d, 1, dstore);
+    for (i = 1; i <= 60; i++) {
+        x[0] = (double)i;
+        diag_add(&d, x, ((i % 2) ? 1.0 : -1.0) * (double)i, (double)i * 2.0);
+    }
+    diag_result(&d, &r);
+    CHECK(r.spread_r > 0.9, "diag: sees the error growing with the prediction");
+
+    /* A correct model with ordinary noise must stay silent, or the check is
+     * worthless: a warning that always fires is not a warning. */
+    diag_init(&d, 1, dstore);
+    for (i = 0; i < 200; i++) {
+        x[0] = (double)(i % 17);
+        diag_add(&d, x, ((i * 7919) % 23) - 11.0, 5.0 + x[0]);
+    }
+    diag_result(&d, &r);
+    CHECK(r.curved_term == -1, "diag: quiet on an unstructured residual");
+    CHECK(r.spread_r == 0.0, "diag: and quiet about its spread");
+
+    /* Too few rows to say anything. */
+    diag_init(&d, 1, dstore);
+    for (i = 0; i < 5; i++) { x[0] = (double)i; diag_add(&d, x, (double)(i*i), 1.0); }
+    diag_result(&d, &r);
+    CHECK(r.curved_term == -1, "diag: says nothing from five rows");
+}
+
 static void test_los_round(void) {
     /* Half away from zero, NOT printf's round half to even, which would make
      * these 2 and -2. */
@@ -723,6 +835,8 @@ int main(void) {
     test_csv();
     test_regress();
     test_wide_fit();
+    test_qr();
+    test_diag();
     test_resolve();
     test_named_case();
     test_los_round();

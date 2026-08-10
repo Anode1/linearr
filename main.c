@@ -37,6 +37,9 @@ static void usage(FILE *out, const char *prog) {
         "  -g G   fit only group G, or '*' to pool every row into one line.\n"
         "         Without -g, every group in the file is fitted, one line each\n"
         "  -c F   read the coefficient table from F instead of system.properties\n"
+        "  --qr   solve by QR instead of normal equations: slower per row, and\n"
+        "         it does not square the condition number. Use it when the fit\n"
+        "         reports a large cond=\n"
         "  --residuals F   with -t, also write one row per training row to F:\n"
         "         GROUP,observed,predicted,residual. Where the model is wrong,\n"
         "         which no summary number can show you\n"
@@ -113,16 +116,29 @@ static int train_all(const char *path, const char *resid_file) {
         fprintf(stderr, ", %d term-slot%s pinned to 0", sum.pinned, s_(sum.pinned));
     (void)fprintf(stderr, ", least df=%ld", sum.min_df);
     if (sum.max_sigma >= 0.0) fprintf(stderr, ", worst resid SD=%.4g", sum.max_sigma);
-    if (sum.max_condition > 1.0) fprintf(stderr, ", worst cond=%.3g", sum.max_condition);
+    if (sum.max_condition > 1.0)
+        fprintf(stderr, ", worst cond=%.3g (%s)", sum.max_condition, process_solver());
     (void)fprintf(stderr, "\n");
     if (sum.min_df <= 0)
         (void)fprintf(stderr, "warning: at least one group has no residual degrees of "
                         "freedom; its line passes through every row by "
                         "construction. Fit those groups on more rows.\n");
+    if (sum.curved_term >= 0)
+        (void)fprintf(stderr, "warning: the residuals correlate with %s squared "
+                      "(r=%.2f). A straight line is probably the wrong shape in "
+                      "that term; look at the residual file, and consider adding "
+                      "its square as a column.\n",
+                      process_term_name(sum.curved_term), sum.curved_r);
+    if (sum.spread_r != 0.0)
+        (void)fprintf(stderr, "warning: the size of the residual moves with the "
+                      "prediction (r=%.2f), so the error is not the same "
+                      "everywhere. The residual SD above is not a typical error "
+                      "for either end of the range.\n", sum.spread_r);
     if (sum.max_condition > 1e8)
-        (void)fprintf(stderr, "warning: at least one group is ill-conditioned (cond=%.3g); "
-                        "the trailing digits of its coefficients are noise.\n",
-                sum.max_condition);
+        (void)fprintf(stderr, "warning: at least one group is ill-conditioned "
+                        "(cond=%.3g); the trailing digits of its coefficients "
+                        "are noise. Try --qr, which does not square the "
+                        "condition number.\n", sum.max_condition);
     return 0;
 }
 
@@ -142,15 +158,17 @@ static int train(const char *path, const char *group) {
         (void)fprintf(stderr, ", %d term%s unidentified and set to 0",
                 info.pinned, s_(info.pinned));
     (void)fprintf(stderr, ", df=%ld", info.df);
-    if (info.condition > 1.0) fprintf(stderr, ", cond=%.3g", info.condition);
+    if (info.condition > 1.0)
+        fprintf(stderr, ", cond=%.3g (%s)", info.condition, process_solver());
     (void)fprintf(stderr, "\n");
     /* R2 cannot see this failure: an ill-conditioned design fits its own sample
      * beautifully and predicts nothing. Normal equations square the condition
      * number, so this is the diagnostic that has to be said out loud. */
     if (info.condition > 1e8)
-        (void)fprintf(stderr, "warning: the design is ill-conditioned (cond=%.3g). The "
-                        "trailing digits of these coefficients are noise; rescale "
-                        "your columns or drop a near-duplicate one.\n", info.condition);
+        (void)fprintf(stderr, "warning: the design is ill-conditioned (cond=%.3g). "
+                        "The trailing digits of these coefficients are noise; "
+                        "try --qr, rescale your columns, or drop a "
+                        "near-duplicate one.\n", info.condition);
     if (info.r2 < 0.0)
         (void)fprintf(stderr, "warning: R2 is not reportable here: the response "
                         "does not vary, or the fit consumed all of its "
@@ -180,6 +198,7 @@ int main(int argc, char **argv) {
         { "trim",    required_argument, NULL, 'R' },
         { "no-trim",   no_argument,       NULL, 'N' },
         { "residuals", required_argument, NULL, 'E' },
+        { "qr",        no_argument,       NULL, 'Q' },
         { "help",    no_argument,       NULL, 'h' },
         { NULL, 0, NULL, 0 }
     };
@@ -201,6 +220,7 @@ int main(int argc, char **argv) {
             case 'R': process_use_trim(optarg); break;
             case 'N': process_use_trim(NULL); break;
             case 'E': resid_file = optarg; break;
+            case 'Q': process_use_qr(1); break;
             case 'V': printf("linearr %s\nGNU GPL v2 or later; no warranty.\n",
                              LINEARR_VERSION); return 0;
             case 'h': usage(stdout, argv[0]); return 0;

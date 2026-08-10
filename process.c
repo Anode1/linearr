@@ -12,6 +12,8 @@
 #include "los.h"
 #include "csv.h"
 #include "regress.h"
+#include "qr.h"
+#include "diag.h"
 #include "params.h"
 #include "resolve.h"
 #include "hash.h"
@@ -54,9 +56,43 @@ typedef char header_fits_in_line[
  * same bytes in BSS are allocated once, cost the same, and cannot blow a stack.
  * The consequence is that a fit is not reentrant, which is true of this
  * single-threaded CLI anyway and is now written down instead of implied. */
-static double fit_store[REGRESS_MAX_VARS * REGRESS_MAX_VARS + 2 * REGRESS_MAX_VARS];
+/* Big enough for whichever solver is chosen. Both are O(terms^2) and neither
+ * depends on the data, so one buffer serves both. */
+#define FIT_STORE_DOUBLES ((REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2))
+static double fit_store[FIT_STORE_DOUBLES];
 static double fit_scratch[REGRESS_MAX_VARS * (REGRESS_MAX_VARS + 1)];
 static double fit_beta[REGRESS_MAX_TERMS];
+
+static int use_qr;
+void process_use_qr(int on) { use_qr = on; }
+const char *process_solver(void) { return use_qr ? "QR" : "normal equations"; }
+
+/* One accumulator, one of two shapes. The caller owns the storage in both
+ * cases, so the choice costs nothing but a branch. */
+struct fitter {
+    struct regress r;
+    struct qr      q;
+};
+
+static size_t fitter_storage(int nvars) {
+    size_t a = regress_storage(nvars), b = qr_storage(nvars);
+    return (a > b) ? a : b;
+}
+
+static int fitter_init(struct fitter *f, int nvars, double *storage) {
+    return use_qr ? qr_init(&f->q, nvars, storage)
+                  : regress_init(&f->r, nvars, storage);
+}
+
+static int fitter_add(struct fitter *f, const double *x, double y) {
+    return use_qr ? qr_add(&f->q, x, y) : regress_add(&f->r, x, y);
+}
+
+static int fitter_solve(const struct fitter *f, double *beta, double *scratch,
+                        struct regress_fit *fit) {
+    return use_qr ? qr_solve(&f->q, beta, scratch, fit)
+                  : regress_solve(&f->r, beta, scratch, fit);
+}
 
 static const char *coef_override;
 static const char *trim_override;
@@ -375,7 +411,7 @@ static void model_from_beta(struct los_model *m, int nvars) {
 
 int process_train(const char *csv_path, const char *group,
                   char *out, size_t outsz, struct fit_info *info) {
-    struct regress     r;
+    struct fitter      r;
     struct regress_fit f;
     struct los_model   fitted;
     struct los_case    c;
@@ -390,7 +426,7 @@ int process_train(const char *csv_path, const char *group,
 
     if (open_training(csv_path, &fp, &nvars) != 0) goto cleanup;
 
-    if (regress_init(&r, nvars, fit_store) != 0) {
+    if (fitter_init(&r, nvars, fit_store) != 0) {
         fail("%s has %d terms, more than the fitter's %d", csv_path, nvars,
              REGRESS_MAX_VARS);
         goto cleanup;
@@ -407,7 +443,7 @@ int process_train(const char *csv_path, const char *group,
             goto cleanup;
         }
         if (!pool && strcmp(c.group, group) != 0) continue;
-        if (regress_add(&r, c.x, los) != 0) {
+        if (fitter_add(&r, c.x, los) != 0) {
             fail("%s row %ld holds a value that is not finite", csv_path, seen);
             goto cleanup;
         }
@@ -420,7 +456,7 @@ int process_train(const char *csv_path, const char *group,
         goto cleanup;
     }
 
-    if (regress_solve(&r, fit_beta, fit_scratch, &f) != 0) {
+    if (fitter_solve(&r, fit_beta, fit_scratch, &f) != 0) {
         fail("cannot fit group '%s': the result is not a finite line", label);
         goto cleanup;
     }
@@ -460,7 +496,7 @@ cleanup:
 struct group_fit {
     struct group_fit *next;
     char   group[GROUP_MAX];
-    struct regress r;
+    struct fitter r;
     double *beta;                   /* points into storage, after the fitter's */
     double storage[1];              /* regress_storage(nvars) + nvars + 1      */
 };
@@ -488,15 +524,17 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
     size_t need;
     int    rc = -1, n, nvars = 0;
     long   rows = 0, seen = 0, groups = 0;
+    double ry_mean = 0.0, ry_m2 = 0.0, response_sd = -1.0;   /* spread of y */
 
     if (sum) {
         sum->groups = 0; sum->rows = 0; sum->min_df = 0;
         sum->max_condition = 1.0; sum->pinned = 0; sum->max_sigma = -1.0;
+        sum->curved_term = -1; sum->curved_r = 0.0; sum->spread_r = 0.0;
     }
 
     if (open_training(csv_path, &fp, &nvars) != 0) goto cleanup;
 
-    need  = regress_storage(nvars);
+    need  = fitter_storage(nvars);
     index = hash_create(1024);
 
     /* One pass. A row is added to its group's accumulator and forgotten, so the
@@ -516,7 +554,7 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
             g->next = NULL;
             g->beta = g->storage + need;     /* nvars+1 doubles, after the fitter */
             memcpy(g->group, c.group, sizeof g->group);
-            if (regress_init(&g->r, nvars, g->storage) != 0) {
+            if (fitter_init(&g->r, nvars, g->storage) != 0) {
                 free(g);
                 fail("%s has %d terms, more than the fitter's %d",
                      csv_path, nvars, REGRESS_MAX_VARS);
@@ -527,7 +565,13 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
             tail = g;
             groups++;
         }
-        if (regress_add(&g->r, c.x, los) != 0) {
+        {   /* Welford over every response, whatever its group: the residual
+             * checks need something to judge the residuals against. */
+            double dy = los - ry_mean;
+            ry_mean += dy / (double)(rows + 1);
+            ry_m2   += dy * (los - ry_mean);
+        }
+        if (fitter_add(&g->r, c.x, los) != 0) {
             fail("%s row %ld holds a value that is not finite", csv_path, seen);
             goto cleanup;
         }
@@ -538,6 +582,7 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
         goto cleanup;
     }
     if (groups == 0) { fail("%s has no data rows", csv_path); goto cleanup; }
+    if (rows > 1) response_sd = sqrt(ry_m2 / (double)(rows - 1));
 
     if (los_format_header(row, sizeof row) != 0) {
         fail("the header does not fit in %zu bytes", sizeof row);
@@ -549,7 +594,7 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
         struct regress_fit f;
         struct los_model   fitted;
 
-        if (regress_solve(&g->r, fit_beta, fit_scratch, &f) != 0) {
+        if (fitter_solve(&g->r, fit_beta, fit_scratch, &f) != 0) {
             fail("cannot fit group '%s': the result is not a finite line", g->group);
             goto cleanup;
         }
@@ -590,6 +635,8 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
     if (resid) {
         FILE *again;
         char  path[RESOLVE_PATH_MAX];
+        static double diag_store[REGRESS_MAX_VARS * 3 + 8];
+        struct diag   d;
         int   k;
 
         if (resolve_file(csv_path, path, sizeof path) != 0 ||
@@ -597,6 +644,10 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
             fail("cannot re-read %s for the residuals", csv_path);
             goto cleanup;
         }
+        (void)diag_init(&d, nvars, diag_store);
+        /* The response's own spread, so a residual of rounding error can be
+         * told from a residual with structure in it. */
+        diag_scale(&d, sum ? sum->max_sigma : -1.0, response_sd);
         fprintf(resid, "group,observed,predicted,residual\n");
         while ((n = csv_next(again, line, sizeof line)) == 2)
             ;                                    /* skip to past the header */
@@ -609,8 +660,20 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
             yhat = g->beta[0];
             for (k = 0; k < nvars; k++) yhat += g->beta[k + 1] * c.x[k];
             fprintf(resid, "%s,%.12g,%.12g,%.12g\n", c.group, los, yhat, los - yhat);
+            diag_add(&d, c.x, los - yhat, yhat);
         }
         fclose(again);
+
+        /* The residuals are the only place a wrong SHAPE shows: every number in
+         * the summary is an average over them, and an average cannot see a
+         * pattern. */
+        if (sum) {
+            struct diag_result dr;
+            diag_result(&d, &dr);
+            sum->curved_term = dr.curved_term;
+            sum->curved_r    = dr.curved_r;
+            sum->spread_r    = dr.spread_r;
+        }
     }
     rc = 0;
 cleanup:

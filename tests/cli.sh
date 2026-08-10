@@ -416,5 +416,37 @@ case "$("$bin" -t example/routes.csv -g '*' 2>&1 >/dev/null)" in
     *"resid SD=7.693"*) ok ;; *) no "the pooled fit reports its residual SD" ;;
 esac
 
+# --- --qr: the same answer, without squaring the condition number ----------
+check "--qr recovers the ill-conditioned design far more closely" \
+    "$("$bin" -t example/nearly-the-same.csv --qr 2>/dev/null | tail -1 | awk -F, '
+        { print ($3 > 1.9999999 && $3 < 2.0000001 && $4 > 2.9999999 && $4 < 3.0000001) \
+                ? "within 1e-7" : "off: " $3 " " $4 }')" \
+    "within 1e-7"
+# and it does not warn, because at cond(X) rather than cond(X'X) it need not
+check "--qr does not warn where the normal equations do" \
+    "$("$bin" -t example/nearly-the-same.csv --qr 2>&1 >/dev/null | grep -c warning)" "0"
+case "$("$bin" -t example/nearly-the-same.csv 2>&1 >/dev/null)" in
+    *"Try --qr"*) ok ;; *) no "the ill-conditioned warning points at --qr" ;;
+esac
+# the summary must name the solver, since the two report cond= on different scales
+case "$("$bin" -t example/routes.csv --qr 2>&1 >/dev/null)" in
+    *"(QR)"*) ok ;; *) no "the summary names the solver" ;;
+esac
+# on a well-conditioned design the two solvers agree
+check "both solvers agree where conditioning does not matter" \
+    "$("$bin" -t example/routes.csv --qr 2>/dev/null | tail -3 | tr '\n' ' ')" \
+    "$("$bin" -t example/routes.csv 2>/dev/null | tail -3 | tr '\n' ' ')"
+
+# --- the residual check names the term whose shape is wrong -----------------
+case "$("$bin" -t example/curve.csv --residuals "$tmp/c.csv" 2>&1 >/dev/null)" in
+    *"correlate with x squared"*) ok ;;
+    *) no "a parabola fitted with a line is reported" ;;
+esac
+# a correct model must not be warned about, or the warning means nothing
+case "$("$bin" -t example/routes.csv --residuals "$tmp/rr.csv" 2>&1 >/dev/null)" in
+    *warning*) no "routes.csv is linear and must not warn" ;;
+    *) ok ;;
+esac
+
 echo "cliut: $pass passed, $fail failed, $skip skipped"
 [ "$fail" -eq 0 ]
