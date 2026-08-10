@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.4.3
+
+- **The Windows release archive was named `linearr-0.0.0-dev-...`.** MSYS2's
+  git refuses GitHub's checkout as unowned, so `git describe` returned nothing
+  and the version fell back to the development default. The release job takes
+  the version from the tag directly, and the Makefile honours an environment
+  override, which it did not: `:=` overrode the environment, so the override
+  its own comment promised worked only from the command line.
+- **`-ffp-contract=off`.** On arm64, clang fused `a*b+c` into one operation,
+  which is more accurate than the two roundings the source asks for and is not
+  what Java or another compiler does: `nearly-the-same.csv` gave
+  2.00015811817 there against 2.00002262993 on x86-64. Coefficients published
+  by this program now reproduce digit for digit across platforms, which the
+  README claims and which was not true.
+- Two CLI tests compared Wampler1's printed digits against exact strings that
+  are one platform's. They assert magnitudes.
+- `make readme` runs on one platform, because `scale.sh` uses GNU `time -f`.
+
 ## 0.4.2
 
 The 0.4.1 release built on three platforms and published nothing.

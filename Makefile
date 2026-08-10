@@ -19,7 +19,14 @@ CPPFLAGS ?=
 
 # The version, from the git tag, stamped into the binary. One source: the tag.
 # Override for a build from a tarball with no history: make LINEARR_VERSION=x.y.z
+# Only when nobody supplied one. `:=` overrode the environment, so the override
+# this comment promises worked from the command line and not from the env, and
+# a build where `git describe` cannot run had no way to be told the version:
+# the Windows release archive shipped as linearr-0.0.0-dev-windows-x86_64.zip
+# because MSYS2's git refuses a checkout it considers unowned.
+ifeq ($(origin LINEARR_VERSION), undefined)
 LINEARR_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//')
+endif
 ifeq ($(strip $(LINEARR_VERSION)),)
 LINEARR_VERSION := 0.0.0-dev
 endif
