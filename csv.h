@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
+/* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* csv.h, the minimum CSV a training file needs: read a line, split it on
  * commas. Splitting is in place and allocates nothing, so a caller streams a
  * file of any size through one stack buffer. No quoting and no embedded commas:

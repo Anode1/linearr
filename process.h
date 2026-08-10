@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
+/* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* process.h: THE slot. Two directions of the same model: score a case against
  * the fitted coefficients, or fit the coefficients from a training file.
  * main.c calls one or the other and prints the result; nothing here prints. */

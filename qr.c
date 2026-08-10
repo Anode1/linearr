@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
+/* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* qr.c: see qr.h. Givens rotations, one row at a time. */
 #include "qr.h"
 #include "common.h"

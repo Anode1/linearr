@@ -1,4 +1,4 @@
-/* Copyright (C) 2001 Vasili Gavrilov. GNU GPL v2 or later. Hardened 2026. */
+/* Copyright (c) 2001-2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* common.h, the safe primitives shared by every module: fatal exit, gated
  * debug, and checked allocation. Functions, not macros, so they type-check
  * and are greppable. See README.md for the style these encode. */

@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
+/* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* constants.h: tunable sizes, in one place. Every buffer in the program takes
  * its size from here, so the peak footprint is readable off this file and the
  * term ceiling in regress.h. None of them is a function of how much data you

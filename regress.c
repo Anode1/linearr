@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
+/* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* regress.c: see regress.h. Online centered co-moments, then Gauss-Jordan
  * with partial pivoting on the equilibrated system. */
 #include "regress.h"

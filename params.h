@@ -1,4 +1,4 @@
-/* Copyright (C) 2001 Vasili Gavrilov. GNU GPL v2 or later. Hardened 2026. */
+/* Copyright (c) 2001-2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* params.h: a tiny key=value config store, backed by the hash table. Load a
  * .properties file once, then look up keys. This is where a project adds its
  * configurable knobs: put them in the file, read them with params_get. */

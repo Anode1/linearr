@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
+/* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* Regress.java: the Java twin of regress.c. Same algorithm, same order, same
  * names, so the two can be read side by side and matched line for line.
  *

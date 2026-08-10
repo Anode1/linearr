@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- **Licence changed from GPL v2 to BSD 2-Clause.** The project is a reference
+  implementation meant to be copied into other programs, and the GPL forbade
+  exactly that for the embedded and commercial cases it is written for. Done
+  before any announcement, with every copyright line held by one author and no
+  third-party code in the tree.
+- QR solver (`--qr`), residual checks, `--residuals`, residual SD, per-group
+  fitting in one pass, `-c`, training from a pipe with `-t -`, a Windows
+  section, and the fixes from three reviews.
+
 ## 0.1.0 (unreleased)
 
 First public version.

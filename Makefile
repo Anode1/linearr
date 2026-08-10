@@ -1,4 +1,4 @@
-# Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later.
+# Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE.
 #
 # ais-style build. Honors the standard variables (CC CFLAGS CPPFLAGS LDFLAGS
 # LDLIBS); project-required flags are APPENDED, never override yours. The one

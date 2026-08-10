@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
+/* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* tests.c: in-place unit tests, run by `make ut` (which builds every source
  * with -DUNIT_TEST; this file is empty otherwise, and main.c's main() is then
  * compiled out). Add a CHECK when you add a feature. Idempotent, and run from

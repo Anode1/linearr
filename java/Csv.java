@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
+/* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* Csv.java: the Java twin of csv.c, in the style of the author's 2011 code:
  * no generics, no autoboxing, StringBuffer, and as little `new` in the row loop
  * as the language allows.

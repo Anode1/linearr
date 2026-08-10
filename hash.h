@@ -1,4 +1,4 @@
-/* Copyright (C) 2001 Vasili Gavrilov. GNU GPL v2 or later. Hardened 2026. */
+/* Copyright (c) 2001-2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* hash.h: a generic string -> void* hash table (separate chaining). The table
  * owns a copy of each key; the caller owns the stored data. */
 #ifndef HASH_H

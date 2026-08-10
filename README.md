@@ -555,14 +555,12 @@ million. At that rate, 7.75 million rows a second:
 | a billion | about 2 minutes |
 | a trillion | about a day and a half |
 | **100 trillion** | **about five months** |
-| **250 trillion** | **about a year** |
 
-A hundred trillion rows is the useful end of the scale: it is roughly what one
-core will get through in half a year, and a quarter of a quadrillion is about a
-year. Beyond that the answer stops being a memory question and becomes a
-scheduling one. The counters are 64-bit, so far larger numbers are
-representable, but quoting them would be quoting arithmetic rather than a run
-anybody would start.
+A hundred trillion rows is where the table stops, because that is roughly what
+one core gets through in half a year and it is already more than the question
+usually is. Past it the answer stops being about memory and becomes about
+scheduling. The counters are 64-bit, so much larger numbers are representable;
+quoting them would be quoting arithmetic rather than a run anybody would start.
 
 Two caveats on long runs, both real: the cross-products accumulate over the
 whole stream, so at these lengths their last digits decay even though the means
@@ -762,5 +760,11 @@ snippet is worth more than a description.
 
 ## License
 
-GNU GPL v2 or later; see `LICENSE`.
+BSD 2-Clause; see `LICENSE`.
+
+Chosen over the GPL deliberately. The uses this is for, checking an R
+implementation against it, embedding it on a small target, vendoring
+`regress.c` into a C codebase, all mean copying the source into somebody else's
+program, and a licence that forbids that works against the reason the project
+exists.
 

@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
+/* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* regress.h: ordinary least squares for y = b0 + b1*x1 + ... + bp*xp.
  *
  * Observations are ADDED and then forgotten: the fitter holds cross-products,

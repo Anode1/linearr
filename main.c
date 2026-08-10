@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
+/* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* main.c, the CLI front end: parse options, get the input (arguments, or
  * lines from stdin so it works as a filter), run process(), print the result.
  * The scaffolding stays; the model lives in process.c, los.c and regress.c.
@@ -229,7 +229,7 @@ int main(int argc, char **argv) {
             case 'N': process_use_trim(NULL); break;
             case 'E': resid_file = optarg; break;
             case 'Q': process_use_qr(1); break;
-            case 'V': printf("linearr %s\nGNU GPL v2 or later; no warranty.\n",
+            case 'V': printf("linearr %s\nBSD 2-Clause; no warranty.\n",
                              LINEARR_VERSION); return 0;
             case 'h': usage(stdout, argv[0]); return 0;
             default:  usage(stderr, argv[0]); return 2;

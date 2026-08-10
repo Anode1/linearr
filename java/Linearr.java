@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
+/* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* Linearr.java: the Java twin of main.c + process.c: read a training CSV, fit
  * one line per group in a single pass, write the coefficient table.
  *

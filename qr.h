@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
+/* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* qr.h: the same fit as regress.h, solved without squaring the data first.
  *
  * regress.c accumulates X'X. That is what bounds its memory, and it costs

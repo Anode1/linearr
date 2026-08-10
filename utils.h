@@ -1,4 +1,4 @@
-/* Copyright (C) 2001 Vasili Gavrilov. GNU GPL v2 or later. Hardened 2026. */
+/* Copyright (c) 2001-2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* utils.h: small bounded string helpers. */
 #ifndef UTILS_H
 #define UTILS_H

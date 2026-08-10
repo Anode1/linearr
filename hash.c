@@ -1,4 +1,4 @@
-/* Copyright (C) 2001 Vasili Gavrilov. GNU GPL v2 or later. Hardened 2026. */
+/* Copyright (c) 2001-2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* hash.c: see hash.h. Djb/Berkeley string hash (chosen for low collisions on
  * dictionary words), separate chaining. Allocation is checked via xmalloc. */
 #include "hash.h"

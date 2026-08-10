@@ -1,4 +1,4 @@
-/* Copyright (C) 2026 Vasili Gavrilov. GNU GPL v2 or later. */
+/* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* diag.c: see diag.h. Correlations from running sums, partialled where it
  * matters, converted to a t statistic. */
 #include "diag.h"
