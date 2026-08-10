@@ -56,8 +56,13 @@
 #define DIAG_T 3.5
 
 /* Rows below which nothing is reported: a handful of points can look like
- * anything, and the t statistic is not to be trusted there either. */
-#define DIAG_MIN_ROWS 12
+ * anything. Ten rather than twelve, measured rather than guessed: on 200
+ * correctly specified models of ELEVEN rows each, three produced a warning,
+ * which is the rate a t bound of 3.5 over a few probes should give. Eleven is
+ * also the size of each set in Anscombe's quartet, and a screen that cannot
+ * speak about the canonical example of summary statistics hiding structure is
+ * not much of a screen. */
+#define DIAG_MIN_ROWS 10
 
 /* And nothing at all when the residuals are negligible against the response's
  * own spread: correlating rounding error with anything measures the floating

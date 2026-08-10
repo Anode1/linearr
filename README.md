@@ -80,6 +80,43 @@ training sample closely, so its in-sample error stays small while its
 predictions do not. The `cond=` figure is the diagnostic, and a warning is
 printed above 1e8.
 
+## The textbook case: Anscombe's quartet
+
+Anscombe built four sets of eleven points in 1973 so that every summary you
+would normally quote is the same for all four, while the four are nothing alike.
+It is the standard demonstration that a fitted line and an R2 do not describe a
+dataset. Fitting all four at once is what groups are for:
+
+    $ ./linearr -t example/anscombe.csv
+    fit: 4 groups, 44 rows, least df=9, worst resid SD=1.237
+    group,intercept,x
+    I,3.00009090909,0.500090909091
+    II,3.00090909091,0.5
+    III,3.00245454545,0.499727272727
+    IV,3.00172727273,0.499909090909
+
+The same line four times, and each set separately gives `R2=0.666`,
+`resid SD=1.24`, `df=9`. That is Anscombe's point, and it is also the argument
+for reading the residuals: everything printed above is identical, and only one
+of these four is a straight line with scatter around it.
+
+    $ ./linearr -t example/anscombe.csv --residuals r.csv
+    warning: in group II the residuals still depend on x after the line is
+    subtracted (t=-2219.2). A straight line is probably the wrong shape in that
+    term; consider adding its square as a column.
+
+Set II is an exact parabola, and it is named. **Sets III and IV are not
+reported, and should not be taken as passing.** III is a perfect line with one
+point moved off it; IV is a vertical stack of ten identical x values with one
+point far to the right, which alone decides the slope. Neither is a wrong shape:
+both are single points with more influence than the other ten together, and this
+program has no measure of leverage or influence to find them with. It says so
+here rather than leaving the silence to be read as approval.
+
+So the quartet exercises all three parts at once: groups fit in one pass, a
+summary that cannot tell the four apart, and a residual check that separates the
+one case it is built for and is honest about the two it is not.
+
 ## The three files, and what a group is
 
 **A group is one fitted line.** Rows sharing a group code are fitted together
@@ -656,8 +693,8 @@ constants.h       buffer sizes (the TERM ceiling lives in regress.h / los.h)
 tests.c           in-place unit tests (make ut)
 tests/cli.sh      black-box tests: the binary through a shell and a pty (make cliut)
 conf/             the example model (synthetic)
-example/          training files: routes.csv shows why groups exist, plus the
-                  three the "three short pieces" section runs (all synthetic)
+example/          anscombe.csv (the textbook quartet), routes.csv (why groups
+                  exist), and the files the teaching sections run
 scripts/scale.sh  measures the memory claim at 200 terms and 500 groups
 scripts/bench.sh  the same job in Java, Python, awk and R, answers checked first
 java/             the second implementation; Regress.java mirrors regress.c

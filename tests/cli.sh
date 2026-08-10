@@ -471,5 +471,16 @@ set -e
 check "--residuals from a pipe writes no table" "$out" ""
 check "and exits nonzero" "$rc" "1"
 
+# --- Anscombe's quartet: the same line four times ---------------------------
+check "the quartet gives four near-identical lines" \
+    "$("$bin" -t example/anscombe.csv 2>/dev/null | tail -4 | cut -d, -f2,3 |
+       while IFS=, read -r a b; do printf '%.2f/%.2f ' "$a" "$b"; done)" \
+    "3.00/0.50 3.00/0.50 3.00/0.50 3.00/0.50 "
+# and only set II is reported: III and IV are influence, not shape, and this
+# program has no measure of influence
+out=$("$bin" -t example/anscombe.csv --residuals "$tmp/a.csv" 2>&1 >/dev/null)
+case "$out" in *"group II"*) ok ;; *) no "the quartet's parabola is named" ;; esac
+check "and no other set is reported" "$(printf '%s' "$out" | grep -c warning)" "1"
+
 echo "cliut: $pass passed, $fail failed, $skip skipped"
 [ "$fail" -eq 0 ]
