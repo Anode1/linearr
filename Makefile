@@ -38,6 +38,16 @@ LDLIBS   ?=
 
 # project-required flags, applied alongside (not over) the user's
 STD  = -std=c99
+
+# No fused multiply-add contraction. a*b+c computed as one FMA is MORE accurate
+# than the two roundings the source asks for, and it is not what Java, or a
+# different compiler, or the same compiler on another architecture will do. On
+# arm64 clang contracts and the coefficients for nearly-the-same.csv came out
+# 2.00015811817 where x86-64 gives 2.00002262993, and Regress.java gave a third
+# answer on the same machine. This project publishes coefficients and says they
+# reproduce digit for digit; that is only true if the arithmetic is the
+# arithmetic in the source.
+STD += -ffp-contract=off
 WARN = -W -Wall
 PROJ = $(STD) $(WARN)
 LIBM = -lm
