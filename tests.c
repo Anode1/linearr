@@ -157,6 +157,7 @@ static double t_store[REGRESS_MAX_VARS * REGRESS_MAX_VARS + 2 * REGRESS_MAX_VARS
 static double t_scratch[REGRESS_MAX_VARS * (REGRESS_MAX_VARS + 1)];
 static double t_beta[REGRESS_MAX_TERMS];
 static double t_store2[(REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2)];
+static double t_diag[DIAG_PER_TERM * 2 + DIAG_SHARED];   /* one term */
 static double t_beta2[REGRESS_MAX_TERMS];
 
 static void test_regress(void) {
@@ -921,6 +922,186 @@ static void test_fit_quality_cost(void) {
     CHECK(tight < 1e-6, "sigma cost: but not so many that the number is useless");
 }
 
+/* The two defects that this file did not catch, now with tests that do.
+ *
+ * Both were found by review, and neither could have failed a test that existed
+ * at the time: one wrote outside its block but still inside the allocation, and
+ * the other only misbehaved on data whose columns had an origin. Every test
+ * here used columns centred on zero and one term at a time. */
+static void test_diag_probe_isolation(void) {
+    /* DEFECT ONE. probe_add() wrote eleven doubles into a block declared as
+     * ten, so each term's last sum landed on the next term's first slot. It was
+     * invisible for two reasons: nothing was written outside the allocation, so
+     * AddressSanitizer had nothing to say, and the effect was that the probes
+     * went QUIET rather than reporting something wrong.
+     *
+     * The slot that overran is the LAST one a probe writes, the sum of
+     * residual times u cubed. Only the cube probe reads it, so data with a
+     * quadratic departure cannot detect the fault at all: the square probe uses
+     * the first ten slots and is untouched. The first version of this test made
+     * exactly that mistake and passed against the defect it was written for.
+     *
+     * With a cubic departure and the block one short, the probe reports NOTHING
+     * AT ALL: curved_term comes back -1 at every model size. That is the whole
+     * character of the defect, a check that goes quiet rather than wrong, and
+     * it is what the first assertion below tests. The second pins the value,
+     * which is fixed by the geometry since the data carries no noise, so a
+     * partial corruption that still leaves something above the bound cannot
+     * pass either. */
+    {
+        double t0 = 0.0;
+        int k;
+
+        for (k = 0; k < 3; k++) {
+            int nvars = k + 1;
+            struct diag d;
+            struct diag_result r;
+            double *store = xmalloc(diag_storage(nvars) * sizeof *store);
+            double x[3];
+            int i;
+
+            diag_init(&d, nvars, store);
+            for (i = -60; i <= 60; i++) {
+                double u = i * 0.05;
+                x[0] = 100.0 + u;                       /* the curved term    */
+                x[1] = 7.0 + (double)((i * 31) % 13);   /* unrelated to resid */
+                x[2] = -4.0 + (double)((i * 17) % 11);  /* also unrelated     */
+                diag_add(&d, x, u * u * u, 24.0);       /* exactly a cubic    */
+            }
+            diag_result(&d, &r);
+            CHECK(r.curved_term == 0 && r.curved_pow == 3,
+                  "diag blocks: the cubic is found in term 0, at every model size");
+            if (k == 0) t0 = r.curved_t;
+            else CHECK(fabs(r.curved_t - t0) < 1e-9 * fabs(t0),
+                       "diag blocks: and to the same value, whatever else is in the model");
+            free(store);
+        }
+    }
+
+    /* The same fault seen from the other side. Term j's overrun landed on term
+     * j+1's SHIFT, the value its powers are taken about, so the term AFTER a
+     * curved one is the one whose arithmetic is destroyed. Put a term at a
+     * large offset behind another: with its shift intact the offset costs
+     * nothing, and with the shift gone the cancellation that the shift exists
+     * to prevent comes straight back. */
+    {
+        struct diag d;
+        struct diag_result r;
+        double *store = xmalloc(diag_storage(2) * sizeof *store);
+        double x[2];
+        int i;
+
+        diag_init(&d, 2, store);
+        for (i = -60; i <= 60; i++) {
+            double u = i * 0.05;
+            x[0] = 3.0 + (double)((i * 31) % 13);   /* unrelated to resid  */
+            x[1] = 1.0e6 + u;                       /* curved, far from 0  */
+            diag_add(&d, x, u * u * u, 24.0);
+        }
+        diag_result(&d, &r);
+        CHECK(r.curved_term == 1 && r.curved_pow == 3,
+              "diag blocks: a curved term behind another is still found");
+        CHECK(fabs(r.curved_t) > DIAG_T,
+              "diag blocks: and its shift survived the term in front of it");
+        free(store);
+    }
+
+    /* And a guard past the end, for the ordinary kind of overrun. The one above
+     * would not trip this, which is the point of having both. */
+    {
+        struct diag d;
+        struct diag_result r;
+        int nvars = 3;
+        size_t need = diag_storage(nvars);
+        size_t g;
+        double *store = xmalloc((need + 8) * sizeof *store);
+        double x[3];
+        int i;
+
+        for (g = 0; g < 8; g++) store[need + g] = -12345.5;
+        diag_init(&d, nvars, store);
+        for (i = 0; i < 200; i++) {
+            x[0] = (double)(i % 17); x[1] = (double)(i % 7); x[2] = (double)i;
+            diag_add(&d, x, (double)((i * 7919) % 23) - 11.0, 5.0 + x[0]);
+        }
+        diag_result(&d, &r);
+        for (g = 0; g < 8; g++)
+            if (store[need + g] != -12345.5) break;
+        CHECK(g == 8, "diag blocks: nothing is written past diag_storage()");
+        free(store);
+    }
+}
+
+static void test_diag_offsets(void) {
+    /* DEFECT TWO. The probes accumulated raw powers of the column, up to the
+     * sixth, and recovered variances by subtracting: the naive formula
+     * regress.c refuses to use, in a file that cites regress.c for refusing it.
+     * The offsets it names as the reason the probe exists -- a year, a price, a
+     * temperature in Kelvin -- are exactly where a raw sum of v^6 has no
+     * significant digits left.
+     *
+     * Two failures, and a test for each. The probe went SILENT on a real curve
+     * at an offset of 1e5, and it INVENTED one at 1e4 where the model was
+     * right. Both directions are checked, at the offsets where they happened
+     * and past them, because a check that only covers zero is what let this
+     * through. */
+    static const double OFFSET[] = { 0.0, 1.0e3, 1.0e4, 1.0e5, 1.0e6, 1.0e9 };
+    const int NOFF = (int)(sizeof OFFSET / sizeof OFFSET[0]);
+    struct diag d;
+    struct diag_result r;
+    double first_sq = 0.0, first_cu = 0.0;
+    double x[1];
+    int k, i;
+
+    /* A real quadratic departure. Seen at every offset, and with the same
+     * strength: shifting a column changes none of these correlations. */
+    for (k = 0; k < NOFF; k++) {
+        diag_init(&d, 1, t_diag);
+        for (i = -60; i <= 60; i++) {
+            double u = i * 0.05;
+            x[0] = OFFSET[k] + u;
+            diag_add(&d, x, u * u + ((double)((i * 7919) % 23) - 11.0) * 0.1, 24.0);
+        }
+        diag_result(&d, &r);
+        CHECK(r.curved_term == 0 && r.curved_pow == 2,
+              "diag offsets: a quadratic departure is seen, wherever the column sits");
+        if (k == 0) first_sq = fabs(r.curved_t);
+        else CHECK(fabs(fabs(r.curved_t) - first_sq) < 0.01 * first_sq,
+                   "diag offsets: and with the same strength");
+    }
+
+    /* A real cubic departure, which needs the cube probe partialled on 1, u and
+     * u^2. On [1, u] it was not offset-invariant even in exact arithmetic. */
+    for (k = 0; k < NOFF; k++) {
+        diag_init(&d, 1, t_diag);
+        for (i = -60; i <= 60; i++) {
+            double u = i * 0.05;
+            x[0] = OFFSET[k] + u;
+            diag_add(&d, x, u * u * u + ((double)((i * 7919) % 23) - 11.0) * 0.1, 24.0);
+        }
+        diag_result(&d, &r);
+        CHECK(r.curved_term == 0 && r.curved_pow == 3,
+              "diag offsets: a cubic departure is seen, wherever the column sits");
+        if (k == 0) first_cu = fabs(r.curved_t);
+        else CHECK(fabs(fabs(r.curved_t) - first_cu) < 0.01 * first_cu,
+                   "diag offsets: and with the same strength");
+    }
+
+    /* The other direction, and the one that matters more: a model that is
+     * RIGHT must stay quiet wherever its column sits. The raw-power version
+     * reported a departure at an offset of 1e4 on data that had none. */
+    for (k = 0; k < NOFF; k++) {
+        diag_init(&d, 1, t_diag);
+        for (i = -60; i <= 60; i++) {
+            x[0] = OFFSET[k] + i * 0.05;
+            diag_add(&d, x, (double)((i * 7919) % 23) - 11.0, 24.0);
+        }
+        diag_result(&d, &r);
+        CHECK(r.curved_term == -1,
+              "diag offsets: and an unstructured residual stays quiet at every offset");
+    }
+}
+
 static void test_los_round(void) {
     /* Half away from zero, NOT printf's round half to even, which would make
      * these 2 and -2. */
@@ -1180,6 +1361,8 @@ int main(void) {
     test_wide_fit();
     test_qr();
     test_diag();
+    test_diag_probe_isolation();
+    test_diag_offsets();
     test_canonical();
     test_fit_quality_cost();
     test_resolve();

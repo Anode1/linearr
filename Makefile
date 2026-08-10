@@ -26,6 +26,12 @@ LIBM = -lm
 
 # every *.c at top level or one dir down; add a file, no edit needed
 SOURCES.c := $(wildcard *.c) $(wildcard */*.c)
+# The single-shot builds below (ut, ut-asan, ut-ubsan) compile every source in
+# one command, so they generate no .d files and make cannot see a header. Listed
+# explicitly, because without them `make ut` after editing a header re-ran the
+# PREVIOUS binary and reported it green. That is how a deliberately reintroduced
+# defect passed the suite twice while it was being verified.
+HEADERS.h := $(wildcard *.h) $(wildcard */*.h)
 OBJS       = $(SOURCES.c:.c=.o)
 
 debug    : CFLAGS = -g -O0
@@ -102,7 +108,7 @@ $(BIN): $(OBJS)
 
 # ut: all sources with -DUNIT_TEST: main.c's main() compiles out, tests.c's in.
 # Run from the project root: the tests read conf/ and example/ by relative path.
-$(TESTBIN): $(SOURCES.c) .build-flags
+$(TESTBIN): $(SOURCES.c) $(HEADERS.h) .build-flags
 	$(CC) $(PROJ) -g -DUNIT_TEST $(CPPFLAGS) $(SOURCES.c) -o $(TESTBIN) $(LDLIBS) $(LIBM)
 ut: $(TESTBIN)
 	./$(TESTBIN)
@@ -129,12 +135,12 @@ check: ut cliut readme
 # report instead of passing silently under -O2. Run both before tagging; the
 # pre-push hook (make hooks) and .github/workflows/sanitizers.yml do it for you.
 # A fresh build each time, not the plain objects.
-ut-asan: $(SOURCES.c) .build-flags
+ut-asan: $(SOURCES.c) $(HEADERS.h) .build-flags
 	$(CC) $(PROJ) -g -DUNIT_TEST -fsanitize=address -fno-omit-frame-pointer \
 		$(CPPFLAGS) $(SOURCES.c) -o $(TESTBIN)_asan $(LDLIBS) $(LIBM)
 	./$(TESTBIN)_asan
 
-ut-ubsan: $(SOURCES.c) .build-flags
+ut-ubsan: $(SOURCES.c) $(HEADERS.h) .build-flags
 	$(CC) $(PROJ) -g -DUNIT_TEST -fsanitize=undefined -fno-sanitize-recover=undefined \
 		-fno-omit-frame-pointer $(CPPFLAGS) $(SOURCES.c) -o $(TESTBIN)_ubsan $(LDLIBS) $(LIBM)
 	./$(TESTBIN)_ubsan
