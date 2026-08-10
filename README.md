@@ -830,6 +830,48 @@ costs 8.5 MB more, and the per-group figure printed underneath predicts 8.4 MB,
 so the script measures the claim rather than restating it. Time scales with the
 number of rows, memory with the number of groups.
 
+**2,000,000 rows by 8 terms, a 46 MB file, fitted in 0.42 s using 2.4 MB**, and
+the same through a pipe rather than a file. Nothing lands on disk.
+
+**The row count is bounded by time, not by memory.** A row is folded into the
+cross-products and dropped, so the tenth row and the ten-billionth cost the same
+space. Measured at 10,000,000 rows: 2.04 s, 2.0 MB, the same memory as at two
+million. That is 4.9 million rows a second.
+
+The same file fitted by a streaming Python and by R, so the extrapolation has
+something to be compared against: Python reads 215,000 rows a second in 10 MB,
+and R's `read.csv` plus `lm()` reads 570,000 a second in 3.2 GB, which is about
+318 bytes a row and is the figure that decides where its column ends.
+
+| rows | linearr | Python, streaming | R, `read.csv` + `lm()` |
+| --- | --- | --- | --- |
+| 10 million | 2 seconds | 47 seconds | 18 seconds, 3.2 GB |
+| 100 million | 20 seconds | 8 minutes | 3 minutes, 32 GB |
+| a billion | 3.5 minutes | 1.3 hours | 318 GB, will not fit |
+| a trillion | 2.4 days | 54 days | will not fit |
+| **100 trillion** | **8 months** | **15 years** | **will not fit** |
+
+The R column stops at about 200 million rows on a machine with 64 GB, and the
+number is memory rather than time: at 318 bytes a row the frame is what runs
+out, not the clock. The two streaming columns only get slower.
+
+**What a long run costs in accuracy.** The cross-products accumulate over the
+whole stream, so their last digits decay even though the means are updated
+stably. Measured against the same accumulation carried in long double:
+
+| rows | worst relative error in a co-moment |
+| --- | --- |
+| 100 thousand | 1.2e-13 |
+| 1 million | 2.5e-13 |
+| 10 million | 6.4e-13 |
+| 100 million | 3.0e-12 |
+
+The growth is close to the square root of the row count, so a trillion rows
+costs about 4e-10 and a hundred trillion about 4e-9: nine significant digits
+still stand at the end of a run that takes eight months. It grows with the
+number of terms as well, roughly in proportion: at 10 million rows it is 8e-13
+with 2 terms and 8e-12 with 16.
+
 ## The same job in other languages
 
 Read the file, fit a line per group, write the table. `scripts/bench.sh` checks
@@ -987,52 +1029,6 @@ digits (see [Checked against answers somebody else
 certified](#checked-against-answers-somebody-else-certified)); on embedded and
 small ARM targets where no interpreter is going to be installed; and in cloud
 batch work, where the memory a process holds is what it costs.
-
-`make r` runs the same comparison against R's `lm()`, and skips itself where R
-is absent. By hand it is three lines:
-
-    d <- read.csv("example/longley.csv", comment.char = "#")
-    print(coef(lm(employment ~ deflator + gnp + unemployed +
-                  armed_forces + population + year, data = d)), digits = 12)
-
-Both architectures the CI builds on are covered on every push: `x86_64` on
-Linux and `arm64` on macOS, each running the full suite under AddressSanitizer
-and UndefinedBehaviorSanitizer. That is evidence for arm64 generally; it is not
-evidence for a microcontroller, which has no operating system to run these tests
-on. The code is plain C99 with a few POSIX calls, so a small target is a
-question of the toolchain rather than of the source.
-
-Measured for the third case: **2,000,000 rows by 8 terms, a 46 MB file, fitted
-in 0.42 s using 2.6 MB of memory**, and the same through a pipe rather than a
-file. Nothing lands on disk, and the footprint does not depend on how much data
-arrives.
-
-**The row count is bounded by time, not by memory.** A row is folded into the
-cross-products and dropped, so the tenth row and the ten-billionth cost the same
-space. Measured at 10,000,000 rows: 2.04 s, 2.0 MB, the same memory as at two
-million. That is 4.9 million rows a second.
-
-The same file fitted by a streaming Python and by R, so the extrapolation has
-something to be compared against: Python reads 215,000 rows a second in 10 MB,
-and R's `read.csv` plus `lm()` reads 570,000 a second in 3.2 GB, which is about
-318 bytes a row and is the figure that decides where its column ends.
-
-| rows | linearr | Python, streaming | R, `read.csv` + `lm()` |
-| --- | --- | --- | --- |
-| 10 million | 2 seconds | 47 seconds | 18 seconds, 3.2 GB |
-| 100 million | 20 seconds | 8 minutes | 3 minutes, 32 GB |
-| a billion | 3.5 minutes | 1.3 hours | 318 GB, will not fit |
-| a trillion | 2.4 days | 54 days | will not fit |
-| **100 trillion** | **8 months** | **15 years** | **will not fit** |
-
-The R column stops at about 200 million rows on a machine with 64 GB, and the
-number is memory rather than time: at 318 bytes a row the frame is what runs
-out, not the clock. The two streaming columns only get slower.
-
-Two caveats on long runs, both real: the cross-products accumulate over the
-whole stream, so at these lengths their last digits decay even though the means
-are updated stably; and the check that the model has the right shape holds one
-accumulator per group, which is memory in the groups, not in the rows.
 
 ### The limitations of that, stated
 
@@ -1218,10 +1214,16 @@ semicolons. Line endings are not a problem: CRLF files are read correctly.
 
 ## Platforms, and reporting a bug
 
-Built and tested on Linux and macOS on every push (`.github/workflows/sanitizers.yml`
-runs the suite plus AddressSanitizer and UndefinedBehaviorSanitizer on both).
-BSD should work and is untested. For Windows see [Windows](#windows): WSL runs
-this unmodified, and a native `.exe` links but has not been run.
+Built and tested on Linux and macOS on every push
+(`.github/workflows/sanitizers.yml` runs the suite plus AddressSanitizer and
+UndefinedBehaviorSanitizer on both). BSD should work and is untested.
+
+**Binaries.** Tagging `v*` builds linux-x86_64, linux-arm64, macos-arm64 and
+windows-x86_64 and attaches each to the GitHub release with a SHA-256
+(`.github/workflows/release.yml`). Every one is built, unit-tested and made to
+fit Longley on its own platform before it is uploaded; the Windows build runs
+on a Windows runner rather than being cross-compiled, so no binary is published
+that nobody has executed. `sh scripts/dist.sh` makes the same bundle locally.
 
     make install                       # /usr/local
     make install PREFIX=$HOME/.local   # somewhere you own

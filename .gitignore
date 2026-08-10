@@ -16,3 +16,6 @@ __pycache__/
 *.pyc
 model.csv
 r.csv
+
+# release bundles
+dist/

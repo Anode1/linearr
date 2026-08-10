@@ -1,0 +1,89 @@
+# Build linearr for every supported platform and attach the binaries to a
+# GitHub Release. Binaries are not kept in git: they are made from the tagged
+# commit, each with a SHA-256, so any of them can be reproduced from the source
+# it names.
+#
+# Trigger: a tag matching v* (v0.3.0, v1.0.0). It is a pattern, so a tag like
+# `nightly` will not start a release. Run it by hand from the Actions tab
+# (workflow_dispatch) to exercise the build matrix without publishing.
+#
+# Windows is built and TESTED on a Windows runner rather than cross-compiled
+# from Linux. The cross-compile works and produces a clean binary, but nothing
+# on the build machine can run it, and shipping a binary nobody has executed is
+# how "it links" gets read as "it works".
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write           # to create the Release and upload assets
+
+jobs:
+  build:
+    name: build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false      # one platform failing must not cancel the others
+      matrix:
+        include:
+          - { os: ubuntu-latest,     name: linux-x86_64 }
+          - { os: ubuntu-24.04-arm,  name: linux-arm64 }
+          - { os: macos-latest,      name: macos-arm64 }
+          - { os: windows-latest,    name: windows-x86_64 }
+    defaults:
+      run:
+        shell: ${{ matrix.os == 'windows-latest' && 'msys2 {0}' || 'bash' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: MSYS2 toolchain (Windows only)
+        if: matrix.os == 'windows-latest'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc make zip
+
+      - name: build
+        run: make
+
+      - name: unit tests
+        run: make ut
+
+      # The rest of `make check` needs a pty, python3, a JDK and R. They run on
+      # every push in sanitizers.yml; a release build only has to produce a
+      # binary that works, so this is the smoke test that it does.
+      - name: it fits and scores
+        run: |
+          ./linearr -t example/longley.csv > model.csv
+          ./linearr --version
+          grep -q "1829.15146461" model.csv || { echo "Longley is wrong"; exit 1; }
+
+      - name: package
+        run: sh scripts/dist.sh ${{ matrix.name }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linearr-${{ matrix.name }}
+          path: dist/linearr-*
+
+  publish:
+    name: attach the binaries to the release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: what is being published
+        run: ls -la dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
