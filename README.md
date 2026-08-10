@@ -550,18 +550,24 @@ cross-products and dropped, so the tenth row and the ten-billionth cost the same
 space. Measured at 10,000,000 rows: 1.29 s, 2.5 MB, the same figure as at two
 million. At that rate, 7.75 million rows a second:
 
-| rows | time |
+| rows | time on one core |
 | --- | --- |
-| 1,000,000,000 | about 2 minutes |
-| 1,000,000,000,000 | about 36 hours |
-| 9,223,372,036,854,775,807 | the counter's own limit, and about 38,000 years |
+| a billion | about 2 minutes |
+| a trillion | about a day and a half |
+| **100 trillion** | **about five months** |
+| **250 trillion** | **about a year** |
 
-The counters are 64-bit, so a quintillion rows is representable; it is simply
-not reachable. Two caveats on very long runs, both real: the cross-products
-accumulate for the whole stream, so at extreme lengths the sums lose precision
-in their last digits even though the means are updated stably; and the check
-that the model has the right shape holds one accumulator per group, which is
-memory in the groups, not in the rows.
+A hundred trillion rows is the useful end of the scale: it is roughly what one
+core will get through in half a year, and a quarter of a quadrillion is about a
+year. Beyond that the answer stops being a memory question and becomes a
+scheduling one. The counters are 64-bit, so far larger numbers are
+representable, but quoting them would be quoting arithmetic rather than a run
+anybody would start.
+
+Two caveats on long runs, both real: the cross-products accumulate over the
+whole stream, so at these lengths their last digits decay even though the means
+are updated stably; and the check that the model has the right shape holds one
+accumulator per group, which is memory in the groups, not in the rows.
 
 ### The limitations of that, stated
 
