@@ -51,6 +51,33 @@ public class Linearr {
         return mant + rest;
     }
 
+    /** A field's name for a refusal message: the group, the response, or a
+     *  term. The C's field_label(). */
+    static String fieldLabel(int idx, String response, String[] names) {
+        if (idx == 0) return "the group column";
+        if (idx == 1) return (response != null && response.length() > 0)
+                             ? response : "the value column";
+        int t = idx - 2;
+        return (t >= 0 && t < names.length) ? names[t] : "a column";
+    }
+
+    /** Enough of a field to recognise it, elided. The C's show_field(). */
+    static String showField(String s) {
+        if (s.length() == 0)  return "empty";
+        if (s.length() <= 24) return "'" + s + "'";
+        return "'" + s.substring(0, 24) + "...'";
+    }
+
+    /** Refuse the file, in the C's words and with the C's status. This used to
+     *  be a `continue`: a row the C rejects was SKIPPED here, silently, and the
+     *  model came out fitted on whatever was left. A subset with no indication
+     *  is worse than a refusal, and the two implementations disagreeing about
+     *  which rows count is worse still. */
+    static void refuse(String file, long row, String why) {
+        System.err.println("cannot fit: " + file + " row " + row + ": " + why);
+        System.exit(1);
+    }
+
     /** The C's format_pinned(), same wording and same order: constants first,
      *  then collinears. Returns null when every term was estimated.
      *
@@ -123,27 +150,74 @@ public class Linearr {
             }
             seen++;
 
-            /* Walk the line in place: no split(), no substring, no per-row
-             * object. This is the whole difference between a Java that streams
-             * and a Java whose heap tracks the file. */
+            /* Count the fields first, so a wrong count is reported as a wrong
+             * count rather than met halfway through, and so the message can
+             * name the number found. Two walks of a line, no allocation. */
+            int nf = 0;
+            for (int at = 0; at <= line.length(); ) {
+                nf++;
+                at = Csv.endOfField(line, at) + 1;
+            }
+            if (nf != p + 2) {
+                if (nf == 1 && (line.indexOf(';') >= 0 || line.indexOf('\t') >= 0))
+                    refuse(args[0], seen, "it has no commas, but does have "
+                        + (line.indexOf(';') >= 0 ? "semicolons" : "tabs")
+                        + ". The header is comma-separated and this row is not; "
+                        + "this program reads commas only");
+                else if (line.indexOf('"') >= 0 || line.indexOf('\'') >= 0)
+                    refuse(args[0], seen, "it has " + nf + " field"
+                        + (nf == 1 ? "" : "s") + " and the header names " + (p + 2)
+                        + ", and the row contains a quote. A quoted field holding "
+                        + "a comma splits in two here, and one holding a line "
+                        + "break runs onto the next line: this reads plain "
+                        + "comma-separated fields, with no quoting");
+                else
+                    refuse(args[0], seen, "it has " + nf + " field"
+                        + (nf == 1 ? "" : "s") + " and the header names " + (p + 2)
+                        + ": a group, the value, and " + p + " term"
+                        + (p == 1 ? "" : "s"));
+            }
+
+            /* Walk the line in place: no split(), no substring per field, no
+             * per-row object. This is the whole difference between a Java that
+             * streams and a Java whose heap tracks the file. */
             int from = 0, field = 0;
             String group = null;
             double y = 0.0;
-            boolean bad = false;
 
             while (from <= line.length() && field < p + 2) {
                 int to = Csv.endOfField(line, from);
-                if (field == 0)      group = line.substring(from, to);
-                else if (field == 1) y = Csv.parse(line, from, to);
-                else {
+                int a = from, b = to;
+                while (a < b && line.charAt(a) == ' ') a++;
+                while (b > a && line.charAt(b - 1) == ' ') b--;
+                if (a < b && (line.charAt(a) == '"' || line.charAt(a) == '\''))
+                    refuse(args[0], seen, fieldLabel(field, response, names)
+                        + " is quoted (" + showField(line.substring(a, b))
+                        + "). This reads plain comma-separated fields: quotes "
+                        + "are not stripped, so a quoted name would become a "
+                        + "different name and a quoted number would not be a "
+                        + "number. Export without quoting");
+                if (field == 0) {
+                    group = line.substring(a, b);
+                    if (group.length() == 0)
+                        refuse(args[0], seen, "the group column is empty, which "
+                            + "is empty or longer than the 32 characters a group "
+                            + "name may have");
+                } else {
                     double v = Csv.parse(line, from, to);
-                    if (v != v) { bad = true; break; }
-                    x[field - 2] = v;
+                    if (v != v)
+                        refuse(args[0], seen,
+                            (field == 1 ? "" : "term ")
+                            + fieldLabel(field, response, names) + " is "
+                            + showField(line.substring(a, b)) + ", which is not "
+                            + "a number. This fits numbers only: there is no "
+                            + "imputation for an empty field and no encoding "
+                            + "for a category name");
+                    if (field == 1) y = v; else x[field - 2] = v;
                 }
                 from = to + 1;
                 field++;
             }
-            if (bad || field != p + 2 || group == null || y != y) continue;
 
             Group g = (Group) index.get(group);
             if (g == null) {
@@ -214,7 +288,14 @@ public class Linearr {
             if (fit.condition > worstCond) worstCond = fit.condition;
         }
 
+        /* What the file was read AS. The layout is fixed and nothing in the
+         * data can say which column is the response, so a file written in
+         * another order fits perfectly well and answers a different question.
+         * The C says which column it took; so does this. */
         long leastDf = (minDf == Long.MAX_VALUE) ? 0 : minDf;
+        if (response != null && response.length() > 0)
+            System.err.println("reading: column 1 is the group, '" + response
+                + "' is the value being predicted, and the other " + p + " are terms");
         System.err.println("fit: " + order.size() + " group" + (order.size() == 1 ? "" : "s")
                 + ", " + rows + " row" + (rows == 1 ? "" : "s")
                 + (pinned > 0 ? ", " + pinned + " term-slot" + (pinned == 1 ? "" : "s")

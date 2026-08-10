@@ -30,6 +30,7 @@ between them. Every division fits equally well, so there is nothing to
 determine:
 
     $ ./linearr -t example/together.csv
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 are terms
     fit: 1 group, 5 rows, 1 term-slot pinned to 0, least df=3, worst resid SD=4.397
     # response: minutes
     group,intercept,night,headlights
@@ -48,6 +49,7 @@ the way two points always define a line exactly. It would fit perfectly on any
 numbers whatsoever, so a perfect fit tells you nothing:
 
     $ ./linearr -t example/three-rows.csv
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 are terms
     fit: 1 group, 3 rows, least df=0, worst cond=1.33 (normal equations)
     warning: at least one group has no residual degrees of freedom; its line passes through every row by construction. Fit those groups on more rows.
     # response: minutes
@@ -68,6 +70,7 @@ squaring roughly halves the significant digits available. With two columns that
 differ in the sixth decimal, asked for `1 + 2*x1 + 3*x2`:
 
     $ ./linearr -t example/nearly-the-same.csv
+    reading: column 1 is the group, 'value' is the value being predicted, and the other 2 are terms
     fit: 1 group, 40 rows, least df=37, worst resid SD=0, worst cond=5.34e+10 (normal equations)
     warning: at least one group is ill-conditioned (cond=5.34e+10); the trailing digits of its coefficients are noise. Try --qr, which does not square the condition number.
     # response: value
@@ -93,6 +96,7 @@ It is the standard demonstration that a fitted line and an R2 do not describe a
 dataset. Fitting all four at once is what groups are for:
 
     $ ./linearr -t example/anscombe.csv
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 are terms
     fit: 4 groups, 44 rows, least df=9, worst resid SD=1.237
     # response: y
     group,intercept,x
@@ -110,6 +114,7 @@ only one of the four is a straight line with scatter around it.
 
     $ ./linearr -t example/anscombe.csv --residuals r.csv
     residuals: r.csv
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 are terms
     fit: 4 groups, 44 rows, least df=9, worst resid SD=1.237
     warning: in group II the residuals still depend on x after the line is subtracted (t=-2219.2). A straight line is probably the wrong shape in that term; consider adding its square as a column.
     # response: y
@@ -135,8 +140,12 @@ them:
 
     $ ./linearr -t example/anscombe.csv -g II --residuals r.csv
     residuals: r.csv
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 are terms
     fit: 1 group, 11 rows, least df=9, worst resid SD=1.237
     warning: in group II the residuals still depend on x after the line is subtracted (t=-2219.2). A straight line is probably the wrong shape in that term; consider adding its square as a column.
+    # response: y
+    group,intercept,x
+    II,3.00090909091,0.5
 
 The file has no x column, but with one term the prediction is a straight
 increasing function of x, so sorting on it puts the rows in x order:
@@ -185,6 +194,7 @@ this is plain least squares.
 of route. The terms are the same everywhere; what each term is worth is not:
 
     $ ./linearr -t example/routes.csv
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 are terms
     fit: 3 groups, 18 rows, least df=3, worst resid SD=3.832e-07, worst cond=1.02 (normal equations)
     # response: minutes
     group,intercept,km,stops
@@ -221,6 +231,74 @@ So a training header of `group,minutes,km,stops` says: predict `minutes` from
 reads position, not the word), but the ORDER is fixed, and the goal is the
 second column, not the first.
 
+**Nothing in the data can say which column is the goal**, so a file written in
+another order does not fail. It fits, it reports a good R2, and it answers a
+question you did not ask: with `group,km,minutes,stops` it predicts distance
+from time and stops, which is arithmetic about the same rows and not the model
+you wanted. There is no way for the program to notice. What it can do is say
+what it took, which it does, first, on every fit:
+
+    $ ./linearr -t example/simple-train.csv
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 are terms
+    fit: 2 groups, 13 rows, least df=3, worst resid SD=0, worst cond=1.03 (normal equations)
+    # response: minutes
+    group,intercept,km,stops
+    A,5,2.5,1.5
+    B,12,2.5,1.5
+
+Read that line once and the mistake is visible immediately. The same name is
+written into the coefficient file as `# response: minutes`, so a table found a
+year later still says what it predicts.
+
+## What it will not read
+
+The reader is a comma splitter, not a CSV parser, and the distance between
+those is worth stating rather than discovering. Each of the following is
+refused, with a status of 1 and a message naming the row, the column and the
+reason. None of them is a crash, and none of them produces a partial model.
+
+**No missing values, and no imputation.** An empty field, `NA`, `NULL`, `-`:
+
+    $ ./linearr -t example/gaps.csv
+    cannot fit: example/gaps.csv row 2: term km is empty, which is not a number. This fits numbers only: there is no imputation for an empty field and no encoding for a category name
+
+This is a design decision and not an omission. Mean-filling, last-observation
+carry-forward and multiple imputation each change the answer, and which one is
+right is a question about your data that a program reading it one row at a time
+cannot answer. Filling gaps is a decision you should make on purpose, in
+whatever wrote the file. R and Python have libraries for it.
+
+**No categorical columns.** A column of `red`/`blue` is refused by the same
+message. Encode it yourself as indicator columns, one per level minus one; that
+is what `example/train.csv` is made of, and the fit reports the level that
+cannot be separated rather than dropping it silently.
+
+**No quoting.** Fields are split on commas and nothing else, so a quoted field
+keeps its quotes. That is refused now, in both directions: a quoted number is
+not a number, and a quoted name would silently become a DIFFERENT name, which
+is worse. `"A"` and `A` would have been two groups.
+
+**No embedded line breaks.** A record is a line. A quoted field containing a
+newline is two lines here, and the row that results is refused for having the
+wrong number of fields, with the quote named as the likely cause.
+
+**Commas only.** Semicolons and tabs are refused by name, in the header and in
+the rows:
+
+    $ ./linearr -t example/semicolons.csv
+    cannot fit: example/semicolons.csv has no commas in its header, but does have semicolons. It looks semicolon-separated; this program reads commas only
+
+Excel writes semicolons wherever the comma is the decimal separator, which is
+most of continental Europe. `tr ';' ','` fixes it when the decimal mark is a
+point; when it is a comma, the file needs a real conversion and this program is
+not the place for it.
+
+**CRLF is fine.** A file saved on Windows reads normally.
+
+The common thread: this reads files a program wrote for it, not files a
+spreadsheet exported. One pass of `tr`, `awk` or `csvkit` puts a real CSV into
+this shape, and doing it there keeps the decisions where you can see them.
+
 ## Where the model is wrong
 
 The coefficients describe the model; the residuals show where it does not fit,
@@ -229,6 +307,7 @@ produces summary statistics that give no sign of the problem:
 
     $ ./linearr -t example/curve.csv --residuals r.csv
     residuals: r.csv
+    reading: column 1 is the group, 'value' is the value being predicted, and the other 1 are terms
     fit: 1 group, 13 rows, least df=11, worst resid SD=13.49
     warning: in group A the residuals still depend on x after the line is subtracted (t=9999.0). A straight line is probably the wrong shape in that term; consider adding its square as a column.
     # response: value
@@ -310,6 +389,7 @@ returned as few as two correct digits on it, and it has been the standard hard
 case since.
 
     $ ./linearr -t example/longley.csv
+    reading: column 1 is the group, 'employment' is the value being predicted, and the other 6 are terms
     fit: 1 group, 16 rows, least df=9, worst resid SD=304.9, worst cond=934 (normal equations)
     # response: employment
     group,intercept,deflator,gnp,unemployed,armed_forces,population,year
@@ -328,12 +408,14 @@ columns. Every certified coefficient is 1 and the certified residual is exactly
 data to hide behind.
 
     $ ./linearr -t example/wampler1.csv
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 5 are terms
     fit: 1 group, 21 rows, least df=15, worst resid SD=0.02282, worst cond=9.96e+04 (normal equations)
     # response: y
     group,intercept,x,x2,x3,x4,x5
     A,0.999999995576,0.999999996707,1.0000000034,0.999999999361,1.00000000004,0.999999999999
 
     $ ./linearr -t example/wampler1.csv --qr
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 5 are terms
     fit: 1 group, 21 rows, least df=15, worst resid SD=6.663e-11, worst cond=234 (QR)
     # response: y
     group,intercept,x,x2,x3,x4,x5
@@ -356,6 +438,7 @@ alone.) With `--residuals` the pass that writes them also checks two things.
 
     $ ./linearr -t example/curve.csv --residuals r.csv
     residuals: r.csv
+    reading: column 1 is the group, 'value' is the value being predicted, and the other 1 are terms
     fit: 1 group, 13 rows, least df=11, worst resid SD=13.49
     warning: in group A the residuals still depend on x after the line is subtracted (t=9999.0). A straight line is probably the wrong shape in that term; consider adding its square as a column.
     # response: value
@@ -623,6 +706,7 @@ names the terms:
     B,34.0,7,3
 
     $ ./linearr -t example/simple-train.csv > model.csv
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 are terms
     fit: 2 groups, 13 rows, least df=3, worst resid SD=0, worst cond=1.03 (normal equations)
 
     $ cat model.csv

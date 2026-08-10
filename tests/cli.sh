@@ -483,6 +483,62 @@ check "a coefficient file without the line still loads" \
     "$(grep -v '^# response' "$tmp/m.csv" > "$tmp/m2.csv"; "$bin" -c "$tmp/m2.csv" --terms | grep -c 'it predicts')" \
     "0"
 
+# --- what it refuses to read, and what it says ------------------------------
+# Every one of these used to produce the same sentence, "expected a group, a
+# value, and N terms", whatever was actually wrong: an empty field, a short row,
+# a category name, a quoted number and a semicolon-separated row were
+# indistinguishable. On a file of ten million rows that is not a diagnosis, and
+# a reviewer read it as the program crashing. It does not crash. It refuses,
+# with a status of 1, and it now says which column and why.
+says() {   # says LABEL FILE-CONTENT PATTERN
+    printf '%b' "$2" > "$tmp/bad.csv"
+    set +e
+    msg=$("$bin" -t "$tmp/bad.csv" 2>&1 >/dev/null); rc=$?
+    set -e
+    if [ "$rc" != "1" ]; then no "$1: expected exit 1, got $rc"; return; fi
+    case "$msg" in *"$3"*) ok ;; *) no "$1: expected [$3], got [$msg]" ;; esac
+}
+H='group,y,a,b\n'
+says "an empty field names the column"        "${H}A,1,1,2\nA,2,,3\nA,3,2,4\n"      "term a is empty"
+says "an empty field says there is no imputation" "${H}A,1,1,2\nA,2,,3\nA,3,2,4\n" "no imputation"
+says "a category name is named"               "${H}A,1,red,2\nA,2,blue,3\n"         "term a is 'red'"
+says "and says there is no encoding for it"   "${H}A,1,red,2\nA,2,blue,3\n"         "no encoding for a category name"
+says "NA is not a number"                     "${H}A,1,NA,2\nA,2,1,3\n"             "term a is 'NA'"
+says "a short row counts the fields"          "${H}A,1,1,2\nA,2,3\n"                "it has 3 fields and the header names 4"
+says "a quoted group name is refused"         "${H}\"A\",1,1,2\n"                   "the group column is quoted"
+says "a quoted number is refused"             "${H}A,\"1\",1,2\n"                   "is quoted"
+says "a quoted comma is explained"            "${H}A,\"1,5\",1,2\n"                 "the row contains a quote"
+says "a semicolon row is named as such"       "${H}A;1;1;2\n"                       "does have semicolons"
+says "a non-numeric response is named"        "${H}A,high,1,2\nA,low,2,3\n"         "y is 'high'"
+
+# A quoted group name used to be ACCEPTED, with the quotes kept, so "A" and A
+# became two groups and nothing said so. That is worse than a refusal: a silent
+# wrong answer.
+printf 'group,y,a\nA,1,1\n"A",2,2\nA,3,3\n' > "$tmp/q.csv"
+set +e
+"$bin" -t "$tmp/q.csv" >/dev/null 2>&1; rc=$?
+set -e
+check "a quoted name does not become a second group" "$rc" "1"
+
+# A semicolon HEADER was already named; the rows were not.
+printf 'group;y;a;b\nA;1;1;2\n' > "$tmp/s.csv"
+set +e
+msg=$("$bin" -t "$tmp/s.csv" 2>&1 >/dev/null); rc=$?
+set -e
+case "$msg" in *"semicolon"*) ok ;; *) no "a semicolon header is named: got [$msg]" ;; esac
+
+# The layout it used, said out loud. Nothing in the data can say which column is
+# the response, so a file written in another order fits perfectly well and
+# answers a different question. The only defence is to state what was taken.
+check "the layout it read is reported" \
+    "$("$bin" -t example/simple-train.csv 2>&1 >/dev/null | head -1)" \
+    "reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 are terms"
+
+# CRLF is not a refusal: a file from a Windows editor reads normally.
+printf 'group,y,a\r\nA,1,1\r\nA,2,2\r\nA,3,4\r\n' > "$tmp/crlf.csv"
+check "CRLF line endings are read, not refused" \
+    "$("$bin" -t "$tmp/crlf.csv" >/dev/null 2>&1; echo $?)" "0"
+
 # Anscombe II is the canonical curve that a line cannot fit. The check must see
 # it, and must NOT see anything in set I, which is the same summary statistics
 # over data that is genuinely straight.

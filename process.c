@@ -478,8 +478,7 @@ int process_train(const char *csv_path, const char *group,
         if (n == 2) continue;
         seen++;
         if (los_parse_training(line, &c, &los) != 0) {
-            fail("%s row %ld: expected a group, a value, and %d terms",
-                 csv_path, seen, nvars);
+            fail("%s row %ld: %s", csv_path, seen, los_parse_error());
             goto cleanup;
         }
         if (!pool && strcmp(c.group, group) != 0) continue;
@@ -626,8 +625,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
         if (n == 2) continue;
         seen++;
         if (los_parse_training(line, &c, &los) != 0) {
-            fail("%s row %ld: expected a group, a value, and %d terms",
-                 csv_path, seen, nvars);
+            fail("%s row %ld: %s", csv_path, seen, los_parse_error());
             goto cleanup;
         }
         if (only && strcmp(c.group, only) != 0) continue;

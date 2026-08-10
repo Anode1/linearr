@@ -418,22 +418,151 @@ void los_free(void) {
 
 /* Both parsers split a private copy: csv_split works in place, and the caller's
  * line is const. Bounded by CSV_LINE_MAX, on the stack, allocating nothing. */
+/* Why the last parse_row() refused a line. One sentence, already naming the
+ * column and what was in it.
+ *
+ * Every failure below used to return a bare -1, and the caller printed the same
+ * sentence for all of them: "expected a group, a value, and N terms". An empty
+ * field, a row one column short, the word NA, a category name, a quoted number
+ * and a semicolon-separated row all produced that, on a file with millions of
+ * rows and no indication of which column was at fault. A reviewer read it as
+ * the program crashing. It does not crash; it refused, and it refused without
+ * saying what it wanted. */
+static char parse_why[512];
+
+const char *los_parse_error(void) {
+    return parse_why[0] ? parse_why : "the row could not be read";
+}
+
+/* A field's name, for the message: the group, the response, or a term. Copied
+ * into the caller's bounded buffer rather than returned as a pointer, so the
+ * message that uses it has a length the compiler can see. */
+static void field_label(char *out, size_t outsz, int idx, int xoff) {
+    const char *name = "a column";
+    if (idx == 0) name = "the group column";
+    else if (xoff == 2 && idx == 1) name = response[0] ? response : "the value column";
+    else {
+        int t = idx - xoff;
+        if (t >= 0 && t < nvars) name = var_name[t];
+    }
+    (void)snprintf(out, outsz, "%.*s", (int)outsz - 1, name);
+}
+
+/* Enough of a field to recognise it, with the rest elided. A message that
+ * quotes a whole 400-character line is not a message. */
+static void show_field(char *out, size_t outsz, const char *s) {
+    size_t n = strlen(s);
+    if (n == 0) { (void)snprintf(out, outsz, "empty"); return; }
+    if (n <= 24) { (void)snprintf(out, outsz, "'%.24s'", s); return; }
+    (void)snprintf(out, outsz, "'%.24s...'", s);
+}
+
 static int parse_row(const char *line, struct los_case *c, double *los,
                      int xoff) {
     char  buf[CSV_LINE_MAX];
     char *field[CSV_MAX_FIELDS];
-    int   i;
+    char  shown[40];
+    char  lbl[LOS_NAME_MAX + 24];
+    int   i, n;
 
+    parse_why[0] = '\0';
     if (nvars < 1) { debug("los: no schema yet"); return -1; }
-    if (strlen(line) >= sizeof buf) return -1;
+    if (strlen(line) >= sizeof buf) {
+        (void)snprintf(parse_why, sizeof parse_why,
+                       "the line is longer than this build reads (%d bytes)",
+                       CSV_LINE_MAX - 1);
+        return -1;
+    }
     strcpy(buf, line);                          /* checked on the line above */
 
-    if (csv_split(buf, field, CSV_MAX_FIELDS) != nvars + xoff) return -1;
-    if (copy_group(c->group, sizeof c->group, field[0]) != 0) return -1;
-    if (los && parse_num(field[1], los) != 0) return -1;
+    n = csv_split(buf, field, CSV_MAX_FIELDS);
+    if (n != nvars + xoff) {
+        /* A wrong count is usually a separator, not a missing column, and the
+         * header check already says this for the header. It said nothing for
+         * the rows, so a file with a comma header and semicolon data got the
+         * generic sentence. */
+        if (n == 1 && (strchr(field[0], ';') || strchr(field[0], '\t')))
+            (void)snprintf(parse_why, sizeof parse_why,
+                           "it has no commas, but does have %s. The header is "
+                           "comma-separated and this row is not; this program "
+                           "reads commas only",
+                           strchr(field[0], ';') ? "semicolons" : "tabs");
+        else if (n < 0)
+            (void)snprintf(parse_why, sizeof parse_why,
+                           "it has more than the %d fields this build splits",
+                           CSV_MAX_FIELDS);
+        else if (strchr(line, '"') || strchr(line, '\''))
+            /* A quoted field holding a comma splits into two, and a quoted
+             * field holding a line break leaves the rest on the next line.
+             * Both arrive here as a wrong field count, and reporting only the
+             * count sends the reader to look for a missing column that is
+             * not missing. */
+            (void)snprintf(parse_why, sizeof parse_why,
+                           "it has %d field%s and the header names %d, and the "
+                           "row contains a quote. A quoted field holding a "
+                           "comma splits in two here, and one holding a line "
+                           "break runs onto the next line: this reads plain "
+                           "comma-separated fields, with no quoting",
+                           n, n == 1 ? "" : "s", nvars + xoff);
+        else
+            (void)snprintf(parse_why, sizeof parse_why,
+                           "it has %d field%s and the header names %d: a group, "
+                           "%s, and %d term%s", n, n == 1 ? "" : "s",
+                           nvars + xoff, xoff == 2 ? "the value" : "no value",
+                           nvars, nvars == 1 ? "" : "s");
+        return -1;
+    }
 
-    for (i = 0; i < nvars; i++)
-        if (parse_num(field[i + xoff], &c->x[i]) != 0) return -1;
+    /* Quoting. csv.c splits on commas and nothing else, so a quoted field
+     * arrives with its quotes still on it. A quoted NUMBER then fails to parse,
+     * with a message about the number; a quoted GROUP NAME did not fail at all,
+     * and "A" became a group distinct from A with nothing said. A silent wrong
+     * answer is the worst of the three outcomes, so quoting is refused here
+     * rather than half-handled. */
+    for (i = 0; i < n; i++) {
+        if (field[i][0] == '"' || field[i][0] == '\'') {
+            show_field(shown, sizeof shown, field[i]);
+            field_label(lbl, sizeof lbl, i, xoff);
+            (void)snprintf(parse_why, sizeof parse_why,
+                           "%s is quoted (%s). This reads plain comma-separated "
+                           "fields: quotes are not stripped, so a quoted name "
+                           "would become a different name and a quoted number "
+                           "would not be a number. Export without quoting",
+                           lbl, shown);
+            return -1;
+        }
+    }
+
+    if (copy_group(c->group, sizeof c->group, field[0]) != 0) {
+        show_field(shown, sizeof shown, field[0]);
+        (void)snprintf(parse_why, sizeof parse_why,
+                       "the group column is %s, which is empty or longer than "
+                       "the %d characters a group name may have",
+                       shown, GROUP_MAX - 1);
+        return -1;
+    }
+    if (los && parse_num(field[1], los) != 0) {
+        show_field(shown, sizeof shown, field[1]);
+        field_label(lbl, sizeof lbl, 1, xoff);
+        (void)snprintf(parse_why, sizeof parse_why,
+                       "%s is %s, which is not a number. This fits numbers "
+                       "only: there is no imputation for an empty field and no "
+                       "encoding for a category name", lbl, shown);
+        return -1;
+    }
+
+    for (i = 0; i < nvars; i++) {
+        if (parse_num(field[i + xoff], &c->x[i]) != 0) {
+            show_field(shown, sizeof shown, field[i + xoff]);
+            field_label(lbl, sizeof lbl, i + xoff, xoff);
+            (void)snprintf(parse_why, sizeof parse_why,
+                           "term %s is %s, which is not a number. This fits "
+                           "numbers only: there is no imputation for an empty "
+                           "field and no encoding for a category name",
+                           lbl, shown);
+            return -1;
+        }
+    }
     return 0;
 }
 

@@ -86,6 +86,12 @@ int los_has_trims(void);
  * week later; group,intercept,mark is the header of a model that predicts
  * hours, and nothing in it says so. */
 const char *los_response_name(void);
+
+/* Why the last los_parse_training() or los_parse_case() refused a line: one
+ * sentence naming the column and what was in it. Valid until the next call.
+ * Every refusal used to return a bare -1 and the caller printed one generic
+ * sentence for all of them, which on a large file is not a diagnosis. */
+const char *los_parse_error(void);
 void        los_set_response_name(const char *name);
 
 /* Why the last los_load/los_load_trims returned -1. Never NULL. */

@@ -162,6 +162,16 @@ static int train_all(const char *path, const char *only,
             die("cannot write %s: %s", resid_file, strerror(errno));
         (void)fprintf(stderr, "residuals: %s\n", resid_file);
     }
+    /* What the file was read AS, before what came of it. The layout is fixed
+     * -- column 1 the group, column 2 the response, the rest terms -- and a
+     * file written in another order fits perfectly well and answers a question
+     * nobody asked. Nothing in the data can say which column is the response,
+     * so the program says which one it took, every time, where a reader will
+     * see it without being told to look. */
+    if (los_response_name()[0] != '\0')
+        (void)fprintf(stderr, "reading: column 1 is the group, '%s' is the "
+                      "value being predicted, and the other %d are terms\n",
+                      los_response_name(), process_nterms());
     (void)fprintf(stderr, "fit: %ld group%s, %ld row%s", sum.groups, s_(sum.groups),
             sum.rows, s_(sum.rows));
     if (sum.pinned > 0)
