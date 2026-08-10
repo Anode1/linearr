@@ -483,14 +483,19 @@ check "Longley: and the certified residual SD" \
 check "Wampler1: QR recovers the exact quintic" \
     "$("$bin" -t example/wampler1.csv --qr 2>/dev/null | tail -1 | cut -d, -f6,7)" \
     "1,1"
-# The certified residual is zero. The normal equations report 0.0228 and QR
-# reports 7e-11, and the gap is the whole argument for the module.
+# The certified residual is zero: the normal equations report something visible
+# and QR reports nothing. Magnitudes, not digits -- how far each lands depends
+# on fused multiply-add and summation order, so arm64 with clang gives 0.02304
+# and 9.209e-11 where x86-64 with gcc gives 0.02282 and 6.663e-11, and
+# comparing the printed strings failed a correct macOS build.
+ne=$("$bin" -t example/wampler1.csv 2>&1 >/dev/null | sed -n 's/.*resid SD=\([0-9.e-]*\).*/\1/p')
+qr=$("$bin" -t example/wampler1.csv --qr 2>&1 >/dev/null | sed -n 's/.*resid SD=\([0-9.e-]*\).*/\1/p')
 check "Wampler1: the normal equations report a residual that is not there" \
-    "$("$bin" -t example/wampler1.csv 2>&1 >/dev/null | sed -n 's/.*resid SD=\([0-9.e-]*\).*/\1/p')" \
-    "0.02282"
+    "$(awk -v v="$ne" 'BEGIN{print (v > 1e-3 && v < 1) ? "visible" : "got " v}')" "visible"
 check "Wampler1: QR does not" \
-    "$("$bin" -t example/wampler1.csv --qr 2>&1 >/dev/null | sed -n 's/.*resid SD=\([0-9.e-]*\).*/\1/p')" \
-    "6.663e-11"
+    "$(awk -v v="$qr" 'BEGIN{print (v < 1e-8) ? "negligible" : "got " v}')" "negligible"
+check "Wampler1: and QR is better by orders of magnitude" \
+    "$(awk -v a="$ne" -v b="$qr" 'BEGIN{print (b < a/1e6) ? "yes" : "no"}')" "yes"
 
 # Each group's residual checks are judged against ITS OWN spread. They used to
 # be judged against the worst residual SD of any group in the file and the
