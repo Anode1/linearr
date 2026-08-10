@@ -422,8 +422,16 @@ static void test_resolve(void) {
     g_prog = t_argv0;
     /* Absolute, because argv[0] is run through realpath first: a symlinked
      * binary must find the files beside the REAL one, not beside the link. */
-    CHECK(resolve_program_dir() != NULL && resolve_program_dir()[0] == '/',
-          "resolve: the program directory is resolved to a real absolute path");
+    {   /* Absolute, because argv[0] is run through realpath first. What
+         * "absolute" looks like is not the same everywhere: a leading slash on
+         * POSIX, a drive letter or a UNC prefix on Windows. This asserted the
+         * slash and failed the Windows release build on a correct result. */
+        const char *dir = resolve_program_dir();
+        int absolute = dir != NULL &&
+                       (dir[0] == '/' || dir[0] == '\\' ||
+                        (dir[0] != '\0' && dir[1] == ':'));
+        CHECK(absolute, "resolve: the program directory is a real absolute path");
+    }
 
     CHECK(resolve_file(COEF, path, sizeof path) == 0, "resolve: finds a file in the cwd");
     CHECK(strcmp(path, COEF) == 0, "resolve: and prefers the cwd copy, unchanged");
