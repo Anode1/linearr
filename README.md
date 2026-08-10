@@ -205,7 +205,7 @@ demonstrated in its own section below:
 - **Memory is bounded by the model.** Rows are read one at a time and
   forgotten, so a 40 MB file and a 40 GB file cost the same. Memory scales with
   the number of GROUPS, one accumulator each, and `--footprint` prints the
-  figure. [Scale](#scale)
+  figure for a given shape. [Scale](#scale)
 
 It is not a general statistics package. What it leaves out, and what to use
 instead, is [Where this is the right tool, and where it is
@@ -1009,20 +1009,25 @@ arrives.
 
 **The row count is bounded by time, not by memory.** A row is folded into the
 cross-products and dropped, so the tenth row and the ten-billionth cost the same
-space. Measured at 10,000,000 rows: 1.29 s, 2.5 MB, the same figure as at two
-million. At that rate, 7.75 million rows a second:
+space. Measured at 10,000,000 rows: 2.04 s, 2.0 MB, the same memory as at two
+million. That is 4.9 million rows a second.
 
-| rows | time on one core |
-| --- | --- |
-| a billion | about 2 minutes |
-| a trillion | about a day and a half |
-| **100 trillion** | **about five months** |
+The same file fitted by a streaming Python and by R, so the extrapolation has
+something to be compared against: Python reads 215,000 rows a second in 10 MB,
+and R's `read.csv` plus `lm()` reads 570,000 a second in 3.2 GB, which is about
+318 bytes a row and is the figure that decides where its column ends.
 
-A hundred trillion rows is where the table stops, because that is roughly what
-one core gets through in half a year and it is already more than the question
-usually is. Past it the answer stops being about memory and becomes about
-scheduling. The counters are 64-bit, so much larger numbers are representable;
-quoting them would be quoting arithmetic rather than a run anybody would start.
+| rows | linearr | Python, streaming | R, `read.csv` + `lm()` |
+| --- | --- | --- | --- |
+| 10 million | 2 seconds | 47 seconds | 18 seconds, 3.2 GB |
+| 100 million | 20 seconds | 8 minutes | 3 minutes, 32 GB |
+| a billion | 3.5 minutes | 1.3 hours | 318 GB, will not fit |
+| a trillion | 2.4 days | 54 days | will not fit |
+| **100 trillion** | **8 months** | **15 years** | **will not fit** |
+
+The R column stops at about 200 million rows on a machine with 64 GB, and the
+number is memory rather than time: at 318 bytes a row the frame is what runs
+out, not the clock. The two streaming columns only get slower.
 
 Two caveats on long runs, both real: the cross-products accumulate over the
 whole stream, so at these lengths their last digits decay even though the means
@@ -1032,7 +1037,7 @@ accumulator per group, which is memory in the groups, not in the rows.
 ### The limitations of that, stated
 
 One core and one stream: no threading, no sharding, no restart from a partial
-fit. At 4.7 million rows a second the cost is reading and converting text, not
+fit. At 4.9 million rows a second the cost is reading and converting text, not
 the arithmetic, so a second core would buy more than a faster solver. Memory
 holds one accumulator per group, 8456 bytes at 24 terms, so 400,000 groups is
 3.15 GB; rows are free and groups are not. `--residuals` reads the file a
