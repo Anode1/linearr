@@ -325,7 +325,7 @@ data to hide behind.
     A,0.999999995576,0.999999996707,1.0000000034,0.999999999361,1.00000000004,0.999999999999
 
     $ ./linearr -t example/wampler1.csv --qr
-    fit: 1 group, 21 rows, least df=15, worst resid SD=6.663e-11, worst cond=698 (QR)
+    fit: 1 group, 21 rows, least df=15, worst resid SD=6.663e-11, worst cond=234 (QR)
     group,intercept,x,x2,x3,x4,x5
     A,1.00000000044,0.999999999992,1.00000000001,0.999999999997,1,1
 

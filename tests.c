@@ -538,20 +538,84 @@ static void test_qr(void) {
         }
     }
 
-    /* When a column IS dropped, the residual of the rotation is the residual of
-     * a model that was never returned. Withheld rather than reported: it once
-     * understated the error by fifteen orders of magnitude. */
+    /* When a column IS dropped, the residual of the ROTATION belongs to a model
+     * that was never returned; it once understated the error by fifteen orders
+     * of magnitude. The answer used to be to withhold R2 and the residual SD,
+     * which left a fit nobody could judge. Now the residual of the model
+     * actually returned is computed, and this is the test that it is the right
+     * number: the same data fitted WITHOUT the redundant column must give the
+     * same residual, because it is the same model. */
     {
+        struct qr q2;
+        struct regress_fit f2;
+        double x1[1];
         qr_init(&q, 2, t_store);
+        qr_init(&q2, 1, t_store2);
         for (i = 0; i < 20; i++) {
+            double y = 3.0 + 2.0 * (double)i + (double)((i % 3) - 1);
             x[0] = (double)i;
             x[1] = 7.0;                       /* constant: will be dropped */
-            qr_add(&q, x, 3.0 + 2.0 * x[0] + ((i % 3) - 1));
+            x1[0] = (double)i;
+            (void)qr_add(&q, x, y);
+            (void)qr_add(&q2, x1, y);
         }
-        qr_solve(&q, t_beta, NULL, &fq);
+        (void)qr_solve(&q, t_beta, NULL, &fq);
+        (void)qr_solve(&q2, t_beta2, NULL, &f2);
         CHECK(fq.pinned == 1, "qr: the constant column is dropped");
-        CHECK(fq.r2 < 0.0 && fq.sigma < 0.0,
-              "qr: and R2 and the residual SD are withheld, not guessed");
+        CHECK(fq.rss > 0.0 && fq.sigma > 0.0,
+              "qr: and the residual is reported, not withheld");
+        CHECK(fabs(fq.rss - f2.rss) < 1e-9 * f2.rss,
+              "qr: the residual is that of the model returned, not of the rotation");
+        CHECK(fabs(fq.sigma - f2.sigma) < 1e-9 * f2.sigma,
+              "qr: and so is the residual SD");
+        CHECK(fabs(fq.r2 - f2.r2) < 1e-12, "qr: and R2");
+        CHECK(fabs(t_beta[1] - t_beta2[1]) < 1e-12,
+              "qr: the slope is the one the reduced model gives");
+    }
+
+    /* The same, with a column that is collinear rather than constant, and with
+     * the whole design sitting a long way from zero: the case the 2-norm scale
+     * exists for. A term that merely has an offset must not be deleted. */
+    {
+        qr_init(&q, 2, t_store);
+        for (i = 0; i < 30; i++) {
+            x[0] = 1.0e6 + (double)i;              /* offset, but informative */
+            x[1] = 5.0e3 + (double)(i % 7) * 0.5;  /* offset, and independent */
+            /* Noiseless on purpose. With noise the fitted slope differs from
+             * the one the data was built from by the amount the noise moves
+             * it, which on thirty rows is a few per cent, and a test that then
+             * demands six digits is testing the noise. */
+            qr_add(&q, x, 1.0 + 2.0 * x[0] - 4.0 * x[1]);
+        }
+        (void)qr_solve(&q, t_beta, NULL, &fq);
+        CHECK(fq.pinned == 0, "qr scale: an offset column is not mistaken for collinear");
+        CHECK(fabs(t_beta[1] - 2.0) < 1e-6 && fabs(t_beta[2] + 4.0) < 1e-6,
+              "qr scale: and both slopes come back");
+        /* And a genuinely dependent column at the same offsets IS dropped, so
+         * the loosened scale has not simply stopped finding rank deficiency. */
+        qr_init(&q, 2, t_store);
+        for (i = 0; i < 30; i++) {
+            x[0] = 1.0e6 + (double)i;
+            x[1] = 3.0 + (x[0] - 1.0e6) * 0.5;     /* exactly a function of x0 */
+            qr_add(&q, x, 1.0 + 2.0 * x[0]);
+        }
+        (void)qr_solve(&q, t_beta, NULL, &fq);
+        CHECK(fq.pinned == 1, "qr scale: a dependent column at the same offset is dropped");
+        CHECK(fq.term[1] == REGRESS_COLLINEAR,
+              "qr scale: and reported collinear rather than constant");
+        /* Where it stops working, under test so it cannot quietly change. At
+         * an offset of 1e9 an uncentred factorisation cannot separate a
+         * dependent column from an independent one; the fit says so through
+         * cond= and not through the rank. See QR_RANK_EPS in qr.c. */
+        qr_init(&q, 2, t_store);
+        for (i = 0; i < 30; i++) {
+            x[0] = 1.0e9 + (double)i;
+            x[1] = 3.0 + (x[0] - 1.0e9) * 0.5;
+            qr_add(&q, x, 1.0 + 2.0 * x[0]);
+        }
+        (void)qr_solve(&q, t_beta, NULL, &fq);
+        CHECK(fq.condition > 1e7,
+              "qr scale: at 1e9 the rank test misses, and cond= reports it instead");
     }
 
     /* A column that never varies is dropped, as in the normal equations. */

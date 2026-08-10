@@ -17,9 +17,16 @@
  * What it is NOT: a strictly better solver. It does not centre the data, and a
  * reviewer found that without column scaling its rank test deleted a
  * well-identified indicator for being measured in a small unit, which is the
- * same defect regress.c documents as fixed. Columns are scaled here now, and
- * the figures that depend on a dropped column are withheld rather than
- * reported, but the honest summary is that the two solvers are different
+ * same defect regress.c documents as fixed. Each column is now judged against
+ * its own 2-norm, and when a column is dropped the residual of the model that
+ * was actually returned is computed rather than the rotation's, so R2 and the
+ * residual SD mean what they say in that case too.
+ *
+ * What remains is that this module does not centre, and two things follow from
+ * it. Its cond= is not comparable with regress.c's (see qr_solve below), and
+ * its rank test needs a looser tolerance and still cannot resolve a dependent
+ * column once the data sits near 1e9 (see QR_RANK_EPS in qr.c, where the
+ * measurement is). The summary is that the two solvers are different
  * trade-offs and not an upgrade path.
  *
  * The algorithm is Gentleman's 1974 row-wise updating QR (AS 75 / AS 274), the
@@ -55,6 +62,10 @@ struct qr {
      * columns' worth of information. */
     double *colmin;
     double *colmax;
+    /* Each column's sum of squares, so the rank test can divide a diagonal by
+     * its own column's 2-norm. The range is kept as well, but only to tell a
+     * CONSTANT column from a COLLINEAR one, which are different verdicts. */
+    double *colss;
 };
 
 size_t qr_storage(int nvars);

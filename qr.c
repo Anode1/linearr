@@ -6,16 +6,41 @@
 #include <math.h>
 #include <string.h>
 
-/* Rank tolerance, relative to the largest diagonal of R. R's diagonals are in
- * the data's own units rather than their squares, so this is a tolerance on
- * cond(X) of about 1e12, which is the same statement regress.c makes with
- * 1e-12 on the squared matrix. */
-#define QR_RANK_EPS 1e-12
+/* Rank tolerance, relative to the largest diagonal of R after each column is
+ * divided by its own 2-norm.
+ *
+ * It is 1e-9 and NOT the 1e-12 regress.c uses, and the difference is not an
+ * oversight in either file. regress.c centres its co-moments, so by the time it
+ * tests rank the intercept is out of the way and the columns are about their
+ * own means. This module does not centre -- that is what makes it a one-pass
+ * QR -- so a column sitting far from zero is numerically close to the intercept
+ * column, and the factorisation loses digits in proportion to how far out it
+ * sits. Below 1e-9 those lost digits look like rank.
+ *
+ * Measured, on a design of two columns where the second is exactly a linear
+ * function of the first, so the right answer is always "drop one":
+ *
+ *     offset of the columns     1e-12    1e-10    1e-9    1e-8    1e-7
+ *              0                 drop     drop     drop    drop    drop
+ *              1e3               drop     drop     drop    drop    drop
+ *              1e6               MISSED   drop     drop    drop    drop
+ *              1e9               MISSED   MISSED   MISSED  MISSED  MISSED
+ *
+ * and at 1e-8 and looser a design whose columns are genuinely independent
+ * starts being pinned instead, so there is no threshold that rescues 1e9.
+ *
+ * THE LIMITATION, stated: with columns near 1e9 this module cannot tell an
+ * exactly dependent column from an independent one. cond= still reports the
+ * ill-conditioning, so the fit is not silent about it, but the rank test does
+ * not cut. Centre such columns before fitting, or use the normal equations,
+ * which centre for you. */
+#define QR_RANK_EPS 1e-9
 
 size_t qr_storage(int nvars) {
     if (nvars < 0) return 0;
-    /* R, then the two column-range vectors that used to sit inside struct qr. */
-    return ((size_t)nvars + 1) * ((size_t)nvars + 2) + 2 * ((size_t)nvars + 1);
+    /* R, then the column-range vectors that used to sit inside struct qr, then
+     * each column's sum of squares for the rank test. */
+    return ((size_t)nvars + 1) * ((size_t)nvars + 2) + 3 * ((size_t)nvars + 1);
 }
 
 int qr_init(struct qr *q, int nvars, double *storage) {
@@ -32,6 +57,7 @@ int qr_init(struct qr *q, int nvars, double *storage) {
     q->r      = storage;
     q->colmin = storage + ((size_t)nvars + 1) * ((size_t)nvars + 2);
     q->colmax = q->colmin + nvars + 1;
+    q->colss  = q->colmax + nvars + 1;
     return 0;
 }
 
@@ -62,6 +88,7 @@ int qr_add(struct qr *q, const double *x, double y) {
             if (row[i] < q->colmin[i]) q->colmin[i] = row[i];
             if (row[i] > q->colmax[i]) q->colmax[i] = row[i];
         }
+        q->colss[i] += row[i] * row[i];
     }
 
     /* SST, kept separately and centered, because R holds the fit and not the
@@ -108,6 +135,7 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
     int    keep[REGRESS_MAX_TERMS + 1];
     int    i, j, rank = 0;
     double eps;
+    double drop_rss = 0.0;
 
     (void)scratch;                       /* the factor is already triangular */
     if (!q->n || p < 1) return -1;
@@ -120,9 +148,19 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
      * scaled footing, which also makes cond= comparable between runs whose
      * columns are measured differently. */
     for (i = 0; i <= p; i++) {
-        double mag = fabs(q->colmax[i]) > fabs(q->colmin[i])
-                     ? fabs(q->colmax[i]) : fabs(q->colmin[i]);
-        double scale = (mag > 0.0) ? mag * sqrt((double)q->n) : 1.0;
+        /* The column's own 2-norm. This used to be the largest absolute value
+         * in the column times sqrt(n), which is not the column's size: for a
+         * column sitting at 1e6 and varying by 1, it returns 1e6, and the
+         * diagonal it divides is about 1. The term was then deleted for being
+         * collinear when it was merely offset, and the offsets that do this
+         * (a year, a price, a temperature in Kelvin) are ordinary.
+         *
+         * The 2-norm is also the right scale for THIS factorisation and not
+         * merely a better one: the module does not centre, so what it factors
+         * is the raw column, and dividing each diagonal by its column's norm is
+         * exactly equilibrating the design to unit columns before asking about
+         * rank. */
+        double scale = (q->colss[i] > 0.0) ? sqrt(q->colss[i]) : 1.0;
         double d = fabs(q->r[(size_t)i * (size_t)w + (size_t)i]) / scale;
         rel[i] = d;
         if (d > dmax) dmax = d;
@@ -147,13 +185,17 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
     }
 
     /* Back substitution over the kept columns. A dropped column keeps its 0,
-     * which is the same policy regress.c applies. */
+     * which is the same policy regress.c applies.
+     *
+     * A dropped row's equation is then NOT satisfied, and the amount by which
+     * it is missed is collected here. Descending order is what makes this
+     * possible in one pass: by the time row i is reached, every beta[j] for
+     * j > i is final. */
     for (i = p; i >= 0; i--) {
-        double v;
-        if (!keep[i]) continue;
-        v = q->r[(size_t)i * (size_t)w + (size_t)(p + 1)];
+        double v = q->r[(size_t)i * (size_t)w + (size_t)(p + 1)];
         for (j = i + 1; j <= p; j++)
             v -= q->r[(size_t)i * (size_t)w + (size_t)j] * beta[j];
+        if (!keep[i]) { drop_rss += v * v; continue; }
         beta[i] = v / q->r[(size_t)i * (size_t)w + (size_t)i];
         if (fit && i > 0) fit->term[i - 1] = REGRESS_FITTED;
     }
@@ -166,22 +208,30 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
         fit->df     = q->n - rank;
         fit->condition = (dmin > 0.0) ? dmax / dmin : 1.0;
 
-        /* q->rss is the residual of the rotation, which used every column
-         * INCLUDING the ones just discarded. At full rank that is the model's
-         * residual; once a column is dropped it is the residual of a model that
+        /* q->rss is the residual of the ROTATION, which used every column
+         * including the ones just discarded. At full rank that is the model's
+         * residual. Once a column is dropped it is the residual of a model that
          * was never returned, and reporting it understated the error by fifteen
-         * orders of magnitude in a case a reviewer built. Say nothing rather
-         * than say that. */
-        if (fit->pinned == 0) {
-            fit->rss   = q->rss;
-            fit->sigma = (fit->df > 0) ? sqrt(q->rss / (double)fit->df) : -1.0;
-            fit->r2    = (q->cyy > 0.0) ? 1.0 - q->rss / q->cyy : -1.0;
-            if (fit->r2 < 0.0) fit->r2 = 0.0;
-        } else {
-            fit->rss   = -1.0;
-            fit->sigma = -1.0;
-            fit->r2    = -1.0;
-        }
+         * orders of magnitude in a case a reviewer built.
+         *
+         * This used to be answered by withholding the three figures, which is
+         * not the smaller of the two evils: a fit that reports no residual SD
+         * and no R2 is a fit nobody can judge, and every caller then had to
+         * carry a special case. The residual of the model actually returned is
+         * available for the cost of the loop above. Writing R beta = z, back
+         * substitution satisfies every KEPT row exactly and leaves each dropped
+         * row missing by v = z_i - sum over j > i of R_ij beta_j, since the
+         * dropped beta_i is 0. Those misses are orthogonal to what the rotation
+         * already discarded, so they add:
+         *
+         *     RSS = (residual of the rotation) + sum of v^2 over dropped rows
+         *
+         * which is exact, not an estimate. tests.c checks it against a fit of
+         * the same data with the redundant column removed by hand. */
+        fit->rss   = q->rss + drop_rss;
+        fit->sigma = (fit->df > 0) ? sqrt(fit->rss / (double)fit->df) : -1.0;
+        fit->r2    = (q->cyy > 0.0) ? 1.0 - fit->rss / q->cyy : -1.0;
+        if (fit->r2 < 0.0) fit->r2 = 0.0;
     }
     return 0;
 }
