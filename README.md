@@ -531,6 +531,16 @@ close to the processor and to the memory it touches as the problem allows;
 distance from it costs time, energy and hardware that a straight line does not
 need.
 
+The second view is about shape rather than language: that data of any size
+should be processed as a stream. Every one of the author's projects is written
+that way, this one included. A stream has one property that matters more than
+speed, which is that the size of the input stops being a design question. There
+is no point at which the file no longer fits, no partitioning step, no
+out-of-memory failure at the end of a long run, and no difference in the code
+between the small case and the large one. The cost of it is real and is stated
+below: one pass, one core, and anything needing a second look at the data needs
+a second pass.
+
 That is a claim about implementation, not about tools. **This does not replace
 Python, R, SAS or Matlab, and is not trying to.** Those are where a model should
 be explored, chosen, tested and argued about, and they have decades of
@@ -539,6 +549,13 @@ implementation of one method, useful in three places: as something to test an R
 implementation against, since it agrees with `lm()` to the printed digit; on
 embedded and small ARM targets where no interpreter is going to be installed;
 and in cloud batch work, where the memory a process holds is what it costs.
+
+Both architectures the CI builds on are covered on every push: `x86_64` on
+Linux and `arm64` on macOS, each running the full suite under AddressSanitizer
+and UndefinedBehaviorSanitizer. That is evidence for arm64 generally; it is not
+evidence for a microcontroller, which has no operating system to run these tests
+on. The code is plain C99 with a few POSIX calls, so a small target is a
+question of the toolchain rather than of the source.
 
 Measured for the third case: **2,000,000 rows by 8 terms, a 46 MB file, fitted
 in 0.42 s using 2.6 MB of memory**, and the same through a pipe rather than a
