@@ -36,6 +36,6 @@
 
 /* Bumped by hand at a release, and printed by --version, so a bug report can
  * name something. */
-#define LINEARR_VERSION "0.3.0"
+#define LINEARR_VERSION "0.4.0"
 
 #endif /* CONSTANTS_H */

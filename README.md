@@ -1079,6 +1079,13 @@ because that is what an exploratory session wants: the whole dataset addressable
 while you decide what to ask. When the question is settled and the file is the
 size of a disk, the trade goes the other way.
 
+Every timing in this section, and in the extrapolation above, was measured on
+one machine: an 11th-generation Intel Core i7-1165G7 at 2.80 GHz, 8 threads,
+62 GB, Ubuntu 24.04, gcc 13.3, using one core. A different machine will give
+different figures, and a server core will beat a laptop one. Read the ratios
+between the rows, which hold, rather than the seconds, which do not. `sh
+scripts/bench.sh` and `sh scripts/scale.sh` produce your own.
+
 **These timings are not gated.** Every other transcript in this file is run and
 diffed by `make readme`; this one cannot be, because a wall-clock figure differs
 between machines and between runs. Read the ratios, not the digits, and run
