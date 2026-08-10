@@ -727,11 +727,21 @@ answer, different prices.
     $ sh scripts/bench.sh 8 50 500000        # 8 terms, 50 groups, 500k rows
 
     implementation   shape        time     peak RSS   check
-    linearr (C)      streaming    0.11s    2432 KB    agrees to 0
-    Java             streaming    0.28s    105612 KB  agrees to 0
-    Python           streaming    2.37s    10240 KB   agrees to 0
-    awk              streaming    10.47s   5632 KB    agrees to 0
-    Python           frame        3.01s    315904 KB  agrees to 0
+    linearr (C)      streaming    0.11s    2560 KB    agrees to 0
+    Java             streaming    0.36s    106896 KB  agrees to 0
+    Python           streaming    2.76s    10240 KB   agrees to 0
+    awk              streaming    11.75s   5760 KB    agrees to 0
+    Python           frame        3.30s    315904 KB  agrees to 0
+    R                frame        1.32s    128780 KB  agrees to 1e-12
+
+The R row is new: R was not installed on the machine that produced the earlier
+version of this table, so `bench.sh` printed "not installed - skipped" and the
+row was quietly missing rather than reported as missing. The Java row was
+missing too, for a worse reason: the classpath pointed at `java/` when the
+classes are built into `java/classes/`, and with `set -e` the failure ended the
+whole script after the first row, so the table looked like a benchmark with one
+entrant. Both fixed; a failing implementation now prints why and the others
+still run.
 
 All but the last read the file one row at a time, which each of these languages
 permits. Writing the C as a stream and the Python with pandas would compare two
@@ -744,12 +754,18 @@ The JVM's number is mostly the JVM. Capping its heap separates the runtime's
 appetite from what the algorithm needs: 500,000 rows fit in a 16 MB heap at
 the same speed:
 
-    -Xmx16m   0.26s  61976 KB
-    -Xmx64m   0.27s  89644 KB
+    -Xmx16m   0.33s  64388 KB
+    -Xmx64m   0.34s  95028 KB
 
 `bench/fit.R` is the ecosystem case, and it says so in its own header: `read.csv`
-materialises the frame because that is R's idiom. It SKIPs unless R is
-installed.
+materialises the frame because that is R's idiom, so its memory figure is the
+cost of the idiom rather than a statement about the language. A streaming R
+using `readLines` and a manual accumulator would sit with the others.
+
+**These timings are not gated.** Every other transcript in this file is run and
+diffed by `make readme`; this one cannot be, because a wall-clock figure differs
+between machines and between runs. Read the ratios, not the digits, and run
+`sh scripts/bench.sh` yourself if the ratios matter to you.
 
 ## Two implementations
 

@@ -63,12 +63,28 @@ echo
 # the reference answer
 "$bin" -t "$train" > "$tmp/ref.csv" 2>/dev/null
 
+# The Java is compiled here rather than assumed built, and into the scratch
+# directory, so a benchmark never depends on whatever java/classes happens to
+# hold from an earlier session.
+javadir=""
+if command -v javac >/dev/null 2>&1; then
+    if javac -d "$tmp/classes" "$root"/java/*.java 2>/dev/null; then
+        javadir=$tmp/classes
+    fi
+fi
+
+# One implementation failing must not take the table with it. With set -e and
+# no guard, a non-zero exit from /usr/bin/time ended the whole script after the
+# first row, and the output looked like a benchmark with one entrant rather than
+# like five commands that never ran. That is how the Java row went missing: the
+# classpath pointed at java/ when the classes are built into java/classes/.
 run() {   # run NAME SHAPE COMMAND...
     name=$1; shape=$2; shift 2
     if ! command -v "$1" >/dev/null 2>&1; then
         printf "  %-16s %-12s %s\n" "$name" "$shape" "not installed - skipped"
-        return
+        return 0
     fi
+    set +e
     if [ "$rss" = 1 ]; then
         # -o, not 2>: the implementations write their own commentary to stderr
         # (linearr's fit summary does), and capturing time's output the lazy way
@@ -83,13 +99,19 @@ run() {   # run NAME SHAPE COMMAND...
                "$(echo "$t" | cut -d' ' -f1)s" "$(echo "$t" | cut -d' ' -f2) KB" "$d"
     else
         printf "  %-16s %-12s %s\n" "$name" "$shape" \
-               "ANSWER DIFFERS (${d:-parse failed}) - no time reported"
+               "ANSWER DIFFERS (${d:-did not run, or wrote nothing}) - no time reported"
     fi
+    set -e
+    return 0
 }
 
 echo "  implementation   shape        time     peak RSS   check"
 run "linearr (C)"  "streaming"  "$bin" -t "$train"
-run "Java"         "streaming"  java -cp "$root/java" Linearr "$train"
+if [ -n "$javadir" ]; then
+    run "Java"     "streaming"  java -cp "$javadir" Linearr "$train"
+else
+    printf "  %-16s %-12s %s\n" "Java" "streaming" "no javac - skipped"
+fi
 run "Python"       "streaming"  python3 "$bench/fit.py" "$train"
 run "awk"          "streaming"  awk -f "$bench/fit.awk" "$train"
 run "Python"       "frame"      python3 "$bench/fit-frame.py" "$train"
@@ -103,11 +125,11 @@ echo
 # The JVM's RSS is mostly the JVM. Capping the heap separates the runtime's
 # appetite from the algorithm's need, so the Java row cannot be read as "the
 # algorithm requires this much".
-if command -v java >/dev/null 2>&1; then
+if command -v java >/dev/null 2>&1 && [ -n "$javadir" ]; then
     printf "  the same Java under a capped heap, to show what the ALGORITHM needs:\n"
     for heap in 16m 64m; do
         if [ "$rss" = 1 ]; then
-            if /usr/bin/time -o "$tmp/t" -f "%e %M" java -Xmx$heap -cp "$root/java" \
+            if /usr/bin/time -o "$tmp/t" -f "%e %M" java -Xmx$heap -cp "$javadir" \
                  Linearr "$train" >"$tmp/out.csv" 2>/dev/null; then
                 printf "    -Xmx%-5s %ss  %s KB\n" "$heap" \
                        "$(cut -d" " -f1 "$tmp/t")" "$(cut -d" " -f2 "$tmp/t")"
