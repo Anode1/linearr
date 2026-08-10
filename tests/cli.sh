@@ -562,7 +562,7 @@ case "$msg" in *"semicolon"*) ok ;; *) no "a semicolon header is named: got [$ms
 # answers a different question. The only defence is to state what was taken.
 check "the layout it read is reported" \
     "$("$bin" -t example/simple-train.csv 2>&1 >/dev/null | head -1)" \
-    "reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 are terms"
+    "reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms"
 
 # CRLF is not a refusal: a file from a Windows editor reads normally.
 printf 'group,y,a\r\nA,1,1\r\nA,2,2\r\nA,3,4\r\n' > "$tmp/crlf.csv"

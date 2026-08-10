@@ -1,0 +1,55 @@
+# example/norris.csv: NIST StRD "Norris".
+#
+# Thirty-six calibration measurements, y against x, from a NIST study. The easy
+# case of the three reference sets here: a single term, a fit that is almost
+# exact, and nothing pathological about the arithmetic. It is the one that says
+# the ordinary path is right before the hard cases say anything about the
+# difficult ones.
+#
+# Certified to fifteen digits:
+#
+#     intercept    -0.262323073774029
+#     x             1.00211681802045
+#     residual SD   0.884796396144373
+#     R^2           0.999993745883712
+#
+# Both solvers here reproduce all of it to twelve digits, which is as many as
+# the output prints. From the NIST Statistical Reference Datasets, a US
+# Government work and not under copyright.
+group,y,x
+A,0.1,0.2
+A,338.8,337.4
+A,118.1,118.2
+A,888,884.6
+A,9.2,10.1
+A,228.1,226.5
+A,668.5,666.3
+A,998.5,996.3
+A,449.1,448.6
+A,778.9,777
+A,559.2,558.2
+A,0.3,0.4
+A,0.1,0.6
+A,778.1,775.5
+A,668.8,666.9
+A,339.3,338
+A,448.9,447.5
+A,10.8,11.6
+A,557.7,556
+A,228.3,228.1
+A,998,995.8
+A,888.8,887.6
+A,119.6,120.2
+A,0.3,0.3
+A,0.6,0.3
+A,557.6,556.8
+A,339.3,339.1
+A,888,887.2
+A,998.5,999
+A,778.9,779
+A,10.2,11.1
+A,117.6,118.3
+A,228.9,229.2
+A,668.4,669.1
+A,449.2,448.9
+A,0.2,0.5

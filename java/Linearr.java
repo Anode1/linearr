@@ -302,7 +302,8 @@ public class Linearr {
         long leastDf = (minDf == Long.MAX_VALUE) ? 0 : minDf;
         if (response != null && response.length() > 0)
             System.err.println("reading: column 1 is the group, '" + response
-                + "' is the value being predicted, and the other " + p + " are terms");
+                + "' is the value being predicted, and the other " + p
+                + (p == 1 ? " column is a term" : " columns are terms"));
         System.err.println("fit: " + order.size() + " group" + (order.size() == 1 ? "" : "s")
                 + ", " + rows + " row" + (rows == 1 ? "" : "s")
                 + (pinned > 0 ? ", " + pinned + " term-slot" + (pinned == 1 ? "" : "s")

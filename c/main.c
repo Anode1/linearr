@@ -173,8 +173,10 @@ static int train_all(const char *path, const char *only,
      * see it without being told to look. */
     if (los_response_name()[0] != '\0')
         (void)fprintf(stderr, "reading: column 1 is the group, '%s' is the "
-                      "value being predicted, and the other %d are terms\n",
-                      los_response_name(), process_nterms());
+                      "value being predicted, and the other %d %s\n",
+                      los_response_name(), process_nterms(),
+                      process_nterms() == 1 ? "column is a term"
+                                            : "columns are terms");
     (void)fprintf(stderr, "fit: %ld group%s, %ld row%s", sum.groups, s_(sum.groups),
             sum.rows, s_(sum.rows));
     if (sum.pinned > 0)

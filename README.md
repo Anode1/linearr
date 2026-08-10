@@ -28,13 +28,14 @@ Statistical Reference Datasets to eleven digits, and agrees with R's `lm()` to
     example/curve.csv            1.32e-08     1.05e-07
     example/longley.csv          4.97e-12     3.48e-12
     example/nearly-the-same.csv  1.30e-11     1.13e-05
+    example/norris.csv           4.53e-13     4.53e-13
     example/routes.csv           3.20e-15     3.20e-15
     example/simple-train.csv     1.18e-15     1.18e-15
     example/three-rows.csv       6.66e-16     6.66e-16
     example/together.csv         4.44e-16     4.44e-16
     example/train.csv            4.25e-15     4.25e-15
     example/wampler1.csv         3.35e-10     4.53e-09
-    R: 10 agreed with lm() to 1e-6 under --qr, 0 differed, 5 not a training file
+    R: 11 agreed with lm() to 1e-6 under --qr, 0 differed, 5 not a training file
 
 `lm()` solves by QR with column pivoting, a different method from the default
 here, so agreement is evidence rather than a tautology. The one file where the
@@ -120,7 +121,7 @@ between them. Every division fits equally well, so there is nothing to
 determine:
 
     $ ./linearr -t example/together.csv
-    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 are terms
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms
     fit: 1 group, 5 rows, 1 term-slot pinned to 0, least df=3, worst resid SD=4.397
     # response: minutes
     group,intercept,night,headlights
@@ -139,7 +140,7 @@ the way two points always define a line exactly. It would fit perfectly on any
 numbers whatsoever, so a perfect fit tells you nothing:
 
     $ ./linearr -t example/three-rows.csv
-    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 are terms
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms
     fit: 1 group, 3 rows, least df=0, worst cond=1.33 (normal equations)
     warning: at least one group has no residual degrees of freedom; its line passes through every row by construction. Fit those groups on more rows.
     # response: minutes
@@ -160,7 +161,7 @@ squaring roughly halves the significant digits available. With two columns that
 differ in the sixth decimal, asked for `1 + 2*x1 + 3*x2`:
 
     $ ./linearr -t example/nearly-the-same.csv
-    reading: column 1 is the group, 'value' is the value being predicted, and the other 2 are terms
+    reading: column 1 is the group, 'value' is the value being predicted, and the other 2 columns are terms
     fit: 1 group, 40 rows, least df=37, worst resid SD=0, worst cond=5.34e+10 (normal equations)
     warning: at least one group is ill-conditioned (cond=5.34e+10); the trailing digits of its coefficients are noise. Try --qr, which does not square the condition number.
     # response: value
@@ -186,7 +187,7 @@ It is the standard demonstration that a fitted line and an R2 do not describe a
 dataset. Fitting all four at once is what groups are for:
 
     $ ./linearr -t example/anscombe.csv
-    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 are terms
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term
     fit: 4 groups, 44 rows, least df=9, worst resid SD=1.237
     # response: y
     group,intercept,x
@@ -204,7 +205,7 @@ only one of the four is a straight line with scatter around it.
 
     $ ./linearr -t example/anscombe.csv --residuals r.csv
     residuals: r.csv
-    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 are terms
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term
     fit: 4 groups, 44 rows, least df=9, worst resid SD=1.237
     warning: in group II the residuals still depend on x after the line is subtracted (t=-2219.2). A straight line is probably the wrong shape in that term; consider adding its square as a column.
     # response: y
@@ -230,7 +231,7 @@ them:
 
     $ ./linearr -t example/anscombe.csv -g II --residuals r.csv
     residuals: r.csv
-    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 are terms
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term
     fit: 1 group, 11 rows, least df=9, worst resid SD=1.237
     warning: in group II the residuals still depend on x after the line is subtracted (t=-2219.2). A straight line is probably the wrong shape in that term; consider adding its square as a column.
     # response: y
@@ -284,7 +285,7 @@ this is plain least squares.
 of route. The terms are the same everywhere; what each term is worth is not:
 
     $ ./linearr -t example/routes.csv
-    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 are terms
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms
     fit: 3 groups, 18 rows, least df=3, worst resid SD=3.832e-07, worst cond=1.02 (normal equations)
     # response: minutes
     group,intercept,km,stops
@@ -329,7 +330,7 @@ you wanted. There is no way for the program to notice. What it can do is say
 what it took, which it does, first, on every fit:
 
     $ ./linearr -t example/simple-train.csv
-    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 are terms
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms
     fit: 2 groups, 13 rows, least df=3, worst resid SD=0, worst cond=1.03 (normal equations)
     # response: minutes
     group,intercept,km,stops
@@ -397,7 +398,7 @@ produces summary statistics that give no sign of the problem:
 
     $ ./linearr -t example/curve.csv --residuals r.csv
     residuals: r.csv
-    reading: column 1 is the group, 'value' is the value being predicted, and the other 1 are terms
+    reading: column 1 is the group, 'value' is the value being predicted, and the other 1 column is a term
     fit: 1 group, 13 rows, least df=11, worst resid SD=13.49
     warning: in group A the residuals still depend on x after the line is subtracted (t=9999.0). A straight line is probably the wrong shape in that term; consider adding its square as a column.
     # response: value
@@ -473,13 +474,27 @@ So the suite also fits datasets published with their answers. These are from the
 NIST Statistical Reference Datasets, computed to fifteen digits, a US Government
 work and not under copyright. Statisticians know them.
 
+**Norris** is the easy one, and it is here because a suite that only tests hard
+cases does not notice when something ordinary breaks. Thirty-six calibration
+points, one term:
+
+    $ ./linearr -t example/norris.csv
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term
+    fit: 1 group, 36 rows, least df=34, worst resid SD=0.8848
+    # response: y
+    group,intercept,x
+    A,-0.262323073774,1.00211681802
+
+The certified values are -0.262323073774029 and 1.00211681802045. Twelve digits
+agree, which is every digit printed.
+
 **Longley**, 1967: sixteen years of US macroeconomic series, employment against
 six predictors. Longley published it because the regression programs of the day
 returned as few as two correct digits on it, and it has been the standard hard
 case since.
 
     $ ./linearr -t example/longley.csv
-    reading: column 1 is the group, 'employment' is the value being predicted, and the other 6 are terms
+    reading: column 1 is the group, 'employment' is the value being predicted, and the other 6 columns are terms
     fit: 1 group, 16 rows, least df=9, worst resid SD=304.9, worst cond=934 (normal equations)
     # response: employment
     group,intercept,deflator,gnp,unemployed,armed_forces,population,year
@@ -498,14 +513,14 @@ columns. Every certified coefficient is 1 and the certified residual is exactly
 data to hide behind.
 
     $ ./linearr -t example/wampler1.csv
-    reading: column 1 is the group, 'y' is the value being predicted, and the other 5 are terms
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 5 columns are terms
     fit: 1 group, 21 rows, least df=15, worst resid SD=0.02282, worst cond=9.96e+04 (normal equations)
     # response: y
     group,intercept,x,x2,x3,x4,x5
     A,0.999999995576,0.999999996707,1.0000000034,0.999999999361,1.00000000004,0.999999999999
 
     $ ./linearr -t example/wampler1.csv --qr
-    reading: column 1 is the group, 'y' is the value being predicted, and the other 5 are terms
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 5 columns are terms
     fit: 1 group, 21 rows, least df=15, worst resid SD=6.663e-11, worst cond=234 (QR)
     # response: y
     group,intercept,x,x2,x3,x4,x5
@@ -528,7 +543,7 @@ alone.) With `--residuals` the pass that writes them also checks two things.
 
     $ ./linearr -t example/curve.csv --residuals r.csv
     residuals: r.csv
-    reading: column 1 is the group, 'value' is the value being predicted, and the other 1 are terms
+    reading: column 1 is the group, 'value' is the value being predicted, and the other 1 column is a term
     fit: 1 group, 13 rows, least df=11, worst resid SD=13.49
     warning: in group A the residuals still depend on x after the line is subtracted (t=9999.0). A straight line is probably the wrong shape in that term; consider adding its square as a column.
     # response: value
@@ -796,7 +811,7 @@ names the terms:
     B,34.0,7,3
 
     $ ./linearr -t example/simple-train.csv > model.csv
-    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 are terms
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms
     fit: 2 groups, 13 rows, least df=3, worst resid SD=0, worst cond=1.03 (normal equations)
 
     $ cat model.csv
@@ -814,6 +829,13 @@ Those three columns were the whole schema; it ships as
 `-t` fits **every group in the file**, one line each, in a single pass. Standard
 output is a complete coefficient file and standard error is the commentary, so
 the redirect above is the whole workflow.
+
+The rest of this section uses `example/coefficients.csv`, which is the 24-term
+model described under [The example data](#the-example-data-and-what-each-file-is-for):
+the shape of something that ran in production, rather than a book exercise. It
+is here because scoring is where width shows. Two terms can be typed; twenty-four
+is where naming them matters, where a trim table exists, and where `--terms` stops
+being a convenience.
 
 Ask what a model expects:
 
@@ -891,14 +913,45 @@ the answer rather than presentation: the trim point is built on the *rounded*
 prediction, because the published figure is what the next step is entitled to
 use.
 
-## The example data is synthetic
+## The example data, and what each file is for
 
-`example/coefficients.csv`, `example/trim_additions.csv` and the other files under
-`example/` are **made up**, generated so that fitting `example/train.csv`
-returns exactly the coefficients in `example/coefficients.csv`, which is what makes
-the fitter testable against a known answer. They are fitted to nothing and mean
-nothing. Point `-c` at your own table, or produce one with `-t`, before
-any number here is worth reading. No real data is distributed with this project.
+`example/` holds three kinds of file with three different purposes, and they are
+not interchangeable.
+
+**Published sets, with answers computed by somebody else.** These are the ones a
+statistician already knows, and their point is that you do not have to take this
+project's word for anything.
+
+| file | what it is | why it is here |
+| --- | --- | --- |
+| `anscombe.csv` | Anscombe's quartet, 1973 | four sets with identical summaries and nothing else in common. The standard demonstration that a fitted line and an R2 do not describe a dataset |
+| `norris.csv` | NIST StRD Norris | the easy certified case: one term, an almost exact fit. If this is wrong, something ordinary is broken |
+| `longley.csv` | NIST StRD Longley, 1967 | published because the regression programs of the day returned as few as two correct digits on it. The standard hard case |
+| `wampler1.csv` | NIST StRD Wampler1 | an exact quintic, so any departure from 1 is the solver's own error. This is the file that separates the two solvers |
+
+**One model that was actually deployed.** `coefficients.csv`, `trim_additions.csv`,
+`train.csv` and `cases.csv` are the 24-term shape of a length-of-stay model the
+author ran in production in 2011, with the terms kept and the data replaced.
+Its purpose is different from the sets above and it is not a substitute for
+them: it shows the program at a width and a shape that came from a real
+problem rather than from a book, including a trim table, twelve groups, and
+term names nobody would invent for an example. The numbers in it are
+**generated**, chosen so that fitting `train.csv` returns exactly the
+coefficients in `coefficients.csv`. They are fitted to nothing and mean nothing.
+
+**Files built to fail in one specific way**, each used by a teaching section:
+
+| file | the failure it shows |
+| --- | --- |
+| `together.csv` | two columns the data cannot tell apart |
+| `three-rows.csv` | a line with no residual degrees of freedom |
+| `nearly-the-same.csv` | a design whose trailing digits are noise, and what `--qr` does about it |
+| `curve.csv` | a parabola fitted with a straight line |
+| `simple-train.csv`, `routes.csv` | the smallest honest fit, and why groups exist |
+| `gaps.csv`, `semicolons.csv` | input the reader refuses, and what it says |
+
+No real data is distributed with this project. Point `-c` at your own table, or
+produce one with `-t`, before any number here is worth reading.
 
 ## Origin
 
