@@ -63,122 +63,27 @@ not](#where-this-is-the-right-tool-and-where-it-is-not).
 
 ## Fit and score
 
-Fit a model from your own data and score against it, with no configuration file
-anywhere. A training row is `group,value,<one column per term>`, and the header
-names the terms:
-
-    $ cat example/simple-train.csv
-    # example/simple-train.csv: nothing medical about it, minutes on the road as a
-    # function of distance and stops, two terms instead of twenty-four. The point of
-    # this file is that the program never had to change to fit it: the header names
-    # the terms, so this IS the whole schema.
-    #
-    #   MINUTES = 5 + 2.5*km + 1.5*stops
-    #
-    group,minutes,km,stops
-    A,5.0,0,0
-    A,30.0,10,0
-    A,9.5,0,3
-    A,34.5,10,3
-    A,19.0,5,1
-    A,58.0,20,2
-    A,18.5,3,4
-    B,12.0,0,0
-    B,22.0,4,0
-    B,18.0,0,4
-    B,28.0,4,4
-    B,20.0,2,2
-    B,34.0,7,3
+Two commands. Standard output is a complete coefficient file and standard
+error is the commentary, so the redirect is the whole workflow:
 
     $ ./linearr -t example/simple-train.csv > model.csv
     reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
     fit: 2 groups, 13 rows, worst R2=1.0000, worst resid SD<5.17e-07, least df=3, worst cond=1.03 (normal equations)
 
-    $ cat model.csv
-    # response: minutes
-    group,intercept,km,stops
-    A,5,2.5,1.5
-    B,12,2.5,1.5
-
-    $ ./linearr -c model.csv --no-trim A km=10 stops=3
+    $ ./linearr -c model.csv A km=10 stops=3
     A prediction=34.5000
 
-Those three columns were the whole schema; it ships as
-`example/simple-train.csv` if you want to run it as it stands.
+`-t` fits every group in one pass. `-c` names the model to score against and is
+required: there is no default table and no search for one, because which model
+produced a number is part of the number.
 
-`-t` fits **every group in the file**, one line each, in a single pass. Standard
-output is a complete coefficient file and standard error is the commentary, so
-the redirect above is the workflow.
+**Column 2 is the value being predicted**, unless `-y NAME` says otherwise.
+Nothing in the data can say which column you meant, so a file written in
+another order fits the wrong column and exits 0. The `reading:` line above says
+what was taken, and ends with the remedy when the column was not named.
 
-**Which column is the value.** Column 2 unless you say otherwise, and nothing
-in the data can say which column you meant. A file written as
-`site,dose,age,response` therefore fits `dose` from `age` and `response`, prints
-plausible coefficients and exits 0. Name the column instead, and the `reading:`
-line reports what it took. Asking `simple-train.csv` for the wrong thing on
-purpose, predicting stops from minutes and distance:
-
-    $ ./linearr -t example/simple-train.csv -y stops
-    reading: column 1 is the group, 'stops' is the value being predicted, and the other 2 columns are terms
-    fit: 2 groups, 13 rows, worst R2=1.0000, worst resid SD<5.346e-08, least df=3, worst cond=57.6 (normal equations)
-    # response: stops
-    group,intercept,minutes,km
-    A,-3.33333333333,0.666666666667,-1.66666666667
-    B,-8,0.666666666667,-1.66666666667
-
-Column 1 stays the group, the named column becomes the value, and every other
-column is a term in the order it appears. Without `-y` the `reading:` line ends
-with the remedy, so the mistake is visible on the first run rather than in the
-numbers.
-
-The rest of this section uses `example/coefficients.csv`, which is the 24-term
-model described under [The example data](#the-example-data-and-what-each-file-is-for):
-the shape of something that ran in production, rather than a book exercise. It
-is here because scoring is where width shows. Two terms can be typed; twenty-four
-is where naming them matters, where a trim table exists, and where `--terms` stops
-being a convenience.
-
-Ask what a model expects:
-
-    $ ./linearr --terms -c example/coefficients.csv
-    24 terms and 12 groups in example/coefficients.csv
-        1  Cardioversion
-        2  Cell_saver
-      ...
-       17  icu_indicator
-      ...
-
-Score by naming the terms that are not zero; everything else is 0:
-
-    $ ./linearr -c example/coefficients.csv --trim example/trim_additions.csv 001 Cardioversion=1 icu_indicator=1
-    001 prediction=19.9611 trim=46.5
-
-The same case as a row, every term in the table's column order. This is the form
-read from stdin, so a file of cases round trips through a pipeline:
-
-    $ ./linearr -c example/coefficients.csv --trim example/trim_additions.csv "001,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0"
-    001 prediction=19.9611 trim=46.5
-
-    $ ./linearr -c example/coefficients.csv --trim example/trim_additions.csv < example/cases.csv
-    001 prediction=19.9611 trim=46.5
-
-At two terms the row form is fine. At two hundred it is unusable, which is why
-the named form exists and is what the rest of this README uses.
-
-Files named with `-c`, `--trim` and `-t` are looked for in the current
-directory first, then beside the program, so an installed `linearr` finds the
-example data from anywhere and your own file still wins where you have one.
-
-**`-c` is required for scoring.** There is no default table and no search for
-one. Which model produced a number is part of the number, so it is named rather
-than found by convention: the same command in two directories cannot quietly
-answer from two different models.
-
-When something is wrong, the message says what:
-
-    $ ./linearr -c example/coefficients.csv --trim example/trim_additions.csv 001 nosuchterm=1
-    cannot score group '001': no term 'nosuchterm' in example/coefficients.csv; run --terms to list them
-
-`./linearr -h` prints the options; `-d` traces to stderr.
+Read next in [`doc/FORMATS.md`](doc/FORMATS.md): the case forms, `--terms`,
+where files are looked for, and what every error message means.
 
 ## Groups
 
@@ -219,61 +124,17 @@ default.
 How the printed numbers are rounded, and why the rounding is part of the answer
 rather than presentation: [`doc/FORMATS.md`](doc/FORMATS.md#rounding).
 
-## The example data, and what each file is for
+## The example data
 
-`example/` holds three kinds of file with three different purposes, and they are
-not interchangeable.
+Three kinds of file in `example/`, and they are not interchangeable. The
+published sets, whose answers somebody else computed: **Anscombe's quartet**,
+and **Norris**, **Longley** and **Wampler1** from the NIST reference datasets.
+One model that was actually deployed: the 24-term length-of-stay shape from
+2011, terms kept and numbers generated. And six built to fail in one specific
+way each, which the teaching sections use.
 
-**Published sets, with answers computed by somebody else.** These are the ones a
-statistician already knows, and their point is that you do not have to take this
-project's word for anything.
-
-| file | what it is | why it is here |
-| --- | --- | --- |
-| `anscombe.csv` | Anscombe's quartet, 1973 | four sets with identical summaries and nothing else in common. The standard demonstration that a fitted line and an R2 do not describe a dataset |
-| `norris.csv` | NIST StRD Norris | the easy certified case: one term, an almost exact fit. If this is wrong, something ordinary is broken |
-| `longley.csv` | NIST StRD Longley, 1967 | published because the regression programs of the day returned as few as two correct digits on it. The standard hard case |
-| `wampler1.csv` | NIST StRD Wampler1 | an exact quintic, so any departure from 1 is the solver's own error. This is the file that separates the two solvers |
-
-The worked example is hospital length of stay: a prediction per case-mix group,
-plus that group's *trim point*, the day count past which a stay stops being
-typical. That is the shape the data below has; the program has no idea what a
-hospital is.
-
-**One model that was actually deployed.** `coefficients.csv`, `trim_additions.csv`,
-`train.csv` and `cases.csv` are the 24-term shape of a length-of-stay model the
-author ran in production in 2011, with the terms kept and the data replaced.
-Its purpose is different from the sets above and it is not a substitute for
-them: it shows the program at a width and a shape that came from a real
-problem rather than from a book, including a trim table, twelve groups, and
-term names that came from the problem. The numbers in it are **generated**,
-chosen so that fitting `train.csv` returns exactly the coefficients in
-`coefficients.csv`.
-
-**Two plain examples**, which are the ones to start from. `simple-train.csv` is
-the smallest fit worth showing, minutes on the road against distance and stops.
-`routes.csv` is the same terms over three kinds of route, and is why groups
-exist.
-
-**Four that fit successfully and are wrong anyway.** These are not failing
-cases and they do not exit non-zero: each one produces a coefficient table, and
-the point of each is the warning printed beside it. They are the worked
-examples for the checks this program exists to run.
-
-| file | what the fit reports |
-| --- | --- |
-| `together.csv` | two columns the data cannot tell apart |
-| `three-rows.csv` | a line with no residual degrees of freedom |
-| `nearly-the-same.csv` | a design whose trailing digits are noise, and what `--qr` does about it |
-| `curve.csv` | a parabola fitted with a straight line |
-
-**Two the program refuses**, which are the only files here that exit non-zero.
-`gaps.csv` has an empty field and `semicolons.csv` is semicolon-separated; both
-exist so the [refusal messages](doc/FORMATS.md#what-it-will-not-read) can be shown rather than
-described.
-
-No real data is distributed with this project. Point `-c` at your own table, or
-produce one with `-t`, before any number here is worth reading.
+No real data is distributed with this project.
+[Details](doc/FORMATS.md#the-example-data-and-what-each-file-is-for).
 
 ## Where the model is wrong
 
@@ -416,59 +277,25 @@ and the machine they were taken on: [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md).
 
 ## Origin
 
-The model here is not a textbook exercise. The author, formally trained in
-physics and computer science, built a least-squares length-of-stay predictor
-for industry in 2011: it went into production, ran against real caseloads, and
-was read and maintained by other people. Releasing a C implementation of it as
-open source was the intention at the time, and there was never time for it. This
-is that implementation: written from scratch around the same arithmetic,
-generalised so the terms come from your file instead of being fixed in the
-source, and carrying none of the original data. The coefficients shipped here
-are synthetic, and real tables belong to whoever owns the data and produced the
-coefficients.
+The author, trained in physics and computer science, built a least-squares
+length-of-stay predictor for industry in 2011. It went into production and was
+maintained by other people. This is a C implementation of the same arithmetic,
+written from scratch, generalised so the terms come from your file, and
+carrying none of the original data.
 
-That background is why the numerics are written out rather than delegated, and
-why the places where least squares stops being trustworthy (a design the data
-cannot identify, a fit with no degrees of freedom left, the conditioning cost of
-normal equations) are stated in this README instead of left for a reader to
-discover.
+Two views behind it: computation belongs as close to the processor as the
+problem allows, and data of any size should be read as a stream, so its size
+stops being a design question.
 
-The problem itself has not changed in the interval: a table of coefficients, a
-stream of rows to apply them to, and often a machine on which installing a
-scientific stack is inconvenient or not permitted.
+**This does not replace Python, R, SAS or Matlab.** Those are where a model is
+explored, chosen and argued about. This is one method, small enough to read and
+checkable against published answers, for the places those cannot go.
 
-One type of the author's work in industry was this: taking models written by
-scientists in SAS, R and Matlab and turning them into C, or into plain Java
-without frameworks, so that they could run where the original could not. The
-view behind that work, and behind this program, is that computation belongs as
-close to the processor and to the memory it touches as the problem allows;
-distance from it costs time, energy and hardware that a straight line does not
-need.
+Read next in [`doc/ORIGIN.md`](doc/ORIGIN.md): what that work was, the same
+porting offered for other tools, what this will not do, and the 24-term model
+the example data is shaped from.
 
-The second view is about shape rather than language: data of any size should be
-read as a stream, so that its size stops being a design question, at the cost of
-one pass and one core and a second pass for anything needing a second look.
-
-That is a claim about implementation, not about tools. **This does not replace
-Python, R, SAS or Matlab, and is not trying to.** Those are where a model should
-be explored, chosen, tested and argued about, and they have decades of
-statistics behind them that this has not. What this offers is a small, checkable
-implementation of one method, useful in three places: as something to check an
-implementation against, since it reproduces the NIST certified values to eleven
-digits (see [Checked against answers somebody else
-certified](doc/NUMERICS.md#checked-against-answers-somebody-else-certified)); on embedded and
-small ARM targets where no interpreter is going to be installed; and in cloud
-batch work, where the memory a process holds is what it costs.
-
-The same work can be done for other tools. If you have a model or a numeric
-routine that runs in Python, R, SAS or Matlab and needs to run somewhere none
-of those can be installed, it can be ported to C the way this was: no
-dependencies, memory bounded by the model rather than the data, and the
-arithmetic checked against the original before anything is trusted. Open an
-issue on [this repository](https://github.com/Anode1/linearr/issues) to reach
-the author.
-
-### The limitations of that, stated
+## The limitations of that, stated
 
 One core and one stream: no threading, no sharding, no restart from a partial
 fit, and at 4.9 million rows a second the cost is reading text rather than the
@@ -557,7 +384,8 @@ The detail sits beside it, and nothing was dropped in the move:
 | document | what is in it |
 | --- | --- |
 | [`doc/NUMERICS.md`](doc/NUMERICS.md) | the three ways a fit misleads, worked through; Anscombe's quartet; what each solver does and where each loses digits; the certified figures term by term; what a long run costs in accuracy |
-| [`doc/FORMATS.md`](doc/FORMATS.md) | the three files, what a group is, every input the reader refuses and the message it gives, and how the printed numbers are rounded |
+| [`doc/FORMATS.md`](doc/FORMATS.md) | the three files, groups, fitting and scoring in full, every input refused and its message, the rounding, and what each example file is for |
+| [`doc/ORIGIN.md`](doc/ORIGIN.md) | where this came from, the same porting offered for other tools, what it will not do, and the original 24-term model |
 | [`doc/DIAGNOSTICS.md`](doc/DIAGNOSTICS.md) | what each residual check computes, its threshold, what to do about a warning, and where the checks are wrong |
 | [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md) | the full language comparison, the ten-million-row measurements, the extrapolation, and the machine they came from |
 | [`doc/INTERNALS.md`](doc/INTERNALS.md) | the source layout, the style rules, every `make` target and what each gate catches, the build ceilings and stack figures, Windows, and how to cut a release |
