@@ -1,15 +1,24 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
 - **Licence changed from GPL v2 to BSD 2-Clause.** The project is a reference
   implementation meant to be copied into other programs, and the GPL forbade
   exactly that for the embedded and commercial cases it is written for. Done
   before any announcement, with every copyright line held by one author and no
   third-party code in the tree.
-- QR solver (`--qr`), residual checks, `--residuals`, residual SD, per-group
-  fitting in one pass, `-c`, training from a pipe with `-t -`, a Windows
-  section, and the fixes from three reviews.
+- QR solver (`--qr`), solving without squaring the condition number. Ten correct
+  digits where the normal equations give five.
+- Residual checks: whether a term's relationship is curved, whether something
+  outside the model drives the response, and whether the error grows with the
+  prediction. Each names what it found.
+- `--residuals` writes one row per training row; residual SD is reported.
+- `-t` fits every group in one pass; `-t -` reads training data from a pipe.
+- Windows: WSL runs this unmodified, and the section says how.
+- Fixes from three reviews (statistics, a student, a beginner), including a QR
+  that deleted terms for their units, a curvature check that was invisible on
+  any variable with an origin, and a training file with no group column that
+  fitted garbage and exited 0.
 
 ## 0.1.0 (unreleased)
 

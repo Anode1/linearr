@@ -14,7 +14,7 @@
 
   <property name="build"       value="classes"/>
   <property name="jar"         value="lib/linearr.jar"/>
-  <property name="release_num" value="0.2.0"/>
+  <property name="release_num" value="0.3.0"/>
 
   <property name="javadoc.dir"         value="doc/javadoc"/>
   <property name="javadoc.header"      value="${ant.project.name}"/>
