@@ -643,6 +643,17 @@ to each other, which is why the summary names the solver, and no fixed
 relationship holds between them: on the example above they are 5.34e+10 and
 2.78e+06.
 
+**`--qr` is wrong on a rank-deficient design unless the dropped column is the
+last one.** Back-substitution leaves a residual on each dropped row, and those
+leftovers are not orthogonal to the columns that were kept, so the answer is
+not the least-squares solution of the reduced model. On twenty rows with a
+constant column listed before an ordinary one it returns an intercept of
+3.00755 where least squares gives 2.91, and the error does not shrink with more
+rows. The reconstructed residual is the true residual of that answer, so
+nothing in the output flags it. The remedy is column pivoting, which is what
+R's `lm()` does and this does not yet. Until then, on a design that reports
+`# pinned`, trust the default solver.
+
 `--qr` is not a strictly better solver. It does not centre the data, and two
 consequences follow. Its rank test needs a looser tolerance and still cannot
 separate a dependent column from an independent one once the columns sit near

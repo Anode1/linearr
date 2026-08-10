@@ -17,6 +17,11 @@
  * which are what the callers allocate. What it does not do is square anything, so the digits lost are the
  * design's own condition number rather than its square.
  *
+ * WHAT IT GETS WRONG. On a RANK-DEFICIENT design where the dropped column is
+ * not the last one, the coefficients returned are not the least-squares
+ * solution: see the measurement in qr_solve's back-substitution in qr.c. Use
+ * the normal equations there. Everything below concerns the full-rank case.
+ *
  * What it is NOT: a strictly better solver. It does not centre the data, and a
  * reviewer found that without column scaling its rank test deleted a
  * well-identified indicator for being measured in a small unit, which is the

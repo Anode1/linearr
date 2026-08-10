@@ -211,7 +211,34 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
      * A dropped row's equation is then NOT satisfied, and the amount by which
      * it is missed is collected here. Descending order is what makes this
      * possible in one pass: by the time row i is reached, every beta[j] for
-     * j > i is final. */
+     * j > i is final.
+     *
+     * KNOWN WRONG WHEN A DROPPED COLUMN IS NOT THE LAST ONE. Back-substitution
+     * forces a zero residual on every kept row and leaves v_i on each dropped
+     * row. For the result to be the least-squares solution of the reduced
+     * model, those leftovers must be orthogonal to the kept columns, that is
+     * sum over dropped i of v_i * R_ij = 0 for every kept j. They are not:
+     * when R_ii is a rounding-level residue, the rotation that produced it had
+     * c near 0 and s near 1 and moved the whole row, z_i and every R_ij for
+     * j > i, into row i.
+     *
+     * Twenty rows, a constant column listed BEFORE an ordinary one:
+     *
+     *     least squares   intercept 2.91      slope 2.004736842
+     *     this            intercept 3.00755   slope 1.99447
+     *
+     * The intercept is 3.4% out and it does not shrink with more rows: it is a
+     * bias, not rounding. The RSS reconstructed below is the true residual of
+     * that beta, so nothing here notices.
+     *
+     * The fix is column pivoting, so a dropped column is always last, which is
+     * what LINPACK's dqrdc2 and R's lm() do. Until then the normal equations
+     * are the ones to trust on a rank-deficient design: C is symmetric, so a
+     * column whose pivot falls below the tolerance also has a near-zero
+     * leftover row, and its pinned solution really is the reduced one.
+     *
+     * tests.c did not catch this because its rank-deficient case puts the
+     * redundant column last, where no j > i exists and the answer is exact. */
     for (i = p; i >= 0; i--) {
         double v = q->r[(size_t)i * (size_t)w + (size_t)(p + 1)];
         for (j = i + 1; j <= p; j++)

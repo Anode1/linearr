@@ -34,7 +34,8 @@
  * WHAT THE RESIDUAL SD COSTS. RSS is recovered here as Syy - beta'Sxy, which is
  * a subtraction of two numbers that agree to more and more places as the fit
  * gets better. The coefficients do not suffer; the residual SD does, in
- * proportion to 1/(1 - R^2). Measured, on one data set at six noise levels:
+ * proportion to 1/(1 - R^2). Measured, on one data set at four of six noise
+ * levels (tests.c prints all six):
  *
  *      1 - R^2      relative error in the reported residual SD
  *      2.5e-01                 8e-16
@@ -42,9 +43,24 @@
  *      3.3e-09                 2e-07
  *      3.3e-11                 8e-06
  *
- * At R^2 = 0.99999999997 the residual SD is good to six digits, not sixteen.
- * That is enough for every use it is put to here, and it is worth knowing
- * before quoting it to more places than that. qr.c does not pay this cost: it
+ * At R^2 = 0.99999999997 the residual SD is good to five digits, not sixteen.
+ *
+ * AND THAT TABLE IS THE MILD MECHANISM. It was measured on columns centred near
+ * the origin, and it is only the 1/(1 - R^2) part. A column with an OFFSET
+ * costs far more, because x[j] - mean[j] is itself a cancelling subtraction:
+ * an offset of 1e6 against a spread of 1 loses six digits per row, before any
+ * co-moment is formed. Two reviewers measured the same thing independently on
+ * an exact quadratic fitted with a line, 200 rows, moving x away from zero:
+ *
+ *     x near     reported      truth     --qr
+ *     1e4        0.3718        0.3745    0.3745
+ *     1e5        0             0.3745    0.3746
+ *     1e6        11.57         0.3745    0.3736
+ *
+ * A reported 0 is a claim of a perfect fit, cond= is 1.0 and therefore not
+ * even printed, and the residual file written by the same run says 0.3745.
+ * This is NOT FIXED; see the note in regress.c. On a response whose spread is
+ * small beside its magnitude, use --qr. qr.c does not pay this cost: it
  * carries the residual through the rotation rather than subtracting for it.
  * tests.c holds the measurement as a test, so the property cannot drift
  * unnoticed in either direction.
