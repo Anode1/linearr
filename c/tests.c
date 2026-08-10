@@ -1126,6 +1126,33 @@ static void test_diag_offsets(void) {
  * were three different numbers in three files, none of them counting more than
  * the fitter, so this checks the arithmetic rather than the prose: the growth
  * per term must match what the three sizing functions actually return. */
+/* The progress line on a long run. The decision is split out of the printing
+ * so it can be tested without waiting a minute for one. */
+static void test_progress(void) {
+    const long M = 1048576;                  /* the clock is read this often */
+
+    CHECK(process_progress_due(M, 120, 120) == 1,
+          "progress: a long run past the interval prints");
+    CHECK(process_progress_due(M + 1, 120, 120) == 0,
+          "progress: and only on a row where the clock is read");
+    CHECK(process_progress_due(M, 59, 59) == 0,
+          "progress: nothing in the first minute, so a short run stays silent");
+    CHECK(process_progress_due(M, 3600, 30) == 0,
+          "progress: and not again until the interval has passed");
+    CHECK(process_progress_due(M, 60, 60) == 1,
+          "progress: the first line is due exactly at the bound");
+    CHECK(process_progress_due(0, 3600, 3600) == 1,
+          "progress: row 0 is a clock row, which is where a run begins");
+    {   /* A fit of a million rows takes well under a second, so no ordinary
+         * run can print anything. This is the property that keeps the line out
+         * of every test and transcript in the project. */
+        long r, printed = 0;
+        for (r = 0; r < 4L * M; r++)
+            if (process_progress_due(r, 0, 0)) printed++;
+        CHECK(printed == 0, "progress: a run that takes no time prints nothing");
+    }
+}
+
 static void test_footprint(void) {
     size_t two   = process_group_bytes(2);
     size_t three = process_group_bytes(3);
@@ -1438,6 +1465,7 @@ int main(int argc, char **argv) {
     test_diag();
     test_diag_probe_isolation();
     test_diag_offsets();
+    test_progress();
     test_footprint();
     test_canonical();
     test_fit_quality_cost();

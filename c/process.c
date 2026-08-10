@@ -19,6 +19,8 @@
 #include "common.h"
 #include "constants.h"
 
+#include <time.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -170,14 +172,60 @@ static int fail(const char *fmt, ...) {
 
 const char *process_error(void) { return err_buf; }
 
-/* The two roundings, set by --scale and --trim-scale. They were keys in a
- * system.properties file, which is a second way of saying what an option
- * already says, in a file that has to be found before it can be read, in a
- * directory called conf that held no configuration and two data files. Options
- * are the whole interface now.
+/* Progress on a long run.
  *
- * A scale outside 0..9 is rejected by the option parser rather than falling
- * back to the default, which the properties file used to do without a word. */
+ * A fit over a billion rows takes minutes and a fit over a trillion takes
+ * days, and until it finishes the program says nothing at all. A run that is
+ * working and a run that is wedged look identical, which is the wrong thing
+ * for a program whose whole argument is that the row count is not a limit.
+ *
+ * The first line appears only after a minute, so nothing that finishes quickly
+ * ever prints one, and then once a minute after that. The clock is read once
+ * per million rows rather than once per row: time() is a syscall on some
+ * systems and the row path is where the time goes.
+ *
+ * To stderr, which is where this program's commentary already goes, so stdout
+ * stays a coefficient file. */
+#define PROGRESS_AFTER  60      /* seconds of silence before the first line */
+#define PROGRESS_EVERY  60      /* seconds between lines after that        */
+#define PROGRESS_MASK   0xFFFFFL/* check the clock every 1,048,576 rows    */
+
+int process_progress_due(long rows, long elapsed, long since_last) {
+    if ((rows & PROGRESS_MASK) != 0) return 0;
+    if (elapsed < PROGRESS_AFTER) return 0;
+    return since_last >= PROGRESS_EVERY;
+}
+
+static time_t prog_start, prog_last;
+
+static void progress_begin(void) { prog_start = prog_last = time(NULL); }
+
+/* "1h 4m 12s", "4m 12s", "12s": the parts that are not zero. */
+static void progress_elapsed(char *out, size_t outsz, long sec) {
+    long h = sec / 3600, m = (sec % 3600) / 60, t = sec % 60;
+    if (h)      (void)snprintf(out, outsz, "%ldh %ldm %lds", h, m, t);
+    else if (m) (void)snprintf(out, outsz, "%ldm %lds", m, t);
+    else        (void)snprintf(out, outsz, "%lds", t);
+}
+
+static void progress_row(long rows, const char *what) {
+    char   ela[32];
+    time_t now;
+    long   elapsed;
+
+    if ((rows & PROGRESS_MASK) != 0) return;      /* cheap test comes first */
+    now     = time(NULL);
+    elapsed = (long)(now - prog_start);
+    if (!process_progress_due(rows, elapsed, (long)(now - prog_last))) return;
+    prog_last = now;
+    progress_elapsed(ela, sizeof ela, elapsed);
+    (void)fprintf(stderr, "%s: %ld rows in %s, %.2fM rows/s\n", what, rows, ela,
+                  elapsed > 0 ? (double)rows / (double)elapsed / 1e6 : 0.0);
+}
+
+/* The two roundings, set by --scale and --trim-scale. A scale outside 0 to 9 is
+ * rejected here rather than falling back to the default, so what the caller
+ * asked for and what the program does cannot differ silently. */
 static int predict_scale = DEFAULT_PREDICT_SCALE;
 static int trim_scale    = DEFAULT_TRIM_SCALE;
 
@@ -223,11 +271,10 @@ static int ensure_tables(void) {
     if (los_load(path) != 0) return fail("%s", los_error());
     (void)snprintf(coef_path, sizeof coef_path, "%s", path);
 
-    /* The trim table is optional, and now in only two ways rather than three:
-     * named with --trim and unreadable is a failure the user asked for and must
-     * hear about; not named at all means there is none, and the trim point is
-     * the prediction. The third way was "named in system.properties", which is
-     * gone with the file. */
+    /* The trim table is optional in two ways, and they are different: named
+     * with --trim and unreadable is a failure the user asked for and must hear
+     * about; not named at all means there is none, and the trim point is the
+     * prediction. */
     trim = trim_override_set ? trim_override : NULL;
     if (!trim || trim[0] == '\0') {
         debug("process: no --trim; the trim point is the prediction");
@@ -457,6 +504,7 @@ int process_train(const char *csv_path, const char *group,
 
     if (open_training(csv_path, &fp, &nvars) != 0) goto cleanup;
 
+    progress_begin();
     if (fitter_init(&r, nvars, fit_store) != 0) {
         fail("%s has %d terms, more than the fitter's %d", csv_path, nvars,
              REGRESS_MAX_VARS);
@@ -478,6 +526,7 @@ int process_train(const char *csv_path, const char *group,
             goto cleanup;
         }
         rows++;
+        progress_row(rows, "fitting");
     }
     if (n < 0) { fail("%s has a line longer than %d bytes", csv_path, CSV_LINE_MAX); goto cleanup; }
 
@@ -606,6 +655,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
 
     if (open_training(csv_path, &fp, &nvars) != 0) goto cleanup;
 
+    progress_begin();
     need  = fitter_storage(nvars);
     index = hash_create(1024);
 
@@ -658,6 +708,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             goto cleanup;
         }
         rows++;
+        progress_row(rows, "fitting");
     }
     if (n < 0) {
         fail("%s has a line that is over-long or holds a NUL byte", csv_path);
@@ -734,6 +785,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
     if (resid) {
         FILE *again;
         char  path[RESOLVE_PATH_MAX];
+        long  resid_rows = 0;
         int   k;
 
         if (resolve_file(csv_path, path, sizeof path) != 0 ||
@@ -747,6 +799,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             diag_scale(&g->d, g->sigma,
                        (g->ny > 1) ? sqrt(g->ym2 / (double)(g->ny - 1)) : -1.0);
         fprintf(resid, "group,observed,predicted,residual\n");
+        progress_begin();                 /* the second pass is its own run */
         while ((n = csv_next(again, line, sizeof line)) == 2)
             ;                                    /* skip to past the header */
         while ((n = csv_next(again, line, sizeof line)) > 0) {
@@ -759,6 +812,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             for (k = 0; k < nvars; k++) yhat += g->beta[k + 1] * c.x[k];
             fprintf(resid, "%s,%.12g,%.12g,%.12g\n", c.group, los, yhat, los - yhat);
             diag_add(&g->d, c.x, los - yhat, yhat);
+            progress_row(++resid_rows, "residuals");
         }
         fclose(again);
 

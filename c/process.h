@@ -103,6 +103,11 @@ struct fit_info {
 int process_set_scale(int decimals);
 int process_set_trim_scale(int decimals);
 
+/* Is a progress line due? Split out so it can be tested without waiting a
+ * minute for one. rows is the count so far, elapsed the seconds since the run
+ * began, since_last the seconds since the previous line. */
+int process_progress_due(long rows, long elapsed, long since_last);
+
 size_t process_group_bytes(int nvars);
 
 /* Bytes held for one group of a LOADED coefficient table, which is the scoring

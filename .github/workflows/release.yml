@@ -7,10 +7,15 @@
 # `nightly` will not start a release. Run it by hand from the Actions tab
 # (workflow_dispatch) to exercise the build matrix without publishing.
 #
-# Windows is built and TESTED on a Windows runner rather than cross-compiled
-# from Linux. The cross-compile works and produces a clean binary, but nothing
-# on the build machine can run it, and shipping a binary nobody has executed is
-# how "it links" gets read as "it works".
+# Windows is built on a Windows runner rather than cross-compiled from Linux.
+# The cross-compile works and produces a clean PE32+ binary, but nothing on a
+# Linux builder can run it, and shipping a binary nobody has executed is how
+# "it links" gets read as "it works".
+#
+# NOT YET RUN. Only the Linux path of this file has been executed, by hand, one
+# step at a time. The macOS, arm64 and Windows paths are untested until the
+# first tag. If one of them fails, fail-fast is off so the others still upload,
+# and the failing job's log is the whole diagnosis.
 name: release
 
 on:

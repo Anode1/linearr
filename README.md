@@ -855,6 +855,15 @@ The R column stops at about 200 million rows on a machine with 64 GB, and the
 number is memory rather than time: at 318 bytes a row the frame is what runs
 out, not the clock. The two streaming columns only get slower.
 
+**A long run says where it has got to.** After the first minute, and once a
+minute after that, a line goes to stderr:
+
+    fitting: 314572800 rows in 1m 4s, 4.91M rows/s
+
+Nothing that finishes inside a minute prints one, so an ordinary fit is as
+quiet as it was. `--residuals` reads the file a second time and reports that
+pass separately, since it is a second run over the same rows.
+
 **What a long run costs in accuracy.** The cross-products accumulate over the
 whole stream, so their last digits decay even though the means are updated
 stably. Measured against the same accumulation carried in long double:
@@ -1220,10 +1229,17 @@ UndefinedBehaviorSanitizer on both). BSD should work and is untested.
 
 **Binaries.** Tagging `v*` builds linux-x86_64, linux-arm64, macos-arm64 and
 windows-x86_64 and attaches each to the GitHub release with a SHA-256
-(`.github/workflows/release.yml`). Every one is built, unit-tested and made to
-fit Longley on its own platform before it is uploaded; the Windows build runs
-on a Windows runner rather than being cross-compiled, so no binary is published
-that nobody has executed. `sh scripts/dist.sh` makes the same bundle locally.
+(`.github/workflows/release.yml`). Each one is built, unit-tested and made to
+fit Longley on its own runner before it is uploaded. `sh scripts/dist.sh` makes
+the same bundle locally.
+
+**Only the Linux build has been run by the author.** The workflow's Linux path
+was executed step by step; the macOS, arm64 and Windows paths have not run yet
+and are untested until the first release. The Windows binary in particular:
+`x86_64-w64-mingw32-gcc` compiles every source with no warnings, but a
+cross-compiled binary cannot be executed on the machine that built it, which is
+why the workflow builds Windows on a Windows runner instead. Treat the first
+tagged release as the test.
 
     make install                       # /usr/local
     make install PREFIX=$HOME/.local   # somewhere you own

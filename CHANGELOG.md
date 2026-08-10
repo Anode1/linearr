@@ -2,10 +2,8 @@
 
 ## 0.3.0
 
-- **Licence changed from GPL v2 to BSD 2-Clause.** The project is a reference
-  implementation meant to be copied into other programs, and the GPL forbade
-  exactly that for the embedded and commercial cases it is written for. Done
-  before any announcement, with every copyright line held by one author and no
+- **Licence changed from GPL v2 to BSD 2-Clause.** Done before any
+  announcement, with every copyright line held by one author and no
   third-party code in the tree.
 - QR solver (`--qr`), solving without squaring the condition number. Ten correct
   digits where the normal equations give five.
