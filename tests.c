@@ -591,7 +591,7 @@ static void test_diag(void) {
     }
     diag_result(&d, &r);
     CHECK(r.curved_term == 0, "diag: names the term whose shape is wrong");
-    CHECK(r.curved_r > 0.9, "diag: and the correlation is strong");
+    CHECK(fabs(r.curved_t) > 5.0, "diag: and the evidence is strong");
 
     /* An error that grows with the prediction. */
     diag_init(&d, 1, dstore);
@@ -600,7 +600,7 @@ static void test_diag(void) {
         diag_add(&d, x, ((i % 2) ? 1.0 : -1.0) * (double)i, (double)i * 2.0);
     }
     diag_result(&d, &r);
-    CHECK(r.spread_r > 0.9, "diag: sees the error growing with the prediction");
+    CHECK(fabs(r.spread_t) > 3.5, "diag: sees the error growing with the prediction");
 
     /* A correct model with ordinary noise must stay silent, or the check is
      * worthless: a warning that always fires is not a warning. */
@@ -611,7 +611,45 @@ static void test_diag(void) {
     }
     diag_result(&d, &r);
     CHECK(r.curved_term == -1, "diag: quiet on an unstructured residual");
-    CHECK(r.spread_r == 0.0, "diag: and quiet about its spread");
+    CHECK(r.spread_t == 0.0, "diag: and quiet about its spread");
+
+    /* THE LOCATION TEST. The same quadratic with x moved away from zero. The
+     * first version correlated against RAW x^2, and since the residual is
+     * already orthogonal to x, the signal fell from 0.20 to 0.0001 as the
+     * offset grew: invisible on any variable with an origin, which is most of
+     * them. Partialling x^2 on [1, x] makes it invariant. */
+    {
+        int k;
+        double first = 0.0;
+        for (k = 0; k < 4; k++) {
+            double off = (k == 0) ? 0.0 : (k == 1) ? 1.0 : (k == 2) ? 10.0 : 1000.0;
+            diag_init(&d, 1, dstore);
+            for (i = -60; i <= 60; i++) {
+                double xx = off + i * 0.05;
+                double c = (xx - off) * (xx - off);
+                x[0] = xx;
+                diag_add(&d, x, c - 3.0, 24.0);      /* residual is the curve */
+            }
+            diag_result(&d, &r);
+            CHECK(r.curved_term == 0, "diag location: the curve is seen at every offset");
+            if (k == 0) first = fabs(r.curved_t);
+            else CHECK(fabs(fabs(r.curved_t) - first) < 0.01 * first,
+                       "diag location: and with the same strength");
+        }
+    }
+
+    /* A cubic is odd in x, and the square probe is even, so it cannot see one.
+     * The cube probe can. */
+    {
+        diag_init(&d, 1, dstore);
+        for (i = -60; i <= 60; i++) {
+            x[0] = i * 0.05;
+            diag_add(&d, x, x[0] * x[0] * x[0], 5.0);
+        }
+        diag_result(&d, &r);
+        CHECK(r.curved_term == 0, "diag: a cubic departure is seen");
+        CHECK(r.curved_pow == 3, "diag: and it is named as a cube, not a square");
+    }
 
     /* Too few rows to say anything. */
     diag_init(&d, 1, dstore);

@@ -124,16 +124,23 @@ static int train_all(const char *path, const char *resid_file) {
                         "freedom; its line passes through every row by "
                         "construction. Fit those groups on more rows.\n");
     if (sum.curved_term >= 0)
-        (void)fprintf(stderr, "warning: the residuals correlate with %s squared "
-                      "(r=%.2f). A straight line is probably the wrong shape in "
-                      "that term; look at the residual file, and consider adding "
-                      "its square as a column.\n",
-                      process_term_name(sum.curved_term), sum.curved_r);
-    if (sum.spread_r != 0.0)
+        (void)fprintf(stderr, "warning: in group %s the residuals still depend on "
+                      "%s after the line is subtracted (t=%.1f). A straight line "
+                      "is probably the wrong shape in that term; consider adding "
+                      "%s as a column.\n",
+                      sum.worst_group, process_term_name(sum.curved_term),
+                      sum.curved_t, sum.curved_pow == 3 ? "its cube" : "its square");
+    if (sum.fitted_t != 0.0 && sum.curved_term < 0)
+        (void)fprintf(stderr, "warning: the residuals still depend on the "
+                      "prediction itself (t=%.1f), so something the model does "
+                      "not contain is driving the response: a missing term, an "
+                      "interaction between two of them, or a curve.\n",
+                      sum.fitted_t);
+    if (sum.spread_t != 0.0)
         (void)fprintf(stderr, "warning: the size of the residual moves with the "
-                      "prediction (r=%.2f), so the error is not the same "
-                      "everywhere. The residual SD above is not a typical error "
-                      "for either end of the range.\n", sum.spread_r);
+                      "prediction (t=%.1f), so the error is not the same "
+                      "everywhere and the residual SD above is not a typical "
+                      "error at either end of the range.\n", sum.spread_t);
     if (sum.max_condition > 1e8)
         (void)fprintf(stderr, "warning: at least one group is ill-conditioned "
                         "(cond=%.3g); the trailing digits of its coefficients "

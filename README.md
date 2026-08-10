@@ -630,11 +630,48 @@ medical-device standard (NASA Power of Ten, MISRA C:2012 rule 21.3), is written
 up in [ais](https://github.com/Anode1/ais), in
 [`doc/dev/STYLE.md`](https://github.com/Anode1/ais/blob/main/doc/dev/STYLE.md).
 
+## Windows
+
+The program is C99 plus a few POSIX functions. There are two routes, and the
+first is the one to take.
+
+**WSL, Microsoft's built-in Linux.** Nothing here is modified for it: it is the
+same build this README describes, because WSL is Linux.
+
+    1. Open PowerShell as Administrator and run:  wsl --install
+    2. Restart, then choose a username and password when Ubuntu starts.
+    3. In the Ubuntu window:
+         sudo apt update && sudo apt install -y build-essential git
+    4. git clone https://github.com/Anode1/linearr && cd linearr && make
+    5. ./linearr -t example/routes.csv
+
+Your Windows files are visible from inside WSL under `/mnt/c`, so a spreadsheet
+at `C:\Users\you\data.csv` is `/mnt/c/Users/you/data.csv`. WSL needs
+administrator rights to install, which some managed machines do not give.
+
+**MSYS2 or Cygwin**, if WSL is not available: install either, add their `gcc`
+and `make` packages, and run `make` in their terminal. Both produce a program
+that needs their DLL beside it. MSYS2's MINGW64 shell produces a standalone
+`.exe`; that build is compiled and linked here but has not been run, so treat it
+as untested rather than supported.
+
+There is no Visual Studio build. `getopt_long` would have to be bundled and the
+`Makefile` replaced, and `tests/cli.sh` cannot run without a shell, so a build
+that skipped it would ship with the black-box tests unrun.
+
+**Saving CSV from Excel.** Choose plain "CSV", not "CSV UTF-8": the UTF-8 form
+begins with three invisible bytes. They are skipped now, but older exports of
+your own files may already carry them elsewhere. If your Excel writes semicolons
+rather than commas, which it does wherever the comma is the decimal mark, save
+as comma-separated; this program reads commas only, and says so if it finds
+semicolons. Line endings are not a problem: CRLF files are read correctly.
+
 ## Platforms, and reporting a bug
 
 Built and tested on Linux and macOS on every push (`.github/workflows/sanitizers.yml`
 runs the suite plus AddressSanitizer and UndefinedBehaviorSanitizer on both).
-BSD should work and is untested. There is no Windows build.
+BSD should work and is untested. For Windows see [Windows](#windows): WSL runs
+this unmodified, and a native `.exe` links but has not been run.
 
     make install                       # /usr/local
     make install PREFIX=$HOME/.local   # somewhere you own

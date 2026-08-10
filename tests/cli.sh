@@ -451,7 +451,7 @@ check "both solvers agree where conditioning does not matter" \
 
 # --- the residual check names the term whose shape is wrong -----------------
 case "$("$bin" -t example/curve.csv --residuals "$tmp/c.csv" 2>&1 >/dev/null)" in
-    *"correlate with x squared"*) ok ;;
+    *"residuals still depend on x"*) ok ;;
     *) no "a parabola fitted with a line is reported" ;;
 esac
 # a correct model must not be warned about, or the warning means nothing

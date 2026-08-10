@@ -510,8 +510,9 @@ struct group_fit {
     struct group_fit *next;
     char   group[GROUP_MAX];
     struct fitter r;
-    double *beta;                   /* points into storage, after the fitter's */
-    double storage[1];              /* regress_storage(nvars) + nvars + 1      */
+    struct diag   d;                /* its own, so groups are not pooled       */
+    double *beta;
+    double storage[1];              /* fitter + (nvars+1) beta + diag          */
 };
 
 static void group_fits_free(struct group_fit *head) {
@@ -542,7 +543,8 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
     if (sum) {
         sum->groups = 0; sum->rows = 0; sum->min_df = 0;
         sum->max_condition = 1.0; sum->pinned = 0; sum->max_sigma = -1.0;
-        sum->curved_term = -1; sum->curved_r = 0.0; sum->spread_r = 0.0;
+        sum->curved_term = -1; sum->curved_t = 0.0; sum->curved_pow = 0;
+        sum->fitted_t = 0.0; sum->spread_t = 0.0; sum->worst_group[0] = '\0';
     }
 
     if (open_training(csv_path, &fp, &nvars) != 0) goto cleanup;
@@ -563,9 +565,11 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
         }
         g = hash_get(index, c.group);
         if (!g) {
-            g = xmalloc(sizeof *g + (need + (size_t)nvars) * sizeof(double));
+            g = xmalloc(sizeof *g +
+                        (need + (size_t)nvars + diag_storage(nvars)) * sizeof(double));
             g->next = NULL;
             g->beta = g->storage + need;     /* nvars+1 doubles, after the fitter */
+            (void)diag_init(&g->d, nvars, g->beta + nvars + 1);
             memcpy(g->group, c.group, sizeof g->group);
             if (fitter_init(&g->r, nvars, g->storage) != 0) {
                 free(g);
@@ -659,8 +663,6 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
     if (resid) {
         FILE *again;
         char  path[RESOLVE_PATH_MAX];
-        static double diag_store[REGRESS_MAX_VARS * 3 + 8];
-        struct diag   d;
         int   k;
 
         if (resolve_file(csv_path, path, sizeof path) != 0 ||
@@ -668,10 +670,10 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
             fail("cannot re-read %s for the residuals", csv_path);
             goto cleanup;
         }
-        (void)diag_init(&d, nvars, diag_store);
         /* The response's own spread, so a residual of rounding error can be
-         * told from a residual with structure in it. */
-        diag_scale(&d, sum ? sum->max_sigma : -1.0, response_sd);
+         * told from one with structure in it. */
+        for (g = head; g; g = g->next)
+            diag_scale(&g->d, sum ? sum->max_sigma : -1.0, response_sd);
         fprintf(resid, "group,observed,predicted,residual\n");
         while ((n = csv_next(again, line, sizeof line)) == 2)
             ;                                    /* skip to past the header */
@@ -684,7 +686,7 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
             yhat = g->beta[0];
             for (k = 0; k < nvars; k++) yhat += g->beta[k + 1] * c.x[k];
             fprintf(resid, "%s,%.12g,%.12g,%.12g\n", c.group, los, yhat, los - yhat);
-            diag_add(&d, c.x, los - yhat, yhat);
+            diag_add(&g->d, c.x, los - yhat, yhat);
         }
         fclose(again);
 
@@ -692,11 +694,18 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
          * the summary is an average over them, and an average cannot see a
          * pattern. */
         if (sum) {
-            struct diag_result dr;
-            diag_result(&d, &dr);
-            sum->curved_term = dr.curved_term;
-            sum->curved_r    = dr.curved_r;
-            sum->spread_r    = dr.spread_r;
+            for (g = head; g; g = g->next) {
+                struct diag_result dr;
+                diag_result(&g->d, &dr);
+                if (dr.curved_term >= 0 && fabs(dr.curved_t) > fabs(sum->curved_t)) {
+                    sum->curved_term = dr.curved_term;
+                    sum->curved_t    = dr.curved_t;
+                    sum->curved_pow  = dr.curved_pow;
+                    memcpy(sum->worst_group, g->group, sizeof sum->worst_group);
+                }
+                if (fabs(dr.fitted_t) > fabs(sum->fitted_t)) sum->fitted_t = dr.fitted_t;
+                if (fabs(dr.spread_t) > fabs(sum->spread_t)) sum->spread_t = dr.spread_t;
+            }
         }
     }
     rc = 0;

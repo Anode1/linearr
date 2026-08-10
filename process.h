@@ -7,6 +7,7 @@
 
 #include <stddef.h>
 #include <stdio.h>
+#include "constants.h"
 
 /* scoring
  *
@@ -114,11 +115,17 @@ struct fit_summary {
     long   min_df;      /* the least residual freedom any group had       */
     double max_sigma;   /* the worst group's residual standard deviation  */
     double max_condition;  /* the worst-conditioned group                 */
-    /* From the residual pass, when one was made (see process_train_residuals).
-     * curved_term is an index into the schema, or -1. */
+    /* From the residual pass, when one was made. Each group is examined on its
+     * own and the strongest finding is reported with the group it came from:
+     * pooling them meant three groups that were each individually correct, with
+     * different scales, produced a warning about a file where nothing was
+     * wrong. curved_term is an index into the schema, or -1. */
     int    curved_term;
-    double curved_r;
-    double spread_r;
+    double curved_t;
+    int    curved_pow;   /* 2 or 3 */
+    double fitted_t;
+    double spread_t;
+    char   worst_group[GROUP_MAX];
     int    pinned;      /* total terms pinned across all groups           */
 };
 int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum);
