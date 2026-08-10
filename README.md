@@ -291,23 +291,14 @@ stops being a design question.
 explored, chosen and argued about. This is one method, small enough to read and
 checkable against published answers, for the places those cannot go.
 
+One core, one stream, no restart from a partial fit, and at 4.9 million rows a
+second the cost is reading text rather than the arithmetic.
+
 Read next in [`doc/ORIGIN.md`](doc/ORIGIN.md): what that work was, the same
-porting offered for other tools, what this will not do, and the 24-term model
+porting offered for other tools, the limitations in full, and the 24-term model
 the example data is shaped from.
 
-## The limitations of that, stated
-
-One core and one stream: no threading, no sharding, no restart from a partial
-fit, and at 4.9 million rows a second the cost is reading text rather than the
-arithmetic, so a second core would buy more than a faster solver.
-`--residuals` reads the file a second time and needs a real file rather than a
-pipe.
-
-What it costs in memory is in [Scale](#scale), and what it does not do at all
-is in [Where this is the right tool](#where-this-is-the-right-tool-and-where-it-is-not)
-and [What it will not read](doc/FORMATS.md#what-it-will-not-read).
-
-### The original term set
+## The original term set
 
 The 24 terms in `example/coefficients.csv` are the production model's, and they are
 a subset of it. The original carried **35**, over 579 groups (the scale check

@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.4.1
+
+Three CI failures in the 0.4.0 release, and the documentation split.
+
+- **The release workflow could not build.** It passed `CC=gcc` to `make` but
+  not to `make ut`, so the compile flags differed between steps and the flags
+  stamp deleted the binary; the smoke test after it died with "No such file or
+  directory". Every platform failed.
+- **macOS failed a Wampler1 assertion** at 1e-7. Not a defect: that file is
+  where the normal equations run out of digits, and how far over the edge they
+  fall depends on fused multiply-add and summation order. The bound is 1e-4,
+  and the property worth asserting, that QR beats it by orders of magnitude,
+  was already checked separately.
+- **The README held a transcript that could only pass where R was installed.**
+  `readme-check.py` now treats a gate that skipped itself as skipped rather
+  than stale, and covers `doc/*.md` as well, so moving a transcript out of the
+  README does not move it out of the gate.
+- **`--stats -` opened a file named `-`** instead of writing to stdout. One of
+  those files had been committed.
+- **The summary line differed between two code paths** for the same fit: `-g II`
+  and `-g II --residuals` printed different figures and different vocabulary.
+  One line now, and multi-group gains `worst R2`.
+- **The version comes from the git tag**, written to a generated `c/version.h`
+  only when it changes. It was in the compile flags, so any edit rebuilt
+  everything, and a rebuild landing inside `make check` made the R gate report
+  1 comparison instead of 11 and still exit 0.
+- **The README is 405 lines, from 1257.** Nothing was dropped: the detail is in
+  `doc/NUMERICS.md`, `doc/FORMATS.md`, `doc/DIAGNOSTICS.md`,
+  `doc/BENCHMARKS.md`, `doc/ORIGIN.md` and `doc/INTERNALS.md`, each linked from
+  the summary that replaced it.
+
 ## 0.4.0
 
 Two solvers returned wrong answers on inputs nobody had tested. Both are fixed,
