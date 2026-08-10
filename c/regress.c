@@ -16,10 +16,6 @@
  * in the wrong unit. */
 #define RANK_EPS 1e-12
 
-/* Past this, the coefficients' trailing digits are noise. Normal equations
- * square the condition number of the design, so a reported 1e8 here is roughly
- * cond(X) = 1e4 and about half the mantissa is gone. */
-#define CONDITION_WARN 1e8
 
 /* Both matrices here are row-major in a flat array the caller owns, so every
  * access used to spell out (size_t)i * (size_t)stride + (size_t)j at the point

@@ -208,9 +208,10 @@ static int train_all(const char *path, const char *only,
                       sum.curved_t, sum.curved_pow == 3 ? "its cube" : "its square");
     if (sum.fitted_t != 0.0 && sum.curved_term < 0)
         (void)fprintf(stderr, "warning: the residuals still depend on the "
-                      "prediction itself (t=%.1f), so something the model does "
-                      "not contain is driving the response: a missing term, an "
-                      "interaction between two of them, or a curve.\n",
+                      "prediction itself (t=%.1f), so the model has the wrong "
+                      "SHAPE: an interaction between two terms, or a curve "
+                      "that no single term shows. (Not a missing column: one "
+                      "of those leaves a residual this cannot see.)\n",
                       sum.fitted_t);
     if (sum.spread_t != 0.0)
         (void)fprintf(stderr, "warning: the size of the residual moves with the "
@@ -245,7 +246,8 @@ static int train(const char *path, const char *group) {
                 info.pinned, s_(info.pinned));
     (void)fprintf(stderr, ", df=%lld", info.df);
     if (info.condition > 1.0)
-        fprintf(stderr, ", cond=%.3g (%s)", info.condition, process_solver());
+        fprintf(stderr, ", cond=%.3g (%s%s)", info.condition, process_solver(),
+                info.pinned > 0 ? ", over the terms kept" : "");
     (void)fprintf(stderr, "\n");
     /* R2 cannot see this failure: an ill-conditioned design fits its own sample
      * beautifully and predicts nothing. Normal equations square the condition

@@ -32,8 +32,11 @@
  * measurement is). The summary is that the two solvers are different
  * trade-offs and not an upgrade path.
  *
- * The algorithm is Gentleman's 1974 row-wise updating QR (AS 75 / AS 274), the
- * same method R's biglm has used for two decades. Nothing here is new; the
+ * The algorithm is row-wise updating QR by Givens rotations, the family
+ * Gentleman described in 1974 and the same shape R's biglm has used for two
+ * decades. Not AS 75 or AS 274 themselves: those are the SQUARE-ROOT-FREE
+ * form, carrying a separate weight vector and a unit-diagonal R. This is plain
+ * Givens with hypot(), which is simpler to read and does the same job. Nothing here is new; the
  * packaging is.
  *
  * The cost is arithmetic: a rotation per column per row, against one

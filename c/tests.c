@@ -743,7 +743,7 @@ static void test_diag(void) {
         x[0] = (double)i;
         diag_add(&d, x, (double)(i * i) - 38.5, 24.0);
     }
-    diag_result(&d, &r);
+    diag_result(&d, DIAG_T, &r);
     CHECK(r.curved_term == 0, "diag: names the term whose shape is wrong");
     CHECK(fabs(r.curved_t) > 5.0, "diag: and the evidence is strong");
 
@@ -753,7 +753,7 @@ static void test_diag(void) {
         x[0] = (double)i;
         diag_add(&d, x, ((i % 2) ? 1.0 : -1.0) * (double)i, (double)i * 2.0);
     }
-    diag_result(&d, &r);
+    diag_result(&d, DIAG_T, &r);
     CHECK(fabs(r.spread_t) > 3.5, "diag: sees the error growing with the prediction");
 
     /* A correct model with ordinary noise must stay silent, or the check is
@@ -763,7 +763,7 @@ static void test_diag(void) {
         x[0] = (double)(i % 17);
         diag_add(&d, x, ((i * 7919) % 23) - 11.0, 5.0 + x[0]);
     }
-    diag_result(&d, &r);
+    diag_result(&d, DIAG_T, &r);
     CHECK(r.curved_term == -1, "diag: quiet on an unstructured residual");
     CHECK(r.spread_t == 0.0, "diag: and quiet about its spread");
 
@@ -792,7 +792,7 @@ static void test_diag(void) {
                 x[0] = off + u;
                 diag_add(&d, x, u * u + noise, 24.0);
             }
-            diag_result(&d, &r);
+            diag_result(&d, DIAG_T, &r);
             CHECK(r.curved_term == 0, "diag location: the curve is seen at every offset");
             if (k == 0) first = fabs(r.curved_t);
             else CHECK(fabs(fabs(r.curved_t) - first) < 0.01 * first,
@@ -813,7 +813,7 @@ static void test_diag(void) {
                 x[0] = off + u;
                 diag_add(&d, x, u * u - 3.0, 24.0);
             }
-            diag_result(&d, &r);
+            diag_result(&d, DIAG_T, &r);
             CHECK(r.curved_term == 0 && fabs(r.curved_t) == 9999.0,
                   "diag: an exact curve reports the cap, at any offset");
         }
@@ -827,7 +827,7 @@ static void test_diag(void) {
             x[0] = i * 0.05;
             diag_add(&d, x, x[0] * x[0] * x[0], 5.0);
         }
-        diag_result(&d, &r);
+        diag_result(&d, DIAG_T, &r);
         CHECK(r.curved_term == 0, "diag: a cubic departure is seen");
         CHECK(r.curved_pow == 3, "diag: and it is named as a cube, not a square");
     }
@@ -835,7 +835,7 @@ static void test_diag(void) {
     /* Too few rows to say anything. */
     diag_init(&d, 1, dstore);
     for (i = 0; i < 5; i++) { x[0] = (double)i; diag_add(&d, x, (double)(i*i), 1.0); }
-    diag_result(&d, &r);
+    diag_result(&d, DIAG_T, &r);
     CHECK(r.curved_term == -1, "diag: says nothing from five rows");
 }
 
@@ -1056,12 +1056,18 @@ static void test_diag_probe_isolation(void) {
                 x[2] = -4.0 + (double)((i * 17) % 11);  /* also unrelated     */
                 diag_add(&d, x, u * u * u, 24.0);       /* exactly a cubic    */
             }
-            diag_result(&d, &r);
+            diag_result(&d, DIAG_T, &r);
             CHECK(r.curved_term == 0 && r.curved_pow == 3,
                   "diag blocks: the cubic is found in term 0, at every model size");
-            if (k == 0) t0 = r.curved_t;
-            else CHECK(fabs(r.curved_t - t0) < 1e-9 * fabs(t0),
-                       "diag blocks: and to the same value, whatever else is in the model");
+            /* The CORRELATION is what cannot depend on the other terms; the
+             * t does, through its degrees of freedom, which are n - p - 2.
+             * Dividing it out leaves r/sqrt(1-r^2), which must be identical. */
+            {   double df = 121.0 - (double)nvars - 2.0;
+                double z  = r.curved_t / sqrt(df);
+                if (k == 0) t0 = z;
+                else CHECK(fabs(z - t0) < 1e-9 * fabs(t0),
+                           "diag blocks: and the same correlation, whatever else is in the model");
+            }
             free(store);
         }
     }
@@ -1086,7 +1092,7 @@ static void test_diag_probe_isolation(void) {
             x[1] = 1.0e6 + u;                       /* curved, far from 0  */
             diag_add(&d, x, u * u * u, 24.0);
         }
-        diag_result(&d, &r);
+        diag_result(&d, DIAG_T, &r);
         CHECK(r.curved_term == 1 && r.curved_pow == 3,
               "diag blocks: a curved term behind another is still found");
         CHECK(fabs(r.curved_t) > DIAG_T,
@@ -1112,7 +1118,7 @@ static void test_diag_probe_isolation(void) {
             x[0] = (double)(i % 17); x[1] = (double)(i % 7); x[2] = (double)i;
             diag_add(&d, x, (double)((i * 7919) % 23) - 11.0, 5.0 + x[0]);
         }
-        diag_result(&d, &r);
+        diag_result(&d, DIAG_T, &r);
         for (g = 0; g < 8; g++)
             if (store[need + g] != -12345.5) break;
         CHECK(g == 8, "diag blocks: nothing is written past diag_storage()");
@@ -1150,7 +1156,7 @@ static void test_diag_offsets(void) {
             x[0] = OFFSET[k] + u;
             diag_add(&d, x, u * u + ((double)((i * 7919) % 23) - 11.0) * 0.1, 24.0);
         }
-        diag_result(&d, &r);
+        diag_result(&d, DIAG_T, &r);
         CHECK(r.curved_term == 0 && r.curved_pow == 2,
               "diag offsets: a quadratic departure is seen, wherever the column sits");
         if (k == 0) first_sq = fabs(r.curved_t);
@@ -1167,7 +1173,7 @@ static void test_diag_offsets(void) {
             x[0] = OFFSET[k] + u;
             diag_add(&d, x, u * u * u + ((double)((i * 7919) % 23) - 11.0) * 0.1, 24.0);
         }
-        diag_result(&d, &r);
+        diag_result(&d, DIAG_T, &r);
         CHECK(r.curved_term == 0 && r.curved_pow == 3,
               "diag offsets: a cubic departure is seen, wherever the column sits");
         if (k == 0) first_cu = fabs(r.curved_t);
@@ -1184,7 +1190,7 @@ static void test_diag_offsets(void) {
             x[0] = OFFSET[k] + i * 0.05;
             diag_add(&d, x, (double)((i * 7919) % 23) - 11.0, 24.0);
         }
-        diag_result(&d, &r);
+        diag_result(&d, DIAG_T, &r);
         CHECK(r.curved_term == -1,
               "diag offsets: and an unstructured residual stays quiet at every offset");
     }

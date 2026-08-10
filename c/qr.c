@@ -42,7 +42,7 @@ size_t qr_scratch(int nvars) {
 }
 
 size_t qr_storage(int nvars) {
-    if (nvars < 0) return 0;
+    if (nvars < 1) return 0;      /* as regress_storage does; 0 was returning 6 */
     /* R, then the column-range vectors that used to sit inside struct qr, then
      * each column's sum of squares for the rank test, and the scale that sum
      * is taken relative to. */
@@ -316,8 +316,16 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
          * the same data with the redundant column removed by hand. */
         fit->rss   = q->rss + drop_rss;
         fit->sigma = (fit->df > 0) ? sqrt(fit->rss / (double)fit->df) : -1.0;
-        fit->r2    = (q->cyy > 0.0) ? 1.0 - fit->rss / q->cyy : -1.0;
-        if (fit->r2 < 0.0) fit->r2 = 0.0;
+        /* The clamp belongs INSIDE the cyy > 0 branch. Outside it, it ate the
+         * -1 that had just been set to mean "the response never varies", and
+         * printed R2=0.0000, which reads as "the model explains nothing" where
+         * the truth is that R2 is undefined. regress.c has it right. */
+        if (q->cyy > 0.0) {
+            fit->r2 = 1.0 - fit->rss / q->cyy;
+            if (fit->r2 < 0.0) fit->r2 = 0.0;
+        } else {
+            fit->r2 = -1.0;
+        }
     }
     return 0;
 }

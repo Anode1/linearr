@@ -157,9 +157,14 @@ static double plain_corr(double n, double sx, double sxx, double sy, double syy,
  * statistic does, which is why the threshold is on t and not on r: a fixed
  * correlation bound is a fixed effect size, and its sensitivity never improves
  * however much data arrives. */
-static double t_of(double r, double n) {
+/* df is n minus what the MODEL already spent, p + 1, minus one more for the
+ * probe itself. It was n - 3, which is right only when p = 1, and every
+ * example that exercised this file has one term. At n = 15 with 8 terms that
+ * inflated the statistic by 1.55x. */
+static double t_of(double r, double n, int nvars) {
     double denom = 1.0 - r * r;
-    if (n <= 3.0) return 0.0;
+    double df    = n - (double)nvars - 2.0;
+    if (df <= 0.0) return 0.0;
     /* Capped: an exact relation would otherwise print a t of 1e9, which reads
      * as a number rather than as "exactly". The bound is 1e-12 and not the
      * 1e-15 it was, because 1e-15 sits BELOW the rounding floor of the sums
@@ -168,10 +173,28 @@ static double t_of(double r, double n) {
      * rounding noise in 1 - r^2 and nothing else. A test that compared those
      * four failed, correctly, and the fault was here. */
     if (denom <= 1e-12) return (r < 0.0 ? -9999.0 : 9999.0);
-    return r * sqrt(n - 3.0) / sqrt(denom);
+    return r * sqrt(df) / sqrt(denom);
 }
 
-void diag_result(const struct diag *d, struct diag_result *out) {
+/* The bound |t| must pass, given how many probes are being read.
+ *
+ * DIAG_T alone is a bound for ONE test. Each group runs 2*nvars + 2 of them
+ * and the summary takes the maximum over every group, so a file of 580 groups
+ * of 35 terms reads 41,760 probes and reports the largest. The maximum of m
+ * independent normals grows like sqrt(2 ln m), so a fixed bound is not a fixed
+ * error rate: on correctly specified data with normal noise, that shape
+ * produced a warning every single time.
+ *
+ * sqrt(DIAG_T^2 + 2 ln m) is DIAG_T at m = 1 and rises the way the maximum
+ * does. It is not a multiple-comparison procedure with a stated level; it is a
+ * bound that stops the report being certain on data that is fine. */
+double diag_bound(int nvars, long long groups) {
+    double m = (double)(2 * nvars + 2) * (double)(groups > 0 ? groups : 1);
+    if (m <= 1.0) return DIAG_T;
+    return sqrt(DIAG_T * DIAG_T + 2.0 * log(m));
+}
+
+void diag_result(const struct diag *d, double bound, struct diag_result *out) {
     const double *sh = SH(d);
     double n = (double)d->n;
     double best = 0.0, t;
@@ -190,19 +213,19 @@ void diag_result(const struct diag *d, struct diag_result *out) {
         d->resid_sd < DIAG_MIN_SHARE * d->response_sd) return;
 
     for (j = 0; j < d->nvars; j++) {
-        t = t_of(partial_corr(B(d, j), sh[0], sh[1]), n);
+        t = t_of(partial_corr(B(d, j), sh[0], sh[1]), n, d->nvars);
         if (fabs(t) > fabs(best)) { best = t; out->curved_term = j; out->curved_pow = 2; }
-        t = t_of(partial_corr3(B(d, j), sh[0], sh[1]), n);
+        t = t_of(partial_corr3(B(d, j), sh[0], sh[1]), n, d->nvars);
         if (fabs(t) > fabs(best)) { best = t; out->curved_term = j; out->curved_pow = 3; }
     }
-    if (fabs(best) < DIAG_T) { out->curved_term = -1; out->curved_pow = 0; }
+    if (fabs(best) < bound) { out->curved_term = -1; out->curved_pow = 0; }
     else out->curved_t = best;
 
     /* The same probe against the fitted value. A per-term probe cannot see an
      * omitted interaction or an odd power; this can. */
-    t = t_of(partial_corr(FIT(d), sh[0], sh[1]), n);
-    if (fabs(t) >= DIAG_T) out->fitted_t = t;
+    t = t_of(partial_corr(FIT(d), sh[0], sh[1]), n, d->nvars);
+    if (fabs(t) >= bound) out->fitted_t = t;
 
-    t = t_of(plain_corr(n, sh[5], sh[6], sh[2], sh[3], sh[4]), n);
-    if (fabs(t) >= DIAG_T) out->spread_t = t;
+    t = t_of(plain_corr(n, sh[5], sh[6], sh[2], sh[3], sh[4]), n, d->nvars);
+    if (fabs(t) >= bound) out->spread_t = t;
 }

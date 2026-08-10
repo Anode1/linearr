@@ -885,9 +885,13 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
          * the summary is an average over them, and an average cannot see a
          * pattern. */
         if (sum) {
+            /* One bound for the whole file, because the summary reports the
+             * largest probe over every group: the number of probes read is
+             * what decides how large a maximum is unsurprising. */
+            double bound = diag_bound(nvars, groups);
             for (g = head; g; g = g->next) {
                 struct diag_result dr;
-                diag_result(&g->d, &dr);
+                diag_result(&g->d, bound, &dr);
                 if (dr.curved_term >= 0 && fabs(dr.curved_t) > fabs(sum->curved_t)) {
                     sum->curved_term = dr.curved_term;
                     sum->curved_t    = dr.curved_t;

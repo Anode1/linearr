@@ -839,8 +839,11 @@ million. That is 4.9 million rows a second.
 
 The same file fitted by a streaming Python and by R, so the extrapolation has
 something to be compared against: Python reads 215,000 rows a second in 10 MB,
-and R's `read.csv` plus `lm()` reads 570,000 a second in 3.2 GB, which is about
-318 bytes a row and is the figure that decides where its column ends.
+and R's `read.csv` plus `lm()` reads 570,000 a second with a peak of 3.2 GB,
+about 318 bytes a row, which is what decides where its column ends. That peak
+is the parser's high-water mark, not what the frame occupies: `object.size()`
+on the resident frame is about 48 bytes a row, so a machine that can tolerate
+the transient holds far more rows than the table's ceiling suggests.
 
 | rows | linearr | Python, streaming | R, `read.csv` + `lm()` |
 | --- | --- | --- | --- |
@@ -850,9 +853,12 @@ and R's `read.csv` plus `lm()` reads 570,000 a second in 3.2 GB, which is about
 | a trillion | 2.4 days | 54 days | will not fit |
 | **100 trillion** | **8 months** | **15 years** | **will not fit** |
 
-The R column stops at about 200 million rows on a machine with 64 GB, and the
-number is memory rather than time: at 318 bytes a row the frame is what runs
-out, not the clock. The two streaming columns only get slower.
+The R column stops at about 200 million rows on a machine with 64 GB if the
+peak is what has to fit, and around 1.3 billion if only the resident frame
+does. Either way it is memory that ends it, not the clock, and the two
+streaming columns only get slower. `bench/fit.R` is also the slow variant: it
+rescans the whole frame per group and rebuilds the formula in the loop, so a
+`scan()` plus `.lm.fit()` version is roughly twice as fast at 580 groups.
 
 **When the residual SD is a bound, it says so.** The default solver recovers
 the residual as `Cyy - b'Cxy`, a subtraction of two nearly equal numbers, and
@@ -884,11 +890,24 @@ stably. Measured against the same accumulation carried in long double:
 | 10 million | 6.4e-13 |
 | 100 million | 3.0e-12 |
 
-The growth is close to the square root of the row count, so a trillion rows
-costs about 4e-10 and a hundred trillion about 4e-9: nine significant digits
-still stand at the end of a run that takes eight months. It grows with the
-number of terms as well, roughly in proportion: at 10 million rows it is 8e-13
-with 2 terms and 8e-12 with 16.
+The growth is close to the square root of the row count, so a hundred trillion
+rows costs about 4e-9. Three things that table does not say, all of which
+change the answer:
+
+- **It was measured on columns centred near the origin.** The same measurement
+  at 10 million rows with a column offset of 1e6 gives 3.4e-8, five orders of
+  magnitude worse, because `x - mean(x)` is itself a cancelling subtraction.
+- **It grows faster than the term count.** At 10 million rows: 1.5e-13 at two
+  terms, 6.1e-13 at four, 2.3e-12 at eight, 1.8e-11 at sixteen. That is about
+  116x for 8x the terms, between p^2 and p^2.5.
+- **A co-moment's error is not the fit's error.** The coefficients come from
+  solving with that matrix, so the perturbation is amplified by its condition
+  number, and for normal equations that is cond(X)^2. At the conditioning
+  `nearly-the-same.csv` reports, 5.34e10, a 4e-9 co-moment error is not nine
+  digits of anything.
+
+So read it as a floor on one mechanism, on well-scaled centred data, not as
+what a long run costs in general.
 
 ## The same job in other languages
 

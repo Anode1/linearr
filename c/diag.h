@@ -135,6 +135,10 @@ void diag_scale(struct diag *d, double resid_sd, double response_sd);
 /* One row: its terms, the residual it left, and the value predicted. */
 void diag_add(struct diag *d, const double *x, double resid, double fitted);
 
-void diag_result(const struct diag *d, struct diag_result *out);
+/* The bound |t| must pass, widened for the number of probes being read: each
+ * group runs 2*nvars + 2 and the caller takes the maximum over all groups. */
+double diag_bound(int nvars, long long groups);
+
+void diag_result(const struct diag *d, double bound, struct diag_result *out);
 
 #endif /* DIAG_H */
