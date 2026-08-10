@@ -484,16 +484,27 @@ term names that came from the problem. The numbers in it are **generated**,
 chosen so that fitting `train.csv` returns exactly the coefficients in
 `coefficients.csv`.
 
-**Files built to fail in one specific way**, each used by a teaching section:
+**Two plain examples**, which are the ones to start from. `simple-train.csv` is
+the smallest honest fit, minutes on the road against distance and stops.
+`routes.csv` is the same terms over three kinds of route, and is why groups
+exist.
 
-| file | the failure it shows |
+**Four that fit successfully and are wrong anyway.** These are not failing
+cases and they do not exit non-zero: each one produces a coefficient table, and
+the point of each is the warning printed beside it. They are the worked
+examples for the checks this program exists to run.
+
+| file | what the fit reports |
 | --- | --- |
 | `together.csv` | two columns the data cannot tell apart |
 | `three-rows.csv` | a line with no residual degrees of freedom |
 | `nearly-the-same.csv` | a design whose trailing digits are noise, and what `--qr` does about it |
 | `curve.csv` | a parabola fitted with a straight line |
-| `simple-train.csv`, `routes.csv` | the smallest honest fit, and why groups exist |
-| `gaps.csv`, `semicolons.csv` | input the reader refuses, and what it says |
+
+**Two the program refuses**, which are the only files here that exit non-zero.
+`gaps.csv` has an empty field and `semicolons.csv` is semicolon-separated; both
+exist so the [refusal messages](#what-it-will-not-read) can be shown rather than
+described.
 
 No real data is distributed with this project. Point `-c` at your own table, or
 produce one with `-t`, before any number here is worth reading.
