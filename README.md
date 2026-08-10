@@ -298,12 +298,10 @@ Files named with `-c`, `--trim` and `-t` are looked for in the current
 directory first, then beside the program, so an installed `linearr` finds the
 example data from anywhere and your own file still wins where you have one.
 
-**`-c` is required for scoring.** There is no default table and no search. Until
-recently there was: a `system.properties` file, and failing that a model shipped
-beside the binary, so a bare `linearr 001 x=1` answered from a table the reader
-had never seen, and the same command in two directories could give two different
-answers with nothing saying which. Which model produced a number is part of
-the number, so it is named and not searched for.
+**`-c` is required for scoring.** There is no default table and no search for
+one. Which model produced a number is part of the number, so it is named rather
+than found by convention: the same command in two directories cannot quietly
+answer from two different models.
 
 When something is wrong, the message says what:
 
@@ -441,12 +439,8 @@ look rather than two, and no file that has to be found before it can be read:
 | `--scale N` | 4 | decimal places the prediction is rounded to, 0 to 9 |
 | `--trim-scale N` | 1 | decimal places the trim point is rounded to, 0 to 9 |
 
-This replaced a `system.properties` file with four keys, all of which duplicated
-an option, in a directory called `conf` that held no configuration and two data
-files. Two of the keys behaved differently from what the file itself documented:
-commenting out `trim.file` was said to turn the trim off and did not (an absent
-key meant the built-in default, so the table loaded), and `predict.scale = 99`
-was accepted and quietly gave four decimals. `--scale 99` is an error.
+A scale outside 0 to 9 is an error rather than a silent fallback to the
+default.
 
 **Coefficients are written to 12 significant digits**, so an exact 5 prints as
 `5`. That is far below the residual standard deviation of any fit that produced
@@ -841,14 +835,8 @@ answer, different prices.
     Python           frame        3.30s    315904 KB  agrees to 0
     R                frame        1.32s    128780 KB  agrees to 1e-12
 
-The R row is new: R was not installed on the machine that produced the earlier
-version of this table, so `bench.sh` printed "not installed - skipped" and the
-row was quietly missing rather than reported as missing. The Java row was
-missing too, for a worse reason: the classpath pointed at `java/` when the
-classes are built into `java/classes/`, and with `set -e` the failure ended the
-whole script after the first row, so the table looked like a benchmark with one
-entrant. Both fixed; a failing implementation now prints why and the others
-still run.
+An implementation that is not installed, or that fails, prints why and the
+others still run.
 
 All but the last read the file one row at a time, which each of these languages
 permits. Writing the C as a stream and the Python with pandas would compare two
@@ -994,12 +982,8 @@ certified](#checked-against-answers-somebody-else-certified)); on embedded and
 small ARM targets where no interpreter is going to be installed; and in cloud
 batch work, where the memory a process holds is what it costs.
 
-An earlier version of this paragraph said it agreed with R's `lm()` to the
-printed digit. Nothing here tested that, no gate could fail if it stopped being
-true, and a reviewer repeated it back as a property of the test suite. The NIST
-sets are the claim that is actually checked, on every run of `make check`. If
-you have R, the comparison takes three lines and you should not take this file's
-word for it:
+`make r` runs the same comparison against R's `lm()`, and skips itself where R
+is absent. By hand it is three lines:
 
     d <- read.csv("example/longley.csv", comment.char = "#")
     print(coef(lm(employment ~ deflator + gnp + unemployed +
@@ -1137,9 +1121,8 @@ scripts/hooks/    pre-push: the sanitizers, before anything reaches the remote
 Makefile          the build
 ```
 
-Code under `c/` and `java/`, data at the top level. There is no `conf/`: it held
-no configuration, only two data files, and the settings it implied are options
-now.
+Code under `c/` and `java/`, data at the top level, and no configuration
+directory: every setting is an option.
 
 
 ## Style
