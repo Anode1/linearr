@@ -203,6 +203,7 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
 
     if (fit) {
         fit->pinned = p - rank;
+        fit->sigma_is_bound = 0;
         fit->df     = r->n - (long long)rank - 1;
         fit->condition = (pivmin > 0.0) ? pivmax / pivmin : 1.0;
 
@@ -228,17 +229,25 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
          * A reported zero is a claim of a perfect fit, and the residual file
          * written by the same run said 0.3745.
          *
-         * THIS IS NOT FIXED. A guard was tried and withdrawn: every threshold
-         * that caught the 1e6 and 1e7 cases also suppressed the figure on
-         * every exactly-fitting example in example/, including the 0.02282
-         * that Wampler1 exists to show. Separating "this residual is rounding
-         * error" from "this residual is wrong" needs the magnitude of the
-         * response as well as R2, and that bound has not been derived.
+         * The floor under sse is measurable. Each y is held to |my|*eps, so
+         * each centred deviation carries that much error, and Cyy accumulates
+         * n of them against deviations of size sqrt(Cyy/n): the error in the
+         * subtraction is about |my| * eps * sqrt(n * Cyy). Measured, 200 rows:
          *
-         * Until it is: --qr carries the residual through the rotation instead
-         * of subtracting for it, and returns 0.3745, 0.3746, 0.3736 and 0.5018
-         * on the four rows above. On a response whose spread is small beside
-         * its magnitude, use it. */
+         *     x near    |my|      Cyy       sse      true     floor
+         *     1e3       5.0e6     6.7e9     444.39   444.39   0.0013
+         *     1e4       5.0e8     6.7e11    444.61   444.39   1.28
+         *     1e5       5.0e10    6.7e13    0        444.39   1.3e3
+         *     1e6       5.0e12    6.7e15    0        444.41   1.3e6
+         *
+         * Where sse is above the floor it is worth printing. Where it is
+         * below, the floor itself is a true upper bound on the residual, and
+         * that is what is reported: `resid SD<2.5` rather than `resid SD=0`.
+         * A bound is never false, and it does not throw away the exactly
+         * fitting case the way withholding the figure did.
+         *
+         * --qr does not pay this at all: it carries the residual through the
+         * rotation instead of subtracting for it. */
         fit->rss = -1.0;
         fit->sigma = -1.0;
         if (r->cyy > 0.0) {
@@ -262,6 +271,10 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
                  * cyy gives an R2 that is right to the digits printed. */
                 fit->r2 = 1.0 - sse / r->cyy;
                 if (fit->r2 < 0.0) fit->r2 = 0.0;
+                {   double floor = fabs(r->my) * DBL_EPSILON
+                                  * sqrt((double)r->n * r->cyy);
+                    if (sse < floor) { sse = floor; fit->sigma_is_bound = 1; }
+                }
                 fit->rss = sse;
                 /* Divided by the residual freedom, not by n: with df at zero
                  * the line passes through every point and there is no spread

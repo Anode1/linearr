@@ -17,11 +17,6 @@
  * which are what the callers allocate. What it does not do is square anything, so the digits lost are the
  * design's own condition number rather than its square.
  *
- * WHAT IT GETS WRONG. On a RANK-DEFICIENT design where the dropped column is
- * not the last one, the coefficients returned are not the least-squares
- * solution: see the measurement in qr_solve's back-substitution in qr.c. Use
- * the normal equations there. Everything below concerns the full-rank case.
- *
  * What it is NOT: a strictly better solver. It does not centre the data, and a
  * reviewer found that without column scaling its rank test deleted a
  * well-identified indicator for being measured in a small unit, which is the
@@ -82,6 +77,10 @@ struct qr {
 
 size_t qr_storage(int nvars);
 
+/* Doubles qr_solve needs to re-triangularise the kept columns of a
+ * rank-deficient design. Zero work and zero space at full rank. */
+size_t qr_scratch(int nvars);
+
 /* Start a fit over nvars slopes. Returns 0, or -1 if nvars is out of range or
  * storage is NULL. */
 int qr_init(struct qr *q, int nvars, double *storage);
@@ -91,8 +90,12 @@ int qr_init(struct qr *q, int nvars, double *storage);
 int qr_add(struct qr *q, const double *x, double y);
 
 /* Back-substitute for beta[nvars+1]; beta[0] is the intercept. Fills fit if it
- * is not NULL. scratch is unused and may be NULL; the parameter is there so the
- * two solvers can be called through the same shape.
+ * is not NULL.
+ *
+ * scratch must hold qr_scratch(nvars) doubles when the design turns out to be
+ * rank deficient, because the kept columns are re-triangularised there before
+ * the solve; at full rank it is untouched and may be NULL. Passing NULL to a
+ * deficient design returns -1 rather than the wrong answer it used to give.
  *
  * fit->condition here is an estimate of cond(X), not of cond(X'X): the largest
  * accepted diagonal of R over the smallest.

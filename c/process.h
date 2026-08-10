@@ -75,6 +75,7 @@ struct fit_info {
                            and r2 is 1 no matter what the data says.       */
     double r2;          /* coefficient of determination, -1 when undefined
                            or not computable to useful precision           */
+    int    sigma_is_bound;  /* sigma is an upper bound, not a value          */
     double sigma;       /* residual standard deviation: how far a prediction
                            typically lands from the truth, in the response's
                            units. -1 when there is no residual freedom.     */
@@ -145,7 +146,8 @@ struct fit_summary {
     long long groups;   /* groups fitted                                  */
     long long rows;     /* training rows used                             */
     long long min_df;   /* the least residual freedom any group had       */
-    double max_sigma;   /* the worst group's residual standard deviation  */
+    double max_sigma;   /* the worst group's residual standard deviation   */
+    int    sigma_is_bound;  /* max_sigma is an upper bound, not a value    */
     double max_condition;  /* the worst-conditioned group                 */
     /* From the residual pass, when one was made. Each group is examined on its
      * own and the strongest finding is reported with the group it came from:

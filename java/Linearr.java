@@ -256,6 +256,7 @@ public class Linearr {
          * not, so the one number in the summary that says how far a prediction
          * typically lands from the truth was missing from the Java. */
         double worstSigma = -1.0;
+        boolean sigmaBound = false;
         /* And the worst conditioning. The C prints it, and warns above 1e8,
          * because an ill-conditioned design fits its own sample beautifully and
          * predicts nothing: R2 cannot see that failure. This file reported
@@ -291,7 +292,7 @@ public class Linearr {
             if (note != null) System.out.println(note);
             pinned += fit.pinned;
             if (fit.df < minDf) minDf = fit.df;
-            if (fit.sigma > worstSigma) worstSigma = fit.sigma;
+            if (fit.sigma > worstSigma) { worstSigma = fit.sigma; sigmaBound = fit.sigmaIsBound; }
             if (fit.condition > worstCond) worstCond = fit.condition;
         }
 
@@ -310,7 +311,8 @@ public class Linearr {
                 + (pinned > 0 ? ", " + pinned + " term-slot" + (pinned == 1 ? "" : "s")
                                 + " pinned to 0" : "")
                 + ", least df=" + leastDf
-                + (worstSigma >= 0.0 ? ", worst resid SD=" + g4(worstSigma) : "")
+                + (worstSigma >= 0.0 ? ", worst resid SD" + (sigmaBound ? "<" : "=")
+                                     + g4(worstSigma) : "")
                 + (worstCond > 1.0 ? ", worst cond=" + g3(worstCond)
                                      + " (normal equations)" : ""));
 

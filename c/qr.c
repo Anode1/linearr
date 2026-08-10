@@ -36,6 +36,11 @@
  * which centre for you. */
 #define QR_RANK_EPS 1e-9
 
+size_t qr_scratch(int nvars) {
+    if (nvars < 1) return 0;
+    return ((size_t)nvars + 1) * ((size_t)nvars + 2);
+}
+
 size_t qr_storage(int nvars) {
     if (nvars < 0) return 0;
     /* R, then the column-range vectors that used to sit inside struct qr, then
@@ -157,7 +162,6 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
     double eps;
     double drop_rss = 0.0;
 
-    (void)scratch;                       /* the factor is already triangular */
     if (!q->n || p < 1) return -1;
 
     for (i = 0; i <= p; i++) beta[i] = 0.0;
@@ -205,47 +209,81 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
         }
     }
 
-    /* Back substitution over the kept columns. A dropped column keeps its 0,
-     * which is the same policy regress.c applies.
+    /* Back substitution.
      *
-     * A dropped row's equation is then NOT satisfied, and the amount by which
-     * it is missed is collected here. Descending order is what makes this
-     * possible in one pass: by the time row i is reached, every beta[j] for
-     * j > i is final.
+     * At full rank R is already triangular and this is a back solve.
      *
-     * KNOWN WRONG WHEN A DROPPED COLUMN IS NOT THE LAST ONE. Back-substitution
-     * forces a zero residual on every kept row and leaves v_i on each dropped
-     * row. For the result to be the least-squares solution of the reduced
-     * model, those leftovers must be orthogonal to the kept columns, that is
-     * sum over dropped i of v_i * R_ij = 0 for every kept j. They are not:
-     * when R_ii is a rounding-level residue, the rotation that produced it had
-     * c near 0 and s near 1 and moved the whole row, z_i and every R_ij for
-     * j > i, into row i.
+     * When a column is dropped it is NOT, and the old code solved anyway. It
+     * forced a zero residual on every kept row and left v_i on each dropped
+     * one, which is the least-squares answer only if those leftovers are
+     * orthogonal to the kept columns: sum over dropped i of v_i * R_ij = 0 for
+     * every kept j. They are not. When R_ii is a rounding-level residue, the
+     * rotation that made it had c near 0 and s near 1 and moved the whole row
+     * into row i, z_i and every R_ij to its right with it. On twenty rows with
+     * a constant column listed BEFORE an ordinary one that returned an
+     * intercept of 3.00755 where least squares gives 2.91, and the error did
+     * not shrink with more rows.
      *
-     * Twenty rows, a constant column listed BEFORE an ordinary one:
-     *
-     *     least squares   intercept 2.91      slope 2.004736842
-     *     this            intercept 3.00755   slope 1.99447
-     *
-     * The intercept is 3.4% out and it does not shrink with more rows: it is a
-     * bias, not rounding. The RSS reconstructed below is the true residual of
-     * that beta, so nothing here notices.
-     *
-     * The fix is column pivoting, so a dropped column is always last, which is
-     * what LINPACK's dqrdc2 and R's lm() do. Until then the normal equations
-     * are the ones to trust on a rank-deficient design: C is symmetric, so a
-     * column whose pivot falls below the tolerance also has a near-zero
-     * leftover row, and its pinned solution really is the reduced one.
-     *
-     * tests.c did not catch this because its rank-deficient case puts the
-     * redundant column last, where no j > i exists and the answer is exact. */
-    for (i = p; i >= 0; i--) {
-        double v = q->r[(size_t)i * (size_t)w + (size_t)(p + 1)];
-        for (j = i + 1; j <= p; j++)
-            v -= q->r[(size_t)i * (size_t)w + (size_t)j] * beta[j];
-        if (!keep[i]) { drop_rss += v * v; continue; }
-        beta[i] = v / q->r[(size_t)i * (size_t)w + (size_t)i];
-        if (fit && i > 0) fit->term[i - 1] = REGRESS_FITTED;
+     * So the kept columns are re-triangularised here, which is what column
+     * pivoting achieves and is cheap because it is O(p^3) on the factor, not
+     * on the data. W holds the kept columns of R followed by Q'y; rotating its
+     * subdiagonal away leaves a genuine triangular system whose back solve IS
+     * the least-squares solution of the reduced model, and whose leftover tail
+     * is the extra residual. */
+    if (rank == p + 1) {
+        for (i = p; i >= 0; i--) {
+            double v = q->r[(size_t)i * (size_t)w + (size_t)(p + 1)];
+            for (j = i + 1; j <= p; j++)
+                v -= q->r[(size_t)i * (size_t)w + (size_t)j] * beta[j];
+            beta[i] = v / q->r[(size_t)i * (size_t)w + (size_t)i];
+            if (fit && i > 0) fit->term[i - 1] = REGRESS_FITTED;
+        }
+    } else {
+        int    col[REGRESS_MAX_TERMS + 1];
+        int    k = 0, cw;
+        double *W = scratch;
+
+        if (!W) { debug("qr: a rank-deficient solve needs scratch"); return -1; }
+        for (i = 0; i <= p; i++) if (keep[i]) col[k++] = i;
+        cw = k + 1;                                  /* kept columns, then Q'y */
+
+        for (i = 0; i <= p; i++) {
+            for (j = 0; j < k; j++)
+                W[(size_t)i * (size_t)cw + (size_t)j] =
+                    q->r[(size_t)i * (size_t)w + (size_t)col[j]];
+            W[(size_t)i * (size_t)cw + (size_t)k] =
+                q->r[(size_t)i * (size_t)w + (size_t)(p + 1)];
+        }
+
+        for (j = 0; j < k; j++) {
+            for (i = p; i > j; i--) {
+                double a = W[(size_t)j * (size_t)cw + (size_t)j];
+                double b = W[(size_t)i * (size_t)cw + (size_t)j];
+                double r, c, sn;
+                int    m;
+                if (b == 0.0) continue;
+                r = hypot(a, b);
+                c = a / r; sn = b / r;
+                for (m = j; m < cw; m++) {
+                    double u = W[(size_t)j * (size_t)cw + (size_t)m];
+                    double v = W[(size_t)i * (size_t)cw + (size_t)m];
+                    W[(size_t)j * (size_t)cw + (size_t)m] =  c * u + sn * v;
+                    W[(size_t)i * (size_t)cw + (size_t)m] = -sn * u + c * v;
+                }
+            }
+        }
+
+        for (i = k - 1; i >= 0; i--) {
+            double v = W[(size_t)i * (size_t)cw + (size_t)k];
+            for (j = i + 1; j < k; j++)
+                v -= W[(size_t)i * (size_t)cw + (size_t)j] * beta[col[j]];
+            beta[col[i]] = v / W[(size_t)i * (size_t)cw + (size_t)i];
+            if (fit && col[i] > 0) fit->term[col[i] - 1] = REGRESS_FITTED;
+        }
+        for (i = k; i <= p; i++) {
+            double v = W[(size_t)i * (size_t)cw + (size_t)k];
+            drop_rss += v * v;
+        }
     }
 
     for (i = 0; i <= p; i++)

@@ -46,6 +46,9 @@ public final class Regress {
         public long     df;
         public double   r2;          /* -1 when undefined or not computable */
         public double   rss;         /* residual sum of squares             */
+        /* Set when sse fell below what the subtraction can resolve, so sigma
+         * is an upper bound rather than a value. The C prints `<` for it. */
+        public boolean  sigmaIsBound;
         public double   sigma;       /* residual SD, sqrt(rss/df): how far a
                                         prediction typically lands from the
                                         truth, in the response's own units.
@@ -163,6 +166,7 @@ public final class Regress {
 
         if (fit != null) {
             fit.pinned = p - rank;
+            fit.sigmaIsBound = false;
             fit.df = n - rank - 1;
             fit.condition = (pivmin > 0.0) ? pivmax / pivmin : 1.0;
             fit.rss = -1.0;
@@ -178,6 +182,15 @@ public final class Regress {
                     if (sse < 0.0) sse = 0.0;
                     fit.r2 = 1.0 - sse / cyy;
                     if (fit.r2 < 0.0) fit.r2 = 0.0;
+                    /* The floor under sse. Each y is held to |my|*eps, so the
+                     * centred deviations carry that error and Cyy accumulates
+                     * n of them: the subtraction cannot resolve below about
+                     * |my|*eps*sqrt(n*Cyy). Below it, report the floor as an
+                     * upper bound rather than a value that may be anything.
+                     * regress.c carries the measurement. */
+                    double floor = Math.abs(my) * 2.220446049250313e-16
+                                 * Math.sqrt((double) n * cyy);
+                    if (sse < floor) { sse = floor; fit.sigmaIsBound = true; }
                     fit.rss = sse;
                     if (fit.df > 0) fit.sigma = Math.sqrt(sse / (double) fit.df);
                 }

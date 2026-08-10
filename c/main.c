@@ -189,7 +189,9 @@ static int train_all(const char *path, const char *only,
     if (sum.pinned > 0)
         fprintf(stderr, ", %d term-slot%s pinned to 0", sum.pinned, s_(sum.pinned));
     (void)fprintf(stderr, ", least df=%lld", sum.min_df);
-    if (sum.max_sigma >= 0.0) fprintf(stderr, ", worst resid SD=%.4g", sum.max_sigma);
+    if (sum.max_sigma >= 0.0)
+        fprintf(stderr, ", worst resid SD%s%.4g",
+                sum.sigma_is_bound ? "<" : "=", sum.max_sigma);
     if (sum.max_condition > 1.0)
         fprintf(stderr, ", worst cond=%.3g (%s)", sum.max_condition, process_solver());
     (void)fprintf(stderr, "\n");
@@ -235,7 +237,9 @@ static int train(const char *path, const char *group) {
     (void)printf("%s\n", out);
     (void)fprintf(stderr, "fit: %lld row%s", info.rows, s_(info.rows));
     if (info.r2 >= 0.0) fprintf(stderr, ", R2=%.4f", info.r2);
-    if (info.sigma >= 0.0) fprintf(stderr, ", resid SD=%.4g", info.sigma);
+    if (info.sigma >= 0.0)
+        fprintf(stderr, ", resid SD%s%.4g",
+                info.sigma_is_bound ? "<" : "=", info.sigma);
     if (info.pinned > 0)
         (void)fprintf(stderr, ", %d term%s unidentified and set to 0",
                 info.pinned, s_(info.pinned));

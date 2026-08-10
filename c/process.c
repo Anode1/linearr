@@ -60,7 +60,10 @@ typedef char header_fits_in_line[
  * depends on the data, so one buffer serves both. */
 #define FIT_STORE_DOUBLES ((REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2))
 static double fit_store[FIT_STORE_DOUBLES];
-static double fit_scratch[REGRESS_MAX_VARS * (REGRESS_MAX_VARS + 1)];
+/* Large enough for either solver: regress_solve's elimination workspace, and
+ * qr_solve's re-triangularisation of the kept columns when a design turns out
+ * to be rank deficient. */
+static double fit_scratch[(REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2)];
 static double fit_beta[REGRESS_MAX_TERMS];
 
 static int use_qr;
@@ -616,6 +619,7 @@ int process_train(const char *csv_path, const char *group,
         info->df        = f.df;
         info->r2        = f.r2;
         info->sigma     = f.sigma;
+        info->sigma_is_bound = f.sigma_is_bound;
         info->condition = f.condition;
     }
     rc = 0;
@@ -702,7 +706,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
 
     if (sum) {
         sum->groups = 0; sum->rows = 0; sum->min_df = 0;
-        sum->max_condition = 1.0; sum->pinned = 0; sum->max_sigma = -1.0;
+        sum->max_condition = 1.0; sum->pinned = 0; sum->max_sigma = -1.0; sum->sigma_is_bound = 0;
         sum->curved_term = -1; sum->curved_t = 0.0; sum->curved_pow = 0;
         sum->fitted_t = 0.0; sum->spread_t = 0.0; sum->worst_group[0] = '\0';
     }
@@ -831,7 +835,10 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             sum->pinned += f.pinned;
             if (sum->groups == 0 || f.df < sum->min_df) sum->min_df = f.df;
             if (f.condition > sum->max_condition) sum->max_condition = f.condition;
-            if (f.sigma > sum->max_sigma) sum->max_sigma = f.sigma;
+            if (f.sigma > sum->max_sigma) {
+                sum->max_sigma = f.sigma;
+                sum->sigma_is_bound = f.sigma_is_bound;
+            }
             sum->groups++;
         }
     }

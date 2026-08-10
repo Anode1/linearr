@@ -76,7 +76,7 @@ differ in the sixth decimal, asked for `1 + 2*x1 + 3*x2`:
 
     $ ./linearr -t example/nearly-the-same.csv
     reading: column 1 is the group, 'value' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 1 group, 40 rows, least df=37, worst resid SD=0, worst cond=5.34e+10 (normal equations)
+    fit: 1 group, 40 rows, least df=37, worst resid SD<3.109e-08, worst cond=5.34e+10 (normal equations)
     warning: at least one group is ill-conditioned (cond=5.34e+10); the trailing digits of its coefficients are noise. Try --qr, which does not square the condition number.
     # response: value
     group,intercept,x1,x2
@@ -236,7 +236,7 @@ names the terms:
 
     $ ./linearr -t example/simple-train.csv > model.csv
     reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 2 groups, 13 rows, least df=3, worst resid SD=0, worst cond=1.03 (normal equations)
+    fit: 2 groups, 13 rows, least df=3, worst resid SD<4.007e-07, worst cond=1.03 (normal equations)
 
     $ cat model.csv
     # response: minutes
@@ -330,7 +330,7 @@ of route. The terms are the same everywhere; what each term is worth is not:
 
     $ ./linearr -t example/routes.csv
     reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 3 groups, 18 rows, least df=3, worst resid SD=3.832e-07, worst cond=1.02 (normal equations)
+    fit: 3 groups, 18 rows, least df=3, worst resid SD<5.368e-07, worst cond=1.02 (normal equations)
     # response: minutes
     group,intercept,km,stops
     city,5,3,2
@@ -375,7 +375,7 @@ what it took, which it does, first, on every fit:
 
     $ ./linearr -t example/simple-train.csv
     reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 2 groups, 13 rows, least df=3, worst resid SD=0, worst cond=1.03 (normal equations)
+    fit: 2 groups, 13 rows, least df=3, worst resid SD<4.007e-07, worst cond=1.03 (normal equations)
     # response: minutes
     group,intercept,km,stops
     A,5,2.5,1.5
@@ -643,17 +643,6 @@ to each other, which is why the summary names the solver, and no fixed
 relationship holds between them: on the example above they are 5.34e+10 and
 2.78e+06.
 
-**`--qr` is wrong on a rank-deficient design unless the dropped column is the
-last one.** Back-substitution leaves a residual on each dropped row, and those
-leftovers are not orthogonal to the columns that were kept, so the answer is
-not the least-squares solution of the reduced model. On twenty rows with a
-constant column listed before an ordinary one it returns an intercept of
-3.00755 where least squares gives 2.91, and the error does not shrink with more
-rows. The reconstructed residual is the true residual of that answer, so
-nothing in the output flags it. The remedy is column pivoting, which is what
-R's `lm()` does and this does not yet. Until then, on a design that reports
-`# pinned`, trust the default solver.
-
 `--qr` is not a strictly better solver. It does not centre the data, and two
 consequences follow. Its rank test needs a looser tolerance and still cannot
 separate a dependent column from an independent one once the columns sit near
@@ -864,6 +853,16 @@ and R's `read.csv` plus `lm()` reads 570,000 a second in 3.2 GB, which is about
 The R column stops at about 200 million rows on a machine with 64 GB, and the
 number is memory rather than time: at 318 bytes a row the frame is what runs
 out, not the clock. The two streaming columns only get slower.
+
+**When the residual SD is a bound, it says so.** The default solver recovers
+the residual as `Cyy - b'Cxy`, a subtraction of two nearly equal numbers, and
+below a floor of about `|mean(y)| * eps * sqrt(n * Cyy)` the difference has no
+digits left. Where that happens the figure is printed as `resid SD<0.0005`
+rather than `=`: an upper bound that contains the truth, instead of a value
+that may not. On 200 rows of an exact quadratic fitted with a line, with x near
+1e5, it used to print `resid SD=0`, a claim of a perfect fit on data the line
+misses by 0.37. `--qr` carries the residual through the rotation and does not
+pay this at all.
 
 **A long run says where it has got to.** After the first minute, and once a
 minute after that, a line goes to stderr:

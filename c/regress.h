@@ -49,18 +49,19 @@
  * the origin, and it is only the 1/(1 - R^2) part. A column with an OFFSET
  * costs far more, because x[j] - mean[j] is itself a cancelling subtraction:
  * an offset of 1e6 against a spread of 1 loses six digits per row, before any
- * co-moment is formed. Two reviewers measured the same thing independently on
- * an exact quadratic fitted with a line, 200 rows, moving x away from zero:
+ * co-moment is formed. On an exact quadratic fitted with a line, 200 rows,
+ * moving x away from zero, this file used to report:
  *
  *     x near     reported      truth     --qr
  *     1e4        0.3718        0.3745    0.3745
  *     1e5        0             0.3745    0.3746
  *     1e6        11.57         0.3745    0.3736
  *
- * A reported 0 is a claim of a perfect fit, cond= is 1.0 and therefore not
- * even printed, and the residual file written by the same run says 0.3745.
- * This is NOT FIXED; see the note in regress.c. On a response whose spread is
- * small beside its magnitude, use --qr. qr.c does not pay this cost: it
+ * A reported 0 is a claim of a perfect fit. It now reports an upper bound
+ * instead, `resid SD<1.799` and `<56.9` for the last two, which contains the
+ * truth rather than contradicting it; see the floor in regress.c. --qr does
+ * not pay this at all and is the one to use on a response whose spread is
+ * small beside its magnitude. qr.c does not pay this cost: it
  * carries the residual through the rotation rather than subtracting for it.
  * tests.c holds the measurement as a test, so the property cannot drift
  * unnoticed in either direction.
@@ -123,6 +124,10 @@ enum regress_term {
 /* What the fit turned out to be. */
 struct regress_fit {
     int    pinned;      /* terms the sample could not identify, set to 0     */
+    /* Set when sse fell below what the subtraction can resolve, so rss and
+     * sigma are an UPPER BOUND rather than a value. Callers print `<` instead
+     * of `=`. A bound is never false; the number it replaced could be. */
+    int    sigma_is_bound;
     long long df;       /* residual degrees of freedom: n - (identified + 1) */
     double r2;          /* -1 when it is not defined (a response that never
                            varies) or not computable to useful precision     */

@@ -163,7 +163,7 @@ static void test_csv(void) {
  * matrices are ~1 MB at the default ceiling and this is exactly where the
  * program used to blow a small stack. */
 static double t_store[REGRESS_MAX_VARS * REGRESS_MAX_VARS + 2 * REGRESS_MAX_VARS];
-static double t_scratch[REGRESS_MAX_VARS * (REGRESS_MAX_VARS + 1)];
+static double t_scratch[(REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2)];
 static double t_beta[REGRESS_MAX_TERMS];
 static double t_store2[(REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2)];
 static double t_diag[DIAG_PER_TERM * 2 + DIAG_SHARED];   /* one term */
@@ -508,7 +508,7 @@ static void test_qr(void) {
     x[0] = 1; x[1] = 0; qr_add(&q, x, 5.0);
     x[0] = 0; x[1] = 1; qr_add(&q, x, 1.0);
     x[0] = 2; x[1] = 3; qr_add(&q, x, 5.0);
-    CHECK(qr_solve(&q, t_beta, NULL, &fq) == 0, "qr: solves");
+    CHECK(qr_solve(&q, t_beta, t_scratch, &fq) == 0, "qr: solves");
     CHECK(NEAR(t_beta[0], 2.0) && NEAR(t_beta[1], 3.0) && NEAR(t_beta[2], -1.0),
           "qr: recovers y = 2 + 3x1 - x2");
     CHECK(fq.pinned == 0 && fq.df == 1, "qr: rank and df");
@@ -526,7 +526,7 @@ static void test_qr(void) {
             qr_add(&q, x, 1.0 + 2.0 * x[0] + 3.0 * x[1]);
             regress_add(&r, x, 1.0 + 2.0 * x[0] + 3.0 * x[1]);
         }
-        qr_solve(&q, t_beta, NULL, &fq);
+        qr_solve(&q, t_beta, t_scratch, &fq);
         eqr = fabs(t_beta[1] - 2.0);
         regress_solve(&r, t_beta2, t_scratch, &fr);
         eq = fabs(t_beta2[1] - 2.0);
@@ -552,7 +552,7 @@ static void test_qr(void) {
                 x[1] = (1.0 + sin((double)i)) * unit;
                 qr_add(&q, x, 1.0 + 2.0 * x[0] + (3.0 / unit) * x[1]);
             }
-            CHECK(qr_solve(&q, t_beta, NULL, &fq) == 0, "qr units: solves");
+            CHECK(qr_solve(&q, t_beta, t_scratch, &fq) == 0, "qr units: solves");
             CHECK(fq.pinned == 0, "qr units: nothing deleted for being small");
             CHECK(fabs(t_beta[1] - 2.0) < 1e-6, "qr units: the ordinary slope");
             CHECK(fabs(t_beta[2] * unit - 3.0) < 1e-6, "qr units: the small one");
@@ -580,7 +580,7 @@ static void test_qr(void) {
             (void)qr_add(&q, x, y);
             (void)qr_add(&q2, x1, y);
         }
-        (void)qr_solve(&q, t_beta, NULL, &fq);
+        (void)qr_solve(&q, t_beta, t_scratch, &fq);
         (void)qr_solve(&q2, t_beta2, NULL, &f2);
         CHECK(fq.pinned == 1, "qr: the constant column is dropped");
         CHECK(fq.rss > 0.0 && fq.sigma > 0.0,
@@ -592,6 +592,50 @@ static void test_qr(void) {
         CHECK(fabs(fq.r2 - f2.r2) < 1e-12, "qr: and R2");
         CHECK(fabs(t_beta[1] - t_beta2[1]) < 1e-12,
               "qr: the slope is the one the reduced model gives");
+    }
+
+    /* A dropped column in EVERY position, not just the last one. Back
+     * substitution alone is the least-squares answer only when no kept column
+     * sits to the right of a dropped one, and the old test used exactly that
+     * case: with the redundant column last it was exact, and with it first the
+     * intercept came back 3.00755 where least squares gives 2.91. The kept
+     * columns are re-triangularised now, so the position cannot matter. */
+    {
+        int where;
+        double x3[3];                    /* this block fits three terms */
+        for (where = 0; where < 3; where++) {
+            double want0, want1;
+            qr_init(&q, 3, t_store);
+            for (i = 0; i < 20; i++) {
+                double xi = (double)i;
+                double y  = 3.0 + 2.0 * xi + (double)((i % 3) - 1) * 0.9;
+                (void)y;
+                if (where == 0) { x3[0] = 7.0; x3[1] = xi; x3[2] = (double)((i * 7) % 5); }
+                if (where == 1) { x3[0] = xi; x3[1] = 7.0; x3[2] = (double)((i * 7) % 5); }
+                if (where == 2) { x3[0] = xi; x3[1] = (double)((i * 7) % 5); x3[2] = 7.0; }
+                (void)qr_add(&q, x3, y);
+            }
+            CHECK(qr_solve(&q, t_beta, t_scratch, &fq) == 0,
+                  "qr pivot: a rank-deficient design solves");
+            CHECK(fq.pinned == 1, "qr pivot: exactly one column is dropped");
+            /* The same fit without the dead column at all. */
+            {   struct qr q2;
+                double x2[2];
+                qr_init(&q2, 2, t_store2);
+                for (i = 0; i < 20; i++) {
+                    double xi = (double)i;
+                    x2[0] = xi; x2[1] = (double)((i * 7) % 5);
+                    (void)qr_add(&q2, x2, 3.0 + 2.0 * xi + (double)((i % 3) - 1) * 0.9);
+                }
+                (void)qr_solve(&q2, t_beta2, t_scratch, &fr);
+                want0 = t_beta2[0]; want1 = t_beta2[1];
+            }
+            CHECK(fabs(t_beta[0] - want0) < 1e-9 * (fabs(want0) + 1.0),
+                  "qr pivot: the intercept is the reduced model's, at any position");
+            CHECK(fabs(fq.rss - fr.rss) < 1e-9 * fr.rss,
+                  "qr pivot: and so is the residual");
+            (void)want1;
+        }
     }
 
     /* The same, with a column that is collinear rather than constant, and with
@@ -608,7 +652,7 @@ static void test_qr(void) {
              * demands six digits is testing the noise. */
             qr_add(&q, x, 1.0 + 2.0 * x[0] - 4.0 * x[1]);
         }
-        (void)qr_solve(&q, t_beta, NULL, &fq);
+        (void)qr_solve(&q, t_beta, t_scratch, &fq);
         CHECK(fq.pinned == 0, "qr scale: an offset column is not mistaken for collinear");
         CHECK(fabs(t_beta[1] - 2.0) < 1e-6 && fabs(t_beta[2] + 4.0) < 1e-6,
               "qr scale: and both slopes come back");
@@ -620,7 +664,7 @@ static void test_qr(void) {
             x[1] = 3.0 + (x[0] - 1.0e6) * 0.5;     /* exactly a function of x0 */
             qr_add(&q, x, 1.0 + 2.0 * x[0]);
         }
-        (void)qr_solve(&q, t_beta, NULL, &fq);
+        (void)qr_solve(&q, t_beta, t_scratch, &fq);
         CHECK(fq.pinned == 1, "qr scale: a dependent column at the same offset is dropped");
         CHECK(fq.term[1] == REGRESS_COLLINEAR,
               "qr scale: and reported collinear rather than constant");
@@ -634,7 +678,7 @@ static void test_qr(void) {
             x[1] = 3.0 + (x[0] - 1.0e9) * 0.5;
             qr_add(&q, x, 1.0 + 2.0 * x[0]);
         }
-        (void)qr_solve(&q, t_beta, NULL, &fq);
+        (void)qr_solve(&q, t_beta, t_scratch, &fq);
         CHECK(fq.condition > 1e7,
               "qr scale: at 1e9 the rank test misses, and cond= reports it instead");
 
@@ -653,7 +697,7 @@ static void test_qr(void) {
                     x[1] = (double)(i % 3) + 1.0;
                     qr_add(&q, x, 2.0 * (double)i + x[1]);
                 }
-                (void)qr_solve(&q, t_beta, NULL, &fq);
+                (void)qr_solve(&q, t_beta, t_scratch, &fq);
                 CHECK(fq.pinned == 0,
                       "qr scale: a column that overflows when squared is not deleted");
                 CHECK(fq.df == 3, "qr scale: and the rank is the same at every magnitude");
@@ -668,7 +712,7 @@ static void test_qr(void) {
     x[0] = 0; x[1] = 7; qr_add(&q, x, 1.0);
     x[0] = 1; x[1] = 7; qr_add(&q, x, 3.0);
     x[0] = 2; x[1] = 7; qr_add(&q, x, 5.0);
-    CHECK(qr_solve(&q, t_beta, NULL, &fq) == 0, "qr: solves a rank-deficient design");
+    CHECK(qr_solve(&q, t_beta, t_scratch, &fq) == 0, "qr: solves a rank-deficient design");
     CHECK(fq.pinned == 1, "qr: the constant column is pinned");
     CHECK(NEAR(t_beta[1], 2.0), "qr: the identified slope is right");
     CHECK(fq.term[1] == REGRESS_CONSTANT,
@@ -679,7 +723,7 @@ static void test_qr(void) {
     qr_init(&q, 1, t_store);
     x[0] = 1.0;
     CHECK(qr_add(&q, x, 0.0 / 0.0) == -1, "qr: a NaN response is refused");
-    CHECK(qr_solve(&q, t_beta, NULL, &fq) == -1, "qr: an empty sample is not a fit");
+    CHECK(qr_solve(&q, t_beta, t_scratch, &fq) == -1, "qr: an empty sample is not a fit");
     CHECK(qr_init(&q, REGRESS_MAX_VARS + 1, t_store) == -1, "qr: refuses too many terms");
 }
 
