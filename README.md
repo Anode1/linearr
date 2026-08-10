@@ -4,6 +4,13 @@
 
 Ordinary least squares (OLS) as a command-line program. Reads a CSV and returns
 the coefficients; reads a case and returns a prediction.
+
+**This is a rewrite of something that ran in production.** The author built a
+least-squares length-of-stay predictor for industry in 2011; it was deployed and
+maintained by other people. This is the same arithmetic in C, written from
+scratch, generalised so the terms come from your file, carrying none of the
+original data. [Where it came from](#origin).
+
 It requires a C compiler and `make`, and nothing else: no LAPACK, no BLAS, no
 GSL, no third-party header of any kind. The training file is read one row at a
 time and each row is forgotten, so the number of rows does not affect how much
