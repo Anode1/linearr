@@ -1149,10 +1149,10 @@ The rules the code already follows, so new code matches:
   straight back into the scorer.
 - **Stack first; the heap is enumerated.** Rows are processed one at a time
   into fixed-size buffers; nothing on the row path allocates. Three things do
-  allocate, each bounded by the model or the config and never by the data, and
-  each freed on every path: the coefficient table (`los.c`), the config table
-  (`params.c`), and one accumulator per group while `-t` fits them all
-  (`process.c`). That is the complete list, and it is kept short enough to check.
+  allocate, each bounded by the model and never by the data, and each freed on
+  every path: the coefficient table (`los.c`), the group index (`hash.c`), and
+  one accumulator per group while `-t` fits them all (`process.c`). That is the
+  complete list, and it is kept short enough to check.
 - **Bounded strings only.** `snprintf` always; never `strcpy`/`strcat`/`sprintf`,
   except the checked copy into a fixed buffer, where the guard sits on the
   line above and returns rather than truncating. Sizes come from `constants.h`.
@@ -1228,7 +1228,7 @@ this unmodified, and a native `.exe` links but has not been run.
     make install DESTDIR=/tmp/stage    # staged, for a package
     make uninstall
 
-The binary goes in `bin`, the example tables in `share/linearr/conf`, and the
+The binary goes in `bin`, the example data in `share/linearr/example`, and the
 program looks in the current directory, then beside itself, then
 `<bindir>/../share/linearr`. A symlink into a `bin` directory works too; the
 link is resolved before it looks beside itself.
@@ -1247,10 +1247,4 @@ snippet is worth more than a description.
 ## License
 
 BSD 2-Clause; see `LICENSE`.
-
-Chosen over the GPL deliberately. The uses this is for, checking an R
-implementation against it, embedding it on a small target, vendoring
-`regress.c` into a C codebase, all mean copying the source into somebody else's
-program, and a licence that forbids that works against the reason the project
-exists.
 

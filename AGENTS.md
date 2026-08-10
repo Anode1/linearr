@@ -75,10 +75,11 @@ found by reading a claim against the code rather than by running anything:
   (the first command the README documents) ran `rm -f` on the objects and the
   binary, built nothing, and exited 0. It looked exactly like an up-to-date
   no-op. `all:` now sits above `modeclean` for that reason.
-- `system.properties` said a trim table could be turned off; the loader made it
+- A trim table could be turned off in the configuration, but the loader made it
   mandatory, which meant a coefficient file produced by `-t` could not be scored
   against at all. The loader was split (`los_load` / `los_load_trims`) so the
-  comment became true.
+  two are independent, and the configuration file itself is gone: every setting
+  is an option.
 - And then the same line was wrong a second time, for a year's worth of commits
   in one afternoon: it said "comment this out and the trim point is just the
   prediction", when an absent key means the built-in default, so the table loads
