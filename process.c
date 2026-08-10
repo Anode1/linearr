@@ -358,12 +358,20 @@ static int open_training(const char *csv_path, FILE **fpp, int *nvars) {
     *fpp   = NULL;
     *nvars = 0;
 
-    /* the same two places as the tables: your file first, then the ones that
-     * shipped beside the program, so the examples work from anywhere */
-    if (resolve_file(csv_path, path, sizeof path) != 0)
-        return fail("cannot open the training file %s", path);
-    *fpp = fopen(path, "r");
-    if (!*fpp) return fail("cannot open the training file '%s'", path);
+    if (strcmp(csv_path, "-") == 0) {
+        /* A pipe. This is what a cloud invocation looks like: object storage
+         * streamed straight in, nothing landing on disk. The fit needs exactly
+         * one pass, so a pipe is enough for it; --residuals needs a second and
+         * is refused separately. */
+        *fpp = stdin;
+    } else {
+        /* the same two places as the tables: your file first, then the ones
+         * that shipped beside the program, so the examples work from anywhere */
+        if (resolve_file(csv_path, path, sizeof path) != 0)
+            return fail("cannot open the training file %s", path);
+        *fpp = fopen(path, "r");
+        if (!*fpp) return fail("cannot open the training file '%s'", path);
+    }
 
     while ((n = csv_next(*fpp, line, sizeof line)) == 2)
         ;                                   /* leading comments precede a header */
@@ -500,7 +508,7 @@ int process_train(const char *csv_path, const char *group,
     }
     rc = 0;
 cleanup:
-    if (fp) fclose(fp);
+    if (fp && fp != stdin) fclose(fp);
     return rc;
 }
 
@@ -539,6 +547,13 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
     int    rc = -1, n, nvars = 0;
     long   rows = 0, seen = 0, groups = 0;
     double ry_mean = 0.0, ry_m2 = 0.0, response_sd = -1.0;   /* spread of y */
+
+    /* Checked before anything is read or written: the refusal used to arrive
+     * after the coefficient table had already gone to stdout. */
+    if (resid && strcmp(csv_path, "-") == 0)
+        return fail("--residuals needs to read the training data a second time, "
+                    "to subtract each row from its own prediction, and a pipe "
+                    "cannot be rewound. Give it a file instead of -");
 
     if (sum) {
         sum->groups = 0; sum->rows = 0; sum->min_df = 0;
@@ -710,7 +725,7 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
     }
     rc = 0;
 cleanup:
-    if (fp) fclose(fp);
+    if (fp && fp != stdin) fclose(fp);
     if (index) hash_delete(index);      /* the models are freed by the list */
     group_fits_free(head);
     return rc;

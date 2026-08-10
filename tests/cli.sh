@@ -460,5 +460,16 @@ case "$("$bin" -t example/routes.csv --residuals "$tmp/rr.csv" 2>&1 >/dev/null)"
     *) ok ;;
 esac
 
+# --- training from a pipe, which is what a cloud invocation looks like ------
+check "-t - fits from stdin" \
+    "$(cat example/routes.csv | "$bin" -t - 2>/dev/null | tail -1)" "highway,8,1,5"
+# --residuals needs a second pass, and a pipe cannot be rewound. It must refuse
+# BEFORE writing a table, not after.
+set +e
+out=$(cat example/routes.csv | "$bin" -t - --residuals "$tmp/p.csv" 2>/dev/null); rc=$?
+set -e
+check "--residuals from a pipe writes no table" "$out" ""
+check "and exits nonzero" "$rc" "1"
+
 echo "cliut: $pass passed, $fail failed, $skip skipped"
 [ "$fail" -eq 0 ]

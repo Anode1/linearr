@@ -523,6 +523,48 @@ The problem itself has not changed in the interval: a table of coefficients, a
 stream of rows to apply them to, and often a machine on which installing a
 scientific stack is inconvenient or not permitted.
 
+The author's work in industry was largely this: taking models written by
+scientists in SAS, R and Matlab and turning them into C, or into plain Java
+without frameworks, so that they could run where the original could not. The
+view behind that work, and behind this program, is that computation belongs as
+close to the processor and to the memory it touches as the problem allows;
+distance from it costs time, energy and hardware that a straight line does not
+need.
+
+That is a claim about implementation, not about tools. **This does not replace
+Python, R, SAS or Matlab, and is not trying to.** Those are where a model should
+be explored, chosen, tested and argued about, and they have decades of
+statistics behind them that this has not. What this offers is a small, checkable
+implementation of one method, useful in three places: as something to test an R
+implementation against, since it agrees with `lm()` to the printed digit; on
+embedded and small ARM targets where no interpreter is going to be installed;
+and in cloud batch work, where the memory a process holds is what it costs.
+
+Measured for the third case: **2,000,000 rows by 8 terms, a 46 MB file, fitted
+in 0.42 s using 2.6 MB of memory**, and the same through a pipe rather than a
+file. Nothing lands on disk, and the footprint does not depend on how much data
+arrives.
+
+### The limitations of that, stated
+
+- **One core.** No threading, no vectorisation beyond what the compiler finds.
+  A parallel implementation would beat it on a machine with cores to spare.
+- **One stream.** It reads one input sequentially. There is no sharding, no
+  distribution, no restart from a partial fit.
+- **Memory is bounded by the MODEL, not by the data, and the model includes the
+  groups.** Fitting every group in one pass holds one accumulator per group:
+  about 2 KB per group at the default term ceiling. 500 groups is 1 MB; 400,000
+  groups is 800 MB. Rows are free, groups are not.
+- **`--residuals` needs a second pass**, so it needs a real file. From a pipe it
+  refuses rather than half-work.
+- **The parsing is the cost, not the arithmetic.** At 4.7 million rows a second
+  the program is reading and converting text; a binary input format would be
+  faster and does not exist here.
+- **No weights, no sparse input, no categorical columns, no missing values.**
+  A missing field is an error, not an imputation.
+- **Commas only.** No quoting, no embedded separators, no other delimiter.
+
+
 ### The original term set
 
 The 24 terms in `conf/coefficients.csv` are the production model's, and they are

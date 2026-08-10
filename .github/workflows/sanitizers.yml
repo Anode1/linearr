@@ -38,6 +38,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: what this runner actually is
+        run: uname -srm
       - name: build (make must actually build)
         run: make && test -x ./linearr
       - name: unit tests
