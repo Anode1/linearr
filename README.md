@@ -545,6 +545,24 @@ in 0.42 s using 2.6 MB of memory**, and the same through a pipe rather than a
 file. Nothing lands on disk, and the footprint does not depend on how much data
 arrives.
 
+**The row count is bounded by time, not by memory.** A row is folded into the
+cross-products and dropped, so the tenth row and the ten-billionth cost the same
+space. Measured at 10,000,000 rows: 1.29 s, 2.5 MB, the same figure as at two
+million. At that rate, 7.75 million rows a second:
+
+| rows | time |
+| --- | --- |
+| 1,000,000,000 | about 2 minutes |
+| 1,000,000,000,000 | about 36 hours |
+| 9,223,372,036,854,775,807 | the counter's own limit, and about 38,000 years |
+
+The counters are 64-bit, so a quintillion rows is representable; it is simply
+not reachable. Two caveats on very long runs, both real: the cross-products
+accumulate for the whole stream, so at extreme lengths the sums lose precision
+in their last digits even though the means are updated stably; and the check
+that the model has the right shape holds one accumulator per group, which is
+memory in the groups, not in the rows.
+
 ### The limitations of that, stated
 
 - **One core.** No threading, no vectorisation beyond what the compiler finds.
