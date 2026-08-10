@@ -37,6 +37,9 @@ static void usage(FILE *out, const char *prog) {
         "         F may be - to read the training data from a pipe\n"
         "         and whose header names the terms. A complete coefficient file\n"
         "         goes to stdout, the fit summary to stderr\n"
+        "  -y NAME, --response NAME   the column holding the value being\n"
+        "         predicted, by its header name. Without it that is column 2,\n"
+        "         and a file written in another order fits the wrong column\n"
         "  -g G   fit only group G, or '*' to pool every row into one line.\n"
         "         Without -g, every group in the file is fitted, one line each\n"
         "  -c F   the coefficient table to score against. Required for scoring:\n"
@@ -47,8 +50,10 @@ static void usage(FILE *out, const char *prog) {
         "  --residuals F   with -t, also write one row per training row to F:\n"
         "         GROUP,observed,predicted,residual. Where the model is wrong,\n"
         "         which no summary number can show you\n"
-        "  --trim F   the trim table. Without it the trim point is the\n"
-        "         prediction itself\n"
+        "  --trim F   the trim table: group,trim_addition. Without it the trim\n"
+        "         point is the prediction itself\n"
+        "  --no-trim  says that explicitly. Only useful to override a --trim\n"
+        "         earlier on the same command line\n"
         "  --scale N / --trim-scale N   decimal places in the prediction and\n"
         "         in the trim point, 0 to 9. Default 4 and 1\n"
         "  --terms  what the loaded coefficient file expects, in order\n"
@@ -103,11 +108,11 @@ static void print_bytes(const char *label, double b) {
     else                                (void)printf("%s%.2f GB\n", label, b / (1024.0 * 1024 * 1024));
 }
 
-static void print_footprint(int terms, long groups) {
+static void print_footprint(int terms, long long groups) {
     size_t fit   = process_group_bytes(terms);
     size_t score = process_model_bytes();
 
-    (void)printf("%d term%s, %ld group%s\n\n", terms, s_(terms), groups, s_(groups));
+    (void)printf("%d term%s, %lld group%s\n\n", terms, s_(terms), groups, s_(groups));
     (void)printf("fitting, -t, one accumulator per group\n");
     (void)printf("  per group   %zu bytes\n", fit);
     print_bytes("  in total    ", (double)fit * (double)groups);
@@ -125,7 +130,7 @@ static void print_footprint(int terms, long groups) {
 static void print_terms(void) {
     int i, n = process_nterms();
 
-    (void)printf("%d term%s and %ld group%s in %s\n", n, s_(n), process_ngroups(),
+    (void)printf("%d term%s and %lld group%s in %s\n", n, s_(n), process_ngroups(),
            s_(process_ngroups()), process_coef_path());
     /* What the model predicts, when the file says so. A table of coefficients
      * with no response named cannot be identified a week later, and -t writes
@@ -173,15 +178,17 @@ static int train_all(const char *path, const char *only,
      * see it without being told to look. */
     if (los_response_name()[0] != '\0')
         (void)fprintf(stderr, "reading: column 1 is the group, '%s' is the "
-                      "value being predicted, and the other %d %s\n",
+                      "value being predicted, and the other %d %s%s\n",
                       los_response_name(), process_nterms(),
                       process_nterms() == 1 ? "column is a term"
-                                            : "columns are terms");
-    (void)fprintf(stderr, "fit: %ld group%s, %ld row%s", sum.groups, s_(sum.groups),
+                                            : "columns are terms",
+                      process_response_named() ? ""
+                                               : ". Use -y NAME if that is the wrong column");
+    (void)fprintf(stderr, "fit: %lld group%s, %lld row%s", sum.groups, s_(sum.groups),
             sum.rows, s_(sum.rows));
     if (sum.pinned > 0)
         fprintf(stderr, ", %d term-slot%s pinned to 0", sum.pinned, s_(sum.pinned));
-    (void)fprintf(stderr, ", least df=%ld", sum.min_df);
+    (void)fprintf(stderr, ", least df=%lld", sum.min_df);
     if (sum.max_sigma >= 0.0) fprintf(stderr, ", worst resid SD=%.4g", sum.max_sigma);
     if (sum.max_condition > 1.0)
         fprintf(stderr, ", worst cond=%.3g (%s)", sum.max_condition, process_solver());
@@ -211,8 +218,9 @@ static int train_all(const char *path, const char *only,
     if (sum.max_condition > 1e8)
         (void)fprintf(stderr, "warning: at least one group is ill-conditioned "
                         "(cond=%.3g); the trailing digits of its coefficients "
-                        "are noise. Try --qr, which does not square the "
-                        "condition number.\n", sum.max_condition);
+                        "are noise.%s\n", sum.max_condition,
+                        strcmp(process_solver(), "QR") == 0 ? ""
+                        : " Try --qr, which does not square the condition number.");
     return 0;
 }
 
@@ -225,13 +233,13 @@ static int train(const char *path, const char *group) {
         return -1;
     }
     (void)printf("%s\n", out);
-    (void)fprintf(stderr, "fit: %ld row%s", info.rows, s_(info.rows));
+    (void)fprintf(stderr, "fit: %lld row%s", info.rows, s_(info.rows));
     if (info.r2 >= 0.0) fprintf(stderr, ", R2=%.4f", info.r2);
     if (info.sigma >= 0.0) fprintf(stderr, ", resid SD=%.4g", info.sigma);
     if (info.pinned > 0)
         (void)fprintf(stderr, ", %d term%s unidentified and set to 0",
                 info.pinned, s_(info.pinned));
-    (void)fprintf(stderr, ", df=%ld", info.df);
+    (void)fprintf(stderr, ", df=%lld", info.df);
     if (info.condition > 1.0)
         fprintf(stderr, ", cond=%.3g (%s)", info.condition, process_solver());
     (void)fprintf(stderr, "\n");
@@ -241,8 +249,9 @@ static int train(const char *path, const char *group) {
     if (info.condition > 1e8)
         (void)fprintf(stderr, "warning: the design is ill-conditioned (cond=%.3g). "
                         "The trailing digits of these coefficients are noise; "
-                        "try --qr, rescale your columns, or drop a "
-                        "near-duplicate one.\n", info.condition);
+                        "%srescale your columns, or drop a near-duplicate "
+                        "one.\n", info.condition,
+                        strcmp(process_solver(), "QR") == 0 ? "" : "try --qr, ");
     if (info.r2 < 0.0)
         (void)fprintf(stderr, "warning: R2 is not reportable here: the response "
                         "does not vary, or the fit consumed all of its "
@@ -268,6 +277,7 @@ int main(int argc, char **argv) {
     static struct option longopts[] = {
         { "terms",   no_argument,       NULL, 'T' },
         { "footprint", required_argument, NULL, 'F' },
+        { "response",   required_argument, NULL, 'y' },
         { "scale",      required_argument, NULL, 'S' },
         { "trim-scale", required_argument, NULL, 'Z' },
         { "version", no_argument,       NULL, 'V' },
@@ -289,13 +299,23 @@ int main(int argc, char **argv) {
 
     g_prog = argv[0];               /* resolve.c finds our files from this */
 
-    while ((c = getopt_long(argc, argv, "dhc:t:g:", longopts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, "dhc:t:g:y:", longopts, NULL)) != -1) {
         switch (c) {
             case 'd': g_debug = 1; break;
             case 't': train_file = optarg; break;
+            case 'y': process_use_response(optarg); break;
             case 'g': group = optarg; break;
             case 'T': want_terms = 1; break;
-            case 'F': footprint_terms = atoi(optarg); break;
+            case 'F': {   /* atoi cannot tell "abc" from 0, and 0 fell through
+                           * every branch to the stdin path, which then died
+                           * about a missing coefficient table. */
+                          char *end;
+                          long v = strtol(optarg, &end, 10);
+                          if (*end != '\0' || v < 1 || v > REGRESS_MAX_VARS)
+                              die("--footprint takes a term count of 1 to %d",
+                                  REGRESS_MAX_VARS);
+                          footprint_terms = (int)v;
+                      } break;
             case 'S': if (process_set_scale(atoi(optarg)) != 0)
                           die("--scale takes 0 to 9 decimal places");
                       break;
@@ -326,17 +346,14 @@ int main(int argc, char **argv) {
     if (want_terms && train_file)
         die("--terms lists the loaded model; it cannot be combined with -t");
     if (footprint_terms > 0) {
-        if (footprint_terms > REGRESS_MAX_VARS)
-            die("--footprint takes 1..%d terms; this build fits no more",
-                REGRESS_MAX_VARS);
         /* An optional group count follows, so the common question ("how much
          * for 400,000 groups of 24 terms?") is one command and no arithmetic. */
         if (optind < argc) {
-            footprint_groups = atol(argv[optind]);
-            if (footprint_groups < 1) die("--footprint needs a group count of 1 or more");
+            char *end;
+            footprint_groups = strtoll(argv[optind], &end, 10);
+            if (*end != '\0' || footprint_groups < 1)
+                die("--footprint's group count must be a whole number, 1 or more");
         }
-    } else if (footprint_terms < 0) {
-        die("--footprint takes a term count of 1 or more");
     }
 
     if (want_terms) {

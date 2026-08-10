@@ -45,8 +45,16 @@ static int refuse(const char *fmt, ...) {
 
 static struct hash *models;
 static char         var_name[LOS_MAX_VARS][LOS_NAME_MAX];
+
+/* Where each column of a TRAINING row lives. Positionally the response is
+ * field 1 and the terms follow it, which is what these hold unless --response
+ * names a column somewhere else. Nothing in the data can say which column is
+ * the response, so a file written in another order fits perfectly well and
+ * answers a different question; naming it is the only way to be sure. */
+static int          resp_field = 1;
+static int          term_field[LOS_MAX_VARS];
 static int          nvars;
-static long         ngroups;
+static long long ngroups;
 static int          have_trims;
 static char         response[LOS_NAME_MAX];
 
@@ -92,7 +100,44 @@ int los_schema_set(const char *const *names, int n) {
     for (i = 0; i < n; i++)
         strcpy(var_name[i], names[i]);          /* length checked above */
     nvars = n;
+    for (i = 0; i < n; i++) term_field[i] = i + 2;   /* the positional layout */
+    resp_field = 1;
     debug("los: schema of %d terms", n);
+    return 0;
+}
+
+/* The same, from a WHOLE training header, with the response named rather than
+ * assumed to be column 2. header[0] is the group; the named column is the
+ * response; every other column is a term, in the order it appears.
+ *
+ * Returns 0, -1 for the reasons los_schema_set gives, -2 if the name is not in
+ * the header, and -3 if it names the group column. The caller distinguishes
+ * them because "no such column" and "that is the group" want different advice.
+ */
+int los_schema_set_response(const char *const *header, int n,
+                            const char *want) {
+    const char *names[LOS_MAX_VARS];
+    int field[LOS_MAX_VARS];
+    int i, r = -1, k = 0;
+
+    if (!want) return -1;
+    if (n < 3 || n - 1 > LOS_MAX_VARS + 1) return -1;
+
+    for (i = 0; i < n; i++)
+        if (ci_equal(header[i], want)) { r = i; break; }
+    if (r < 0) return -2;
+    if (r == 0) return -3;
+
+    for (i = 1; i < n; i++) {
+        if (i == r) continue;
+        names[k] = header[i];
+        field[k] = i;
+        k++;
+    }
+    if (los_schema_set(names, k) != 0) return -1;
+    for (i = 0; i < k; i++) term_field[i] = field[i];
+    resp_field = r;
+    debug("los: response is column %d, %d terms", r + 1, k);
     return 0;
 }
 
@@ -109,7 +154,7 @@ int los_var_index(const char *name) {
     return -1;
 }
 
-long los_ngroups(void) { return ngroups; }
+long long los_ngroups(void) { return ngroups; }
 int  los_has_trims(void) { return have_trims; }
 const char *los_response_name(void) { return response; }
 
@@ -211,7 +256,7 @@ static int load_coefficients(const char *path) {
     char  *field[CSV_MAX_FIELDS];
     FILE  *fp = fopen(path, "r");
     int    rc = -1, n, i;
-    long   rows = 0;
+    long long rows = 0;
 
     if (!fp) return refuse("cannot open %s", path);
 
@@ -440,9 +485,12 @@ const char *los_parse_error(void) {
 static void field_label(char *out, size_t outsz, int idx, int xoff) {
     const char *name = "a column";
     if (idx == 0) name = "the group column";
-    else if (xoff == 2 && idx == 1) name = response[0] ? response : "the value column";
+    else if (xoff == 2 && idx == resp_field)
+        name = response[0] ? response : "the value column";
     else {
-        int t = idx - xoff;
+        int t = -1, j;
+        if (xoff == 2) { for (j = 0; j < nvars; j++) if (term_field[j] == idx) t = j; }
+        else           { t = idx - xoff; }
         if (t >= 0 && t < nvars) name = var_name[t];
     }
     (void)snprintf(out, outsz, "%.*s", (int)outsz - 1, name);
@@ -520,7 +568,14 @@ static int parse_row(const char *line, struct los_case *c, double *los,
      * answer is the worst of the three outcomes, so quoting is refused here
      * rather than half-handled. */
     for (i = 0; i < n; i++) {
-        if (field[i][0] == '"' || field[i][0] == '\'') {
+        size_t len = strlen(field[i]);
+        /* First OR last, because a field that merely ENDS in a quote is the
+         * same fault: A" and A became two groups, silently, which is the
+         * outcome this guard was written to prevent and it only checked byte
+         * zero. An interior apostrophe is left alone, since O'Brien is a name
+         * and not a quoting attempt. */
+        if (field[i][0] == '"' || field[i][0] == '\'' ||
+            (len > 0 && field[i][len - 1] == '"')) {
             show_field(shown, sizeof shown, field[i]);
             field_label(lbl, sizeof lbl, i, xoff);
             (void)snprintf(parse_why, sizeof parse_why,
@@ -541,9 +596,9 @@ static int parse_row(const char *line, struct los_case *c, double *los,
                        shown, GROUP_MAX - 1);
         return -1;
     }
-    if (los && parse_num(field[1], los) != 0) {
-        show_field(shown, sizeof shown, field[1]);
-        field_label(lbl, sizeof lbl, 1, xoff);
+    if (los && parse_num(field[resp_field], los) != 0) {
+        show_field(shown, sizeof shown, field[resp_field]);
+        field_label(lbl, sizeof lbl, resp_field, xoff);
         (void)snprintf(parse_why, sizeof parse_why,
                        "%s is %s, which is not a number. This fits numbers "
                        "only: there is no imputation for an empty field and no "
@@ -552,9 +607,10 @@ static int parse_row(const char *line, struct los_case *c, double *los,
     }
 
     for (i = 0; i < nvars; i++) {
-        if (parse_num(field[i + xoff], &c->x[i]) != 0) {
-            show_field(shown, sizeof shown, field[i + xoff]);
-            field_label(lbl, sizeof lbl, i + xoff, xoff);
+        int at = (xoff == 2) ? term_field[i] : i + xoff;
+        if (parse_num(field[at], &c->x[i]) != 0) {
+            show_field(shown, sizeof shown, field[at]);
+            field_label(lbl, sizeof lbl, at, xoff);
             (void)snprintf(parse_why, sizeof parse_why,
                            "term %s is %s, which is not a number. This fits "
                            "numbers only: there is no imputation for an empty "

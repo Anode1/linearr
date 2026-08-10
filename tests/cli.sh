@@ -262,9 +262,14 @@ if command -v make >/dev/null 2>&1; then
     check "the test build is warning-free" "$wn" "0"
 
     # A real warning must actually surface, not merely appear on the command line.
-    printf '\nstatic int cli_probe(void) { int x; return x; }\n' >> "$src/utils.c"
+    # The probe goes into c/, where the sources are. It used to be written to
+    # $src/utils.c, and when the sources moved it landed in a file nothing
+    # compiles: grep then matched nothing, exited 1, and `set -e` ended this
+    # whole script with no output and no FAIL line. `|| true` on the count, so
+    # a probe that stops working fails ITS assertion instead of the run.
+    printf '\nstatic int cli_probe(void) { int x; return x; }\n' >> "$src/c/utils.c"
     n=$(cd "$src" && env -u MAKEFLAGS -u MAKELEVEL \
-        make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32' 2>&1 | grep -c warning)
+        make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32' 2>&1 | grep -c warning || true)
     [ "$n" -ge 1 ] && ok || no "an uninitialised variable produces a warning (got $n)"
 else
     skip=$((skip+3)); echo "  SKIP build-claims (no make)"
@@ -562,12 +567,56 @@ case "$msg" in *"semicolon"*) ok ;; *) no "a semicolon header is named: got [$ms
 # answers a different question. The only defence is to state what was taken.
 check "the layout it read is reported" \
     "$("$bin" -t example/simple-train.csv 2>&1 >/dev/null | head -1)" \
-    "reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms"
+    "reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column"
 
 # CRLF is not a refusal: a file from a Windows editor reads normally.
 printf 'group,y,a\r\nA,1,1\r\nA,2,2\r\nA,3,4\r\n' > "$tmp/crlf.csv"
 check "CRLF line endings are read, not refused" \
     "$("$bin" -t "$tmp/crlf.csv" >/dev/null 2>&1; echo $?)" "0"
+
+# --- naming the response ------------------------------------------------------
+# The layout is positional, so a file written in another order fits perfectly
+# well and answers a different question. A reviewer wrote the CSV a pandas user
+# exports, site,dose,age,response, and got dose regressed on age and response:
+# plausible coefficients, exit 0, nothing wrong on the face of it. -y names the
+# column instead of counting to two.
+printf 'site,dose,age,response\nn,10,55,3.1\nn,20,61,5.4\nn,30,48,7.9\nn,40,52,10.2\n' \
+    > "$tmp/y.csv"
+check "without -y the second column is the value, as before" \
+    "$("$bin" -t "$tmp/y.csv" 2>&1 >/dev/null | head -1)" \
+    "reading: column 1 is the group, 'dose' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column"
+check "-y names it instead, and drops the advice it no longer needs" \
+    "$("$bin" -t "$tmp/y.csv" -y response 2>&1 >/dev/null | head -1)" \
+    "reading: column 1 is the group, 'response' is the value being predicted, and the other 2 columns are terms"
+check "and the terms are every other column, in order" \
+    "$("$bin" -t "$tmp/y.csv" -y response 2>/dev/null | grep '^group,')" \
+    "group,intercept,dose,age"
+check "--response is the long form" \
+    "$("$bin" -t "$tmp/y.csv" --response response 2>/dev/null | grep '^group,')" \
+    "group,intercept,dose,age"
+check "the coefficient file records the named response" \
+    "$("$bin" -t "$tmp/y.csv" -y response 2>/dev/null | head -1)" \
+    "# response: response"
+# The fit must be the real one, not a renaming: response = 0.235*dose - 0.011*age
+check "and the coefficients are of that fit" \
+    "$("$bin" -t "$tmp/y.csv" -y response 2>/dev/null | tail -1 | cut -d, -f3 | cut -c1-6)" \
+    "0.2355"
+set +e
+out=$("$bin" -t "$tmp/y.csv" -y outcome 2>&1 >/dev/null); rc=$?
+set -e
+check "a name that is not in the header is an error" "$rc" "1"
+case "$out" in *"has no column 'outcome'"*) ok ;; *) no "-y names the missing column: got [$out]" ;; esac
+case "$out" in *"dose, age, response"*) ok ;; *) no "-y lists what the header does offer: got [$out]" ;; esac
+set +e
+out=$("$bin" -t "$tmp/y.csv" -y site 2>&1 >/dev/null); rc=$?
+set -e
+check "naming the group column is an error" "$rc" "1"
+case "$out" in *"the first column is the group"*) ok ;; *) no "-y group message: got [$out]" ;; esac
+# A model fitted with -y must score like any other.
+"$bin" -t "$tmp/y.csv" -y response 2>/dev/null > "$tmp/ym.csv"
+check "a model fitted with -y scores normally" \
+    "$("$bin" -c "$tmp/ym.csv" n dose=25 age=50)" \
+    "n prediction=6.6938"
 
 # Anscombe II is the canonical curve that a line cannot fit. The check must see
 # it, and must NOT see anything in set I, which is the same summary statistics

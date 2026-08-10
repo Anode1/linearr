@@ -68,7 +68,7 @@
  * here is allocated or freed by this module. */
 struct regress {
     int     nvars;
-    long    n;              /* observations added */
+    long long n;            /* observations added */
     double *mean;           /* nvars: running mean of each regressor */
     double *c;              /* nvars*nvars: centered cross-products, row-major */
     double *cxy;            /* nvars: centered cross-products with y */
@@ -107,7 +107,7 @@ enum regress_term {
 /* What the fit turned out to be. */
 struct regress_fit {
     int    pinned;      /* terms the sample could not identify, set to 0     */
-    long   df;          /* residual degrees of freedom: n - (identified + 1) */
+    long long df;       /* residual degrees of freedom: n - (identified + 1) */
     double r2;          /* -1 when it is not defined (a response that never
                            varies) or not computable to useful precision     */
     unsigned char term[REGRESS_MAX_VARS];  /* enum regress_term, per slope */

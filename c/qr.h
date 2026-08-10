@@ -10,8 +10,8 @@
  * This module reaches the same answer by rotating each row into an upper
  * triangular factor R with Givens rotations, one row at a time. The row is used
  * and dropped, exactly as in regress.c, so the memory is still a function of
- * the model alone: p^2 + 6p + 5 doubles, against the normal equations' p^2 +
- * 2p. It is 4p + 5 doubles MORE, not less. This header said less, and the
+ * the model alone: p^2 + 7p + 6 doubles, against the normal equations' p^2 +
+ * 2p. It is 5p + 6 doubles MORE, not less. This header said less, and the
  * README said more, and neither counted the three per-column vectors this
  * module keeps; the figures now come from qr_storage() and regress_storage(),
  * which are what the callers allocate. What it does not do is square anything, so the digits lost are the
@@ -52,7 +52,7 @@
  * here allocates. R is (p+1) rows of (p+2), the last column holding Q'y. */
 struct qr {
     int     nvars;
-    long    n;
+    long long n;
     double *r;
     double  my, cyy;    /* running mean and centered sum of squares of y */
     double  rss;        /* residual of the ROTATION; only the model's when
@@ -69,6 +69,10 @@ struct qr {
      * its own column's 2-norm. The range is kept as well, but only to tell a
      * CONSTANT column from a COLLINEAR one, which are different verdicts. */
     double *colss;
+    /* The magnitude colss is relative to, so squaring cannot overflow: a
+     * column past about 1.3e154 used to send the sum to +inf and delete a
+     * well-identified term. */
+    double *colscale;
 };
 
 size_t qr_storage(int nvars);

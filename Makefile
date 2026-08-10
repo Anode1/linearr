@@ -25,14 +25,16 @@ WARN = -W -Wall
 PROJ = $(STD) $(WARN)
 LIBM = -lm
 
-# every *.c at top level or one dir down; add a file, no edit needed
-SOURCES.c := $(wildcard *.c) $(wildcard */*.c)
+# every *.c under c/; add a file there, no edit needed. Scoped to c/ and
+# not */*.c: that swept bench/, scripts/ and tests/ into the production
+# link, so anything dropped in one of them joined the shipped binary.
+SOURCES.c := $(wildcard c/*.c)
 # The single-shot builds below (ut, ut-asan, ut-ubsan) compile every source in
 # one command, so they generate no .d files and make cannot see a header. Listed
 # explicitly, because without them `make ut` after editing a header re-ran the
 # PREVIOUS binary and reported it green. That is how a deliberately reintroduced
 # defect passed the suite twice while it was being verified.
-HEADERS.h := $(wildcard *.h) $(wildcard */*.h)
+HEADERS.h := $(wildcard c/*.h)
 OBJS       = $(SOURCES.c:.c=.o)
 
 debug    : CFLAGS = -g -O0

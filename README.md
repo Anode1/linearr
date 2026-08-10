@@ -12,7 +12,7 @@ memory the fit uses. The number of GROUPS does, and
 
     make
     ./linearr -t mydata.csv > model.csv       # fit every group in one pass
-    ./linearr -c model.csv --no-trim A x=3    # score a case against it
+    ./linearr -c model.csv A x=3              # score a case against it
 
 ## All of least squares, in three short pieces
 
@@ -35,7 +35,7 @@ between them. Every division fits equally well, so there is nothing to
 determine:
 
     $ ./linearr -t example/together.csv
-    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
     fit: 1 group, 5 rows, 1 term-slot pinned to 0, least df=3, worst resid SD=4.397
     # response: minutes
     group,intercept,night,headlights
@@ -54,7 +54,7 @@ the way two points always define a line exactly. It would fit perfectly on any
 numbers whatsoever, so a perfect fit tells you nothing:
 
     $ ./linearr -t example/three-rows.csv
-    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
     fit: 1 group, 3 rows, least df=0, worst cond=1.33 (normal equations)
     warning: at least one group has no residual degrees of freedom; its line passes through every row by construction. Fit those groups on more rows.
     # response: minutes
@@ -75,7 +75,7 @@ squaring roughly halves the significant digits available. With two columns that
 differ in the sixth decimal, asked for `1 + 2*x1 + 3*x2`:
 
     $ ./linearr -t example/nearly-the-same.csv
-    reading: column 1 is the group, 'value' is the value being predicted, and the other 2 columns are terms
+    reading: column 1 is the group, 'value' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
     fit: 1 group, 40 rows, least df=37, worst resid SD=0, worst cond=5.34e+10 (normal equations)
     warning: at least one group is ill-conditioned (cond=5.34e+10); the trailing digits of its coefficients are noise. Try --qr, which does not square the condition number.
     # response: value
@@ -98,7 +98,7 @@ printed above 1e8.
 Anscombe's quartet, fitted four at once, which is what groups are for:
 
     $ ./linearr -t example/anscombe.csv
-    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term. Use -y NAME if that is the wrong column
     fit: 4 groups, 44 rows, least df=9, worst resid SD=1.237
     # response: y
     group,intercept,x
@@ -114,7 +114,7 @@ tools.
 
     $ ./linearr -t example/anscombe.csv --residuals r.csv
     residuals: r.csv
-    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term. Use -y NAME if that is the wrong column
     fit: 4 groups, 44 rows, least df=9, worst resid SD=1.237
     warning: in group II the residuals still depend on x after the line is subtracted (t=-2219.2). A straight line is probably the wrong shape in that term; consider adding its square as a column.
     # response: y
@@ -137,7 +137,7 @@ them:
 
     $ ./linearr -t example/anscombe.csv -g II --residuals r.csv
     residuals: r.csv
-    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term. Use -y NAME if that is the wrong column
     fit: 1 group, 11 rows, least df=9, worst resid SD=1.237
     warning: in group II the residuals still depend on x after the line is subtracted (t=-2219.2). A straight line is probably the wrong shape in that term; consider adding its square as a column.
     # response: y
@@ -184,9 +184,11 @@ one case it is built for and is honest about the two it is not.
 Three things it does that a small OLS implementation usually does not, each
 demonstrated in its own section below:
 
-- **The arithmetic is checkable.** It reproduces the NIST reference values to
-  eleven digits and agrees with R's `lm()` to 1e-11 under `--qr`, and both run
-  in `make check`. `lm()` solves by a different method, so the agreement is
+- **The arithmetic is checkable.** It reproduces the NIST reference values for
+  Norris and Longley to eleven digits, and Wampler1's exact quintic to nine
+  under the default solver and ten under `--qr`. It agrees with R's `lm()` to
+  1e-6 or better on every example, and to 1e-11 on most of them. Both run in
+  `make check`, and `lm()` solves by a different method, so the agreement is
   evidence and not a tautology.
   [Checked against answers somebody else certified](#checked-against-answers-somebody-else-certified)
 - **It reads the residuals.** R2 and a residual SD are averages over the
@@ -233,7 +235,7 @@ names the terms:
     B,34.0,7,3
 
     $ ./linearr -t example/simple-train.csv > model.csv
-    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
     fit: 2 groups, 13 rows, least df=3, worst resid SD=0, worst cond=1.03 (normal equations)
 
     $ cat model.csv
@@ -251,6 +253,19 @@ Those three columns were the whole schema; it ships as
 `-t` fits **every group in the file**, one line each, in a single pass. Standard
 output is a complete coefficient file and standard error is the commentary, so
 the redirect above is the workflow.
+
+**Which column is the value.** Column 2 unless you say otherwise, and nothing
+in the data can say which column you meant. A file written as
+`site,dose,age,response` therefore fits `dose` from `age` and `response`, prints
+plausible coefficients and exits 0. Name the column instead:
+
+    $ ./linearr -t trial.csv -y response
+    cannot fit: cannot open the training file 'trial.csv' (looked in the current directory, in /home/vas/linearr, and in /home/vas/linearr/../share/linearr)
+
+Column 1 stays the group, the named column becomes the value, and every other
+column is a term in the order it appears. Without `-y` the `reading:` line ends
+with the remedy, so the mistake is visible on the first run rather than in the
+numbers.
 
 The rest of this section uses `example/coefficients.csv`, which is the 24-term
 model described under [The example data](#the-example-data-and-what-each-file-is-for):
@@ -314,7 +329,7 @@ this is plain least squares.
 of route. The terms are the same everywhere; what each term is worth is not:
 
     $ ./linearr -t example/routes.csv
-    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
     fit: 3 groups, 18 rows, least df=3, worst resid SD=3.832e-07, worst cond=1.02 (normal equations)
     # response: minutes
     group,intercept,km,stops
@@ -359,7 +374,7 @@ you wanted. There is no way for the program to notice. What it can do is say
 what it took, which it does, first, on every fit:
 
     $ ./linearr -t example/simple-train.csv
-    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
     fit: 2 groups, 13 rows, least df=3, worst resid SD=0, worst cond=1.03 (normal equations)
     # response: minutes
     group,intercept,km,stops
@@ -519,7 +534,7 @@ parabola fitted with a line:
 
     $ ./linearr -t example/curve.csv --residuals r.csv
     residuals: r.csv
-    reading: column 1 is the group, 'value' is the value being predicted, and the other 1 column is a term
+    reading: column 1 is the group, 'value' is the value being predicted, and the other 1 column is a term. Use -y NAME if that is the wrong column
     fit: 1 group, 13 rows, least df=11, worst resid SD=13.49
     warning: in group A the residuals still depend on x after the line is subtracted (t=9999.0). A straight line is probably the wrong shape in that term; consider adding its square as a column.
     # response: value
@@ -611,9 +626,9 @@ The fit accumulates `X'X` and solves it. That is what bounds the memory, and it
 squares the condition number of the design, so a near-collinear or badly scaled
 problem loses about twice the digits it needs to. `--qr` rotates each row into a
 triangular factor instead, with Givens rotations, one row at a time. It squares
-nothing. It is still streaming. Its factor is `p^2 + 6p + 5` doubles against the
-normal equations' `p^2 + 2p`, so it is LARGER by `4p + 5`, not smaller. At 24
-terms that is 725 doubles against 624.
+nothing. It is still streaming. Its factor is `p^2 + 7p + 6` doubles against the
+normal equations' `p^2 + 2p`, so it is LARGER by `5p + 6`, not smaller. At 24
+terms that is 750 doubles against 624.
 
 On `example/nearly-the-same.csv`, where two columns differ in the sixth decimal
 and the answer is `1 + 2*x1 + 3*x2`:
@@ -652,7 +667,7 @@ values are computed to fifteen digits.
 not notice when something ordinary breaks:
 
     $ ./linearr -t example/norris.csv
-    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term. Use -y NAME if that is the wrong column
     fit: 1 group, 36 rows, least df=34, worst resid SD=0.8848
     # response: y
     group,intercept,x
@@ -664,7 +679,7 @@ agree, which is every digit printed.
 **Longley**, the standard hard case:
 
     $ ./linearr -t example/longley.csv
-    reading: column 1 is the group, 'employment' is the value being predicted, and the other 6 columns are terms
+    reading: column 1 is the group, 'employment' is the value being predicted, and the other 6 columns are terms. Use -y NAME if that is the wrong column
     fit: 1 group, 16 rows, least df=9, worst resid SD=304.9, worst cond=934 (normal equations)
     # response: employment
     group,intercept,deflator,gnp,unemployed,armed_forces,population,year
@@ -680,14 +695,14 @@ certified residual is exactly 0, so anything else is the solver's own error with
 nothing in the data to hide behind.
 
     $ ./linearr -t example/wampler1.csv
-    reading: column 1 is the group, 'y' is the value being predicted, and the other 5 columns are terms
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 5 columns are terms. Use -y NAME if that is the wrong column
     fit: 1 group, 21 rows, least df=15, worst resid SD=0.02282, worst cond=9.96e+04 (normal equations)
     # response: y
     group,intercept,x,x2,x3,x4,x5
     A,0.999999995576,0.999999996707,1.0000000034,0.999999999361,1.00000000004,0.999999999999
 
     $ ./linearr -t example/wampler1.csv --qr
-    reading: column 1 is the group, 'y' is the value being predicted, and the other 5 columns are terms
+    reading: column 1 is the group, 'y' is the value being predicted, and the other 5 columns are terms. Use -y NAME if that is the wrong column
     fit: 1 group, 21 rows, least df=15, worst resid SD=6.663e-11, worst cond=234 (QR)
     # response: y
     group,intercept,x,x2,x3,x4,x5
@@ -951,7 +966,7 @@ Time is linear in the rows for all six. Memory is not:
 
 The three streaming rows are flat to within measurement noise over a tenfold
 increase. The two frame rows grow with the file: R holds about 196 bytes per
-row and the pandas frame about 629. The Java row grows because the JVM takes
+row and the materialising Python about 629. The Java row grows because the JVM takes
 more heap when a machine has it, not because the algorithm needs it; capped at
 `-Xmx16m` the same 5,000,000 rows fit in 65 MB and finish in 1.83s.
 
@@ -961,13 +976,23 @@ Extrapolating the memory, on a machine with 64 GB to give:
 | --- | --- |
 | linearr, Python streaming, awk | no limit from memory; time is the only cost |
 | R, `read.csv` + `lm()` | about 340 million |
-| Python, pandas frame | about 105 million |
+| Python, materialised in memory | about 105 million |
 
 Those two are the honest shape of the comparison. The streaming implementations
 get slower; the frame ones stop. At a billion rows R would need about 200 GB and
-pandas about 600 GB, while linearr holds 2.4 MB and takes about four minutes.
+the materialising Python about 600 GB, while linearr holds 2.4 MB and takes
+about four minutes.
 
-The ceiling is not a criticism of R or pandas, which materialise the frame
+**That row is not pandas.** `bench/fit-frame.py` is hand-written Python holding
+the file as a list of tuples, and it is the control for STYLE: same language,
+same machine, same algorithm as `bench/fit.py`, with one variable changed.
+Real pandas is faster and lighter than it and is not measured here. A reviewer
+did measure it and reported roughly 3.5s and 1.0 GB where this row says 34.6s
+and 3.1 GB, which would move the ceiling from 105 to about 320 million rows.
+Read the row as what materialising costs in principle, not as a figure for
+pandas.
+
+The ceiling is not a criticism of R or of a data frame, which materialise
 because that is what an exploratory session wants: the whole dataset addressable
 while you decide what to ask. When the question is settled and the file is the
 size of a disk, the trade goes the other way.

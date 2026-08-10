@@ -112,13 +112,13 @@
 
 struct diag {
     int     nvars;
-    long    n;
+    long long n;
     double *s;
     double  resid_sd, response_sd;
 };
 
 struct diag_result {
-    long   rows;
+    long long rows;
     int    curved_term;   /* term whose square explains the residual, or -1 */
     double curved_t;      /* its t statistic, 0 when there is none          */
     int    curved_pow;    /* 2 or 3: which power explained the residual     */

@@ -53,6 +53,16 @@ jobs:
           install: >-
             mingw-w64-ucrt-x86_64-gcc make zip
 
+      - name: the tag and LINEARR_VERSION must agree
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          ver=$(sed -n 's/.*LINEARR_VERSION "\([^"]*\)".*/\1/p' c/constants.h)
+          tag=${GITHUB_REF_NAME#v}
+          test "$ver" = "$tag" || {
+            echo "tag $GITHUB_REF_NAME says $tag, c/constants.h says $ver."
+            echo "dist.sh names the archive from constants.h, so these must match."
+            exit 1; }
+
       - name: build
         run: make
 

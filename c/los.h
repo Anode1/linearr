@@ -48,6 +48,14 @@ struct los_model {
  * another ignoring case. The names are only read, and the type says so. */
 int         los_schema_set(const char *const *names, int n);
 
+/* The same from a whole training header, with the response named instead of
+ * assumed to be column 2. header[0] is the group, the named column is the
+ * response, and every other column is a term in the order it appears.
+ * Returns 0; -1 as los_schema_set does; -2 if the name is not in the header;
+ * -3 if it names the group column. */
+int         los_schema_set_response(const char *const *header, int n,
+                                    const char *want);
+
 int         los_nvars(void);            /* 0 until a schema is set */
 const char *los_var_name(int i);        /* NULL if i is out of range */
 
@@ -58,7 +66,7 @@ const char *los_var_name(int i);        /* NULL if i is out of range */
 int         los_var_index(const char *name);
 
 /* How many groups the loaded table holds. */
-long        los_ngroups(void);
+long long   los_ngroups(void);
 
 /* the tables */
 

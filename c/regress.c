@@ -4,6 +4,7 @@
 #include "regress.h"
 #include "common.h"
 
+#include <float.h>
 #include <math.h>
 #include <string.h>
 
@@ -202,12 +203,42 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
 
     if (fit) {
         fit->pinned = p - rank;
-        fit->df     = r->n - (long)rank - 1;
+        fit->df     = r->n - (long long)rank - 1;
         fit->condition = (pivmin > 0.0) ? pivmax / pivmin : 1.0;
 
         /* SSE from centered quantities: the residual is orthogonal to the
-         * fitted columns, so SSE = Cyy - b'Cxy exactly, with no cancellation
-         * against a mean that was never subtracted. */
+         * fitted columns, so SSE = Cyy - b'Cxy.
+         *
+         * That subtraction is where this solver's residual figure dies. Cyy
+         * and b'Cxy agree to more and more places as R2 approaches 1, and what
+         * is left is their difference. Centering removed the cancellation
+         * against the MEAN, which is a different one; this is the cancellation
+         * between the response's spread and the part of it the fit explains,
+         * and nothing in a single pass over X'X can avoid it.
+         *
+         * A reviewer measured what that costs on 200 rows of an exact
+         * quadratic fitted with a line, moving x away from the origin:
+         *
+         *     x near    reported     truth     --qr
+         *     1e4       0.3718       0.3745    0.3745
+         *     1e5       0            0.3745    0.3746
+         *     1e6       11.57        0.3745    0.3736
+         *     1e7       1256         0.3745    0.5018
+         *
+         * A reported zero is a claim of a perfect fit, and the residual file
+         * written by the same run said 0.3745.
+         *
+         * THIS IS NOT FIXED. A guard was tried and withdrawn: every threshold
+         * that caught the 1e6 and 1e7 cases also suppressed the figure on
+         * every exactly-fitting example in example/, including the 0.02282
+         * that Wampler1 exists to show. Separating "this residual is rounding
+         * error" from "this residual is wrong" needs the magnitude of the
+         * response as well as R2, and that bound has not been derived.
+         *
+         * Until it is: --qr carries the residual through the rotation instead
+         * of subtracting for it, and returns 0.3745, 0.3746, 0.3736 and 0.5018
+         * on the four rows above. On a response whose spread is small beside
+         * its magnitude, use it. */
         fit->rss = -1.0;
         fit->sigma = -1.0;
         if (r->cyy > 0.0) {
@@ -221,10 +252,14 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
              * meaning, and the right answer is to say so rather than clamp to
              * zero and report a perfect score, which is what the old code did:
              * it turned a true R2 of 0 into a printed 1.0000. */
+
             if (sse < -1e-9 * r->cyy) {
                 fit->r2 = -1.0;          /* not computable to useful precision */
             } else {
                 if (sse < 0.0) sse = 0.0;
+                /* R2 survives: it is sse RELATIVE to cyy, so an sse that is
+                 * wrong by orders of magnitude and still negligible against
+                 * cyy gives an R2 that is right to the digits printed. */
                 fit->r2 = 1.0 - sse / r->cyy;
                 if (fit->r2 < 0.0) fit->r2 = 0.0;
                 fit->rss = sse;

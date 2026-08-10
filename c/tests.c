@@ -637,6 +637,30 @@ static void test_qr(void) {
         (void)qr_solve(&q, t_beta, NULL, &fq);
         CHECK(fq.condition > 1e7,
               "qr scale: at 1e9 the rank test misses, and cond= reports it instead");
+
+        /* And a column so large that squaring it overflows. colss used to be a
+         * plain sum of squares, so any column past about 1.3e154 sent it to
+         * +inf, made the scaled diagonal |R_ii|/inf = 0, and deleted a
+         * perfectly identified term as COLLINEAR. The fit must be the same at
+         * every magnitude, since scaling a column scales its coefficient and
+         * nothing else. */
+        {   double huge[] = { 1.0, 1.0e153, 1.0e154, 1.0e200 };
+            size_t h;
+            for (h = 0; h < sizeof huge / sizeof huge[0]; h++) {
+                qr_init(&q, 2, t_store);
+                for (i = 1; i <= 6; i++) {
+                    x[0] = (double)i * huge[h];
+                    x[1] = (double)(i % 3) + 1.0;
+                    qr_add(&q, x, 2.0 * (double)i + x[1]);
+                }
+                (void)qr_solve(&q, t_beta, NULL, &fq);
+                CHECK(fq.pinned == 0,
+                      "qr scale: a column that overflows when squared is not deleted");
+                CHECK(fq.df == 3, "qr scale: and the rank is the same at every magnitude");
+                CHECK(fabs(t_beta[2] - 1.0) < 1e-9,
+                      "qr scale: the unscaled column keeps its coefficient");
+            }
+        }
     }
 
     /* A column that never varies is dropped, as in the normal equations. */
@@ -1194,12 +1218,12 @@ static void test_footprint(void) {
         for (i = 0; i < sizeof w / sizeof w[0]; i++) {
             size_t n = (size_t)w[i];
             if (regress_storage(w[i]) != n * n + 2 * n) ok_r = 0;
-            if (qr_storage(w[i]) != n * n + 6 * n + 5) ok_q = 0;
-            if (qr_storage(w[i]) != regress_storage(w[i]) + 4 * n + 5) ok_d = 0;
+            if (qr_storage(w[i]) != n * n + 7 * n + 6) ok_q = 0;
+            if (qr_storage(w[i]) != regress_storage(w[i]) + 5 * n + 6) ok_d = 0;
         }
         CHECK(ok_r, "footprint: the normal equations hold p^2 + 2p doubles");
-        CHECK(ok_q, "footprint: QR holds p^2 + 6p + 5");
-        CHECK(ok_d, "footprint: which is 4p + 5 MORE than the normal equations, not less");
+        CHECK(ok_q, "footprint: QR holds p^2 + 7p + 6");
+        CHECK(ok_d, "footprint: which is 5p + 6 MORE than the normal equations, not less");
     }
 }
 

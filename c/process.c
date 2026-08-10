@@ -19,6 +19,7 @@
 #include "common.h"
 #include "constants.h"
 
+#define _POSIX_C_SOURCE 200809L   /* clock_gettime */
 #include <time.h>
 
 #include <stdio.h>
@@ -107,6 +108,7 @@ static int fitter_solve(const struct fitter *f, double *beta, double *scratch,
 }
 
 static const char *coef_override;
+static const char *response_override;
 static const char *trim_override;
 static int  trim_override_set;
 
@@ -181,8 +183,13 @@ const char *process_error(void) { return err_buf; }
  *
  * The first line appears only after a minute, so nothing that finishes quickly
  * ever prints one, and then once a minute after that. The clock is read once
- * per million rows rather than once per row: time() is a syscall on some
- * systems and the row path is where the time goes.
+ * per million rows rather than once per row, since reading it is a syscall on
+ * some systems and the row path is where the time goes.
+ *
+ * A MONOTONIC clock where there is one. time() is a wall clock: an NTP or DST
+ * step backwards makes the elapsed figure negative, and since prog_last only
+ * advances when a line prints, one backward step used to stop the reporting
+ * for the rest of the run.
  *
  * To stderr, which is where this program's commentary already goes, so stdout
  * stays a coefficient file. */
@@ -190,15 +197,24 @@ const char *process_error(void) { return err_buf; }
 #define PROGRESS_EVERY  60      /* seconds between lines after that        */
 #define PROGRESS_MASK   0xFFFFFL/* check the clock every 1,048,576 rows    */
 
-int process_progress_due(long rows, long elapsed, long since_last) {
+int process_progress_due(long long rows, long elapsed, long since_last) {
     if ((rows & PROGRESS_MASK) != 0) return 0;
     if (elapsed < PROGRESS_AFTER) return 0;
     return since_last >= PROGRESS_EVERY;
 }
 
-static time_t prog_start, prog_last;
+static long prog_start, prog_last;
 
-static void progress_begin(void) { prog_start = prog_last = time(NULL); }
+/* Seconds from some fixed point; only differences are ever used. */
+static long progress_now(void) {
+#if defined(CLOCK_MONOTONIC) && defined(_POSIX_TIMERS)
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) return (long)ts.tv_sec;
+#endif
+    return (long)time(NULL);
+}
+
+static void progress_begin(void) { prog_start = prog_last = progress_now(); }
 
 /* "1h 4m 12s", "4m 12s", "12s": the parts that are not zero. */
 static void progress_elapsed(char *out, size_t outsz, long sec) {
@@ -208,18 +224,18 @@ static void progress_elapsed(char *out, size_t outsz, long sec) {
     else        (void)snprintf(out, outsz, "%lds", t);
 }
 
-static void progress_row(long rows, const char *what) {
-    char   ela[32];
-    time_t now;
-    long   elapsed;
+static void progress_row(long long rows, const char *what) {
+    char ela[32];
+    long now, elapsed;
 
     if ((rows & PROGRESS_MASK) != 0) return;      /* cheap test comes first */
-    now     = time(NULL);
-    elapsed = (long)(now - prog_start);
-    if (!process_progress_due(rows, elapsed, (long)(now - prog_last))) return;
+    now     = progress_now();
+    elapsed = now - prog_start;
+    if (elapsed < 0) { prog_start = prog_last = now; return; }   /* clock moved */
+    if (!process_progress_due(rows, elapsed, now - prog_last)) return;
     prog_last = now;
     progress_elapsed(ela, sizeof ela, elapsed);
-    (void)fprintf(stderr, "%s: %ld rows in %s, %.2fM rows/s\n", what, rows, ela,
+    (void)fprintf(stderr, "%s: %lld rows in %s, %.2fM rows/s\n", what, rows, ela,
                   elapsed > 0 ? (double)rows / (double)elapsed / 1e6 : 0.0);
 }
 
@@ -228,6 +244,15 @@ static void progress_row(long rows, const char *what) {
  * asked for and what the program does cannot differ silently. */
 static int predict_scale = DEFAULT_PREDICT_SCALE;
 static int trim_scale    = DEFAULT_TRIM_SCALE;
+
+/* Name the column being predicted, instead of taking column 2. NULL restores
+ * the positional default. */
+void process_use_response(const char *name) { response_override = name; }
+
+/* Whether the response was named or taken from the column order. The summary
+ * line says so, and offers the remedy only when one is needed: a reader who
+ * passed -y does not need to be told it exists. */
+int process_response_named(void) { return response_override != NULL; }
 
 int process_set_scale(int decimals) {
     if (decimals < 0 || decimals > 9) return -1;
@@ -297,7 +322,7 @@ int process_init(char *err, size_t errsz) {
 }
 
 int process_nterms(void)  { return los_nvars(); }
-long process_ngroups(void) { return los_ngroups(); }
+long long process_ngroups(void) { return los_ngroups(); }
 const char *process_term_name(int i) { return los_var_name(i); }
 const char *process_coef_path(void) { return coef_path; }
 
@@ -385,8 +410,10 @@ int process(const char *input, char *out, size_t outsz) {
     if (ensure_tables() != 0) return -1;
 
     if (los_parse_case(input, &c) != 0)
-        return fail("expected a group and %d comma-separated values, "
-                    "one per term", los_nvars());
+        /* los.c has already composed a sentence naming the column and the
+         * reason. Both training paths print it; this one asked for a generic
+         * one instead, which is the message the rewrite existed to remove. */
+        return fail("%s", los_parse_error());
 
     return score_case(&c, out, outsz);
 }
@@ -439,17 +466,44 @@ static int open_training(const char *csv_path, FILE **fpp, int *nvars) {
         return fail("%s needs a header of group, the observed value, and at "
                     "least one term", csv_path);
     }
-    if (los_schema_set((const char *const *)(field + 2), n - 2) != 0)
-        return fail("%s does not name %d usable terms: they must be 1..%d, "
-                    "non-empty, under %d characters, and distinct ignoring case "
-                    "(run with -d for which one)", csv_path, n - 2, LOS_MAX_VARS,
-                    LOS_NAME_MAX);
-
-    /* What the file predicts. It is the header's second field, and it was
-     * being read, stored and never used: los_response_name() had no caller at
-     * all, so a coefficient file said group,intercept,km,stops and nothing in
-     * it said the answer was in minutes. */
-    los_set_response_name(field[1]);
+    /* Which column is being predicted, and therefore which are terms. Column 2
+     * unless --response names another: nothing in the data can say which is
+     * which, so a file written in a different order fits perfectly well and
+     * answers a question nobody asked. */
+    if (response_override) {
+        int rc = los_schema_set_response((const char *const *)field, n,
+                                         response_override);
+        if (rc == -2) {
+            char have[CSV_LINE_MAX];
+            size_t used = 0;
+            int i;
+            have[0] = '\0';
+            for (i = 1; i < n; i++) {
+                int w = snprintf(have + used, sizeof have - used, "%s%s",
+                                 used ? ", " : "", field[i]);
+                if (w < 0 || (size_t)w >= sizeof have - used) break;
+                used += (size_t)w;
+            }
+            return fail("%s has no column '%s'. Its header offers: %s",
+                        csv_path, response_override, have);
+        }
+        if (rc == -3)
+            return fail("--response names '%s', which is the first column, and "
+                        "the first column is the group", response_override);
+        if (rc != 0)
+            return fail("%s does not name usable terms once '%s' is taken as "
+                        "the value: they must be 1..%d, non-empty, under %d "
+                        "characters, and distinct ignoring case",
+                        csv_path, response_override, LOS_MAX_VARS, LOS_NAME_MAX);
+        los_set_response_name(response_override);
+    } else {
+        if (los_schema_set((const char *const *)(field + 2), n - 2) != 0)
+            return fail("%s does not name %d usable terms: they must be 1..%d, "
+                        "non-empty, under %d characters, and distinct ignoring "
+                        "case (run with -d for which one)", csv_path, n - 2,
+                        LOS_MAX_VARS, LOS_NAME_MAX);
+        los_set_response_name(field[1]);
+    }
 
     /* The schema now belongs to this training file, not to the coefficient
      * table, so anything scoring afterwards must load the real one again. This
@@ -500,7 +554,7 @@ int process_train(const char *csv_path, const char *group,
     /* What the fitted row is labelled with, and what an error calls it: a
      * pooled fit is one line named '*', a named one keeps its own name. */
     const char *label = pool ? "*" : group;
-    long   rows = 0, seen = 0;
+    long long rows = 0, seen = 0;
 
     if (open_training(csv_path, &fp, &nvars) != 0) goto cleanup;
 
@@ -526,7 +580,7 @@ int process_train(const char *csv_path, const char *group,
             goto cleanup;
         }
         rows++;
-        progress_row(rows, "fitting");
+        progress_row(seen, "fitting");
     }
     if (n < 0) { fail("%s has a line longer than %d bytes", csv_path, CSV_LINE_MAX); goto cleanup; }
 
@@ -637,7 +691,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
     FILE  *fp = NULL;
     size_t need;
     int    rc = -1, n, nvars = 0;
-    long   rows = 0, seen = 0, groups = 0;
+    long long rows = 0, seen = 0, groups = 0;
 
     /* Checked before anything is read or written: the refusal used to arrive
      * after the coefficient table had already gone to stdout. */
@@ -676,7 +730,11 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             g->next = NULL;
             g->beta = g->storage + need;     /* nvars+1 doubles, after the fitter */
             (void)diag_init(&g->d, nvars, g->beta + nvars + 1);
-            memcpy(g->group, c.group, sizeof g->group);
+            /* strcpy, not memcpy of the whole field: c is an automatic and
+             * copy_group only writes up to the NUL, so the bytes past it are
+             * indeterminate on the first row and used to propagate into
+             * sum->worst_group. Neither sanitizer sees that. */
+            strcpy(g->group, c.group);       /* both are GROUP_MAX, c is bounded */
             if (fitter_init(&g->r, nvars, g->storage) != 0) {
                 free(g);
                 fail("%s has %d terms, more than the fitter's %d",
@@ -708,7 +766,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             goto cleanup;
         }
         rows++;
-        progress_row(rows, "fitting");
+        progress_row(seen, "fitting");
     }
     if (n < 0) {
         fail("%s has a line that is over-long or holds a NUL byte", csv_path);
@@ -785,7 +843,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
     if (resid) {
         FILE *again;
         char  path[RESOLVE_PATH_MAX];
-        long  resid_rows = 0;
+        long long resid_rows = 0;
         int   k;
 
         if (resolve_file(csv_path, path, sizeof path) != 0 ||

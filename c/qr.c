@@ -39,8 +39,9 @@
 size_t qr_storage(int nvars) {
     if (nvars < 0) return 0;
     /* R, then the column-range vectors that used to sit inside struct qr, then
-     * each column's sum of squares for the rank test. */
-    return ((size_t)nvars + 1) * ((size_t)nvars + 2) + 3 * ((size_t)nvars + 1);
+     * each column's sum of squares for the rank test, and the scale that sum
+     * is taken relative to. */
+    return ((size_t)nvars + 1) * ((size_t)nvars + 2) + 4 * ((size_t)nvars + 1);
 }
 
 int qr_init(struct qr *q, int nvars, double *storage) {
@@ -57,7 +58,8 @@ int qr_init(struct qr *q, int nvars, double *storage) {
     q->r      = storage;
     q->colmin = storage + ((size_t)nvars + 1) * ((size_t)nvars + 2);
     q->colmax = q->colmin + nvars + 1;
-    q->colss  = q->colmax + nvars + 1;
+    q->colss    = q->colmax + nvars + 1;
+    q->colscale = q->colss + nvars + 1;
     return 0;
 }
 
@@ -88,7 +90,25 @@ int qr_add(struct qr *q, const double *x, double y) {
             if (row[i] < q->colmin[i]) q->colmin[i] = row[i];
             if (row[i] > q->colmax[i]) q->colmax[i] = row[i];
         }
-        q->colss[i] += row[i] * row[i];
+        /* The column's 2-norm, accumulated so that squaring cannot overflow.
+         * `colss += row*row` reaches +inf for any column past about 1.3e154,
+         * the scaled diagonal is then |R_ii|/inf = 0, and a perfectly
+         * identified term is deleted and reported COLLINEAR. The rotation two
+         * screens below already uses hypot() to avoid exactly this, and this
+         * loop squared directly.
+         *
+         * colmax[] holds the running largest magnitude and colss[] the sum of
+         * squares relative to it, rescaled when a larger value arrives. */
+        {   double a = fabs(row[i]);
+            if (a > q->colscale[i]) {
+                double t = (q->colscale[i] > 0.0) ? q->colscale[i] / a : 0.0;
+                q->colss[i] = q->colss[i] * t * t + 1.0;
+                q->colscale[i] = a;
+            } else if (a > 0.0) {
+                double t = a / q->colscale[i];
+                q->colss[i] += t * t;
+            }
+        }
     }
 
     /* SST, kept separately and centered, because R holds the fit and not the
@@ -160,7 +180,8 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
          * is the raw column, and dividing each diagonal by its column's norm is
          * exactly equilibrating the design to unit columns before asking about
          * rank. */
-        double scale = (q->colss[i] > 0.0) ? sqrt(q->colss[i]) : 1.0;
+        double scale = (q->colss[i] > 0.0)
+                       ? q->colscale[i] * sqrt(q->colss[i]) : 1.0;
         double d = fabs(q->r[(size_t)i * (size_t)w + (size_t)i]) / scale;
         rel[i] = d;
         if (d > dmax) dmax = d;

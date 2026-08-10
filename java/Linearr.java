@@ -303,7 +303,8 @@ public class Linearr {
         if (response != null && response.length() > 0)
             System.err.println("reading: column 1 is the group, '" + response
                 + "' is the value being predicted, and the other " + p
-                + (p == 1 ? " column is a term" : " columns are terms"));
+                + (p == 1 ? " column is a term" : " columns are terms")
+                + ". Use -y NAME if that is the wrong column");
         System.err.println("fit: " + order.size() + " group" + (order.size() == 1 ? "" : "s")
                 + ", " + rows + " row" + (rows == 1 ? "" : "s")
                 + (pinned > 0 ? ", " + pinned + " term-slot" + (pinned == 1 ? "" : "s")

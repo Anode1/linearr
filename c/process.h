@@ -59,7 +59,7 @@ const char *process_error(void);
 /* the loaded schema, for `--terms` */
 
 int         process_nterms(void);          /* terms in the loaded table       */
-long        process_ngroups(void);         /* groups in the loaded table      */
+long long   process_ngroups(void);         /* groups in the loaded table      */
 const char *process_term_name(int i);      /* NULL if i is out of range       */
 const char *process_coef_path(void);       /* the table actually opened       */
 
@@ -67,9 +67,9 @@ const char *process_coef_path(void);       /* the table actually opened       */
 
 /* What the fit found, for the report on stderr. */
 struct fit_info {
-    long   rows;        /* training rows used                              */
+    long long rows;     /* training rows used                              */
     int    pinned;      /* terms the sample could not identify, set to 0   */
-    long   df;          /* residual degrees of freedom: rows minus the
+    long long df;       /* residual degrees of freedom: rows minus the
                            terms actually identified. At or below 0 the
                            line passes through every point by construction
                            and r2 is 1 no matter what the data says.       */
@@ -100,13 +100,20 @@ struct fit_info {
 /* Decimal places in the printed prediction, and in the trim point. 0..9;
  * returns -1 and changes nothing outside that. These were keys in a properties
  * file, which is a second way of saying what an option already says. */
+/* The column holding the value being predicted, by header name. NULL, the
+ * default, takes column 2. */
+void process_use_response(const char *name);
+
+/* Non-zero if --response named the column, rather than it being column 2. */
+int process_response_named(void);
+
 int process_set_scale(int decimals);
 int process_set_trim_scale(int decimals);
 
 /* Is a progress line due? Split out so it can be tested without waiting a
  * minute for one. rows is the count so far, elapsed the seconds since the run
  * began, since_last the seconds since the previous line. */
-int process_progress_due(long rows, long elapsed, long since_last);
+int process_progress_due(long long rows, long elapsed, long since_last);
 
 size_t process_group_bytes(int nvars);
 
@@ -135,9 +142,9 @@ int process_train(const char *csv_path, const char *group,
  * design exists for.
  */
 struct fit_summary {
-    long   groups;      /* groups fitted                                  */
-    long   rows;        /* training rows used                             */
-    long   min_df;      /* the least residual freedom any group had       */
+    long long groups;   /* groups fitted                                  */
+    long long rows;     /* training rows used                             */
+    long long min_df;   /* the least residual freedom any group had       */
     double max_sigma;   /* the worst group's residual standard deviation  */
     double max_condition;  /* the worst-conditioned group                 */
     /* From the residual pass, when one was made. Each group is examined on its
