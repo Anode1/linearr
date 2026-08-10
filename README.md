@@ -95,10 +95,7 @@ printed above 1e8.
 
 ## The textbook case: Anscombe's quartet
 
-Anscombe built four sets of eleven points in 1973 so that every summary you
-would normally quote is the same for all four, while the four are nothing alike.
-It is the standard demonstration that a fitted line and an R2 do not describe a
-dataset. Fitting all four at once is what groups are for:
+Anscombe's quartet, fitted four at once, which is what groups are for:
 
     $ ./linearr -t example/anscombe.csv
     reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term
@@ -110,12 +107,10 @@ dataset. Fitting all four at once is what groups are for:
     III,3.00245454545,0.499727272727
     IV,3.00172727273,0.499909090909
 
-The same line four times, to two decimals, which is as exactly as Anscombe
-constructed them; this program prints twelve significant digits, so the small
-differences are visible here and would not be in most tools. Each set on its own
-(`-g I` and so on) gives `R2=0.666`, `resid SD=1.24`, `df=9`. That is Anscombe's
-point, and it is the argument for reading residuals: the summaries agree and
-only one of the four is a straight line with scatter around it.
+The same line four times to two decimals, and each set on its own gives
+`R2=0.666`, `resid SD=1.24`, `df=9`. Twelve significant digits are printed, so
+the small differences between the four are visible here and are not in most
+tools.
 
     $ ./linearr -t example/anscombe.csv --residuals r.csv
     residuals: r.csv
@@ -129,13 +124,10 @@ only one of the four is a straight line with scatter around it.
     III,3.00245454545,0.499727272727
     IV,3.00172727273,0.499909090909
 
-Set II is an exact parabola, and it is named. **Sets III and IV are not
-reported, and should not be taken as passing.** III is a perfect line with one
-point moved off it; IV is a vertical stack of ten identical x values with one
-point far to the right, which alone decides the slope. Neither is a wrong shape:
-both are single points with more influence than the other ten together, and this
-program has no measure of leverage or influence to find them with. It says so
-here, so the silence is not read as approval.
+Set II is named. **Sets III and IV are not, and should not be taken as
+passing:** neither is a wrong shape, both are single points with more influence
+than the other ten together, and this program has no measure of leverage or
+influence to find them with. The silence there is a gap, not approval.
 
 ### What the residuals of set II actually look like
 
@@ -653,13 +645,11 @@ Every test a project writes for itself checks the code against arithmetic the
 same project wrote. If the solver and the expected value came from the same
 understanding, they are wrong together and the suite stays green.
 
-So the suite also fits datasets published with their answers. These are from the
-NIST Statistical Reference Datasets, computed to fifteen digits, a US Government
-work and not under copyright. Statisticians know them.
+So the suite also fits the NIST Statistical Reference Datasets, whose certified
+values are computed to fifteen digits.
 
-**Norris** is the easy one, and it is here because a suite that only tests hard
-cases does not notice when something ordinary breaks. Thirty-six calibration
-points, one term:
+**Norris**, the easy one, here because a suite that only tests hard cases does
+not notice when something ordinary breaks:
 
     $ ./linearr -t example/norris.csv
     reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term
@@ -671,10 +661,7 @@ points, one term:
 The certified values are -0.262323073774029 and 1.00211681802045. Twelve digits
 agree, which is every digit printed.
 
-**Longley**, 1967: sixteen years of US macroeconomic series, employment against
-six predictors. Longley published it because the regression programs of the day
-returned as few as two correct digits on it, and it has been the standard hard
-case since.
+**Longley**, the standard hard case:
 
     $ ./linearr -t example/longley.csv
     reading: column 1 is the group, 'employment' is the value being predicted, and the other 6 columns are terms
@@ -683,17 +670,14 @@ case since.
     group,intercept,deflator,gnp,unemployed,armed_forces,population,year
     A,-3482258.6346,15.0618722714,-0.0358191792926,-2.02022980382,-1.03322686717,-0.0511041056535,1829.15146461
 
-The certified intercept is -3482258.63459582 and the certified coefficient on
-year is 1829.15146461355. Every one of the seven agrees to eleven digits, which
-is as many as the output prints. The plain solver manages Longley because it
-accumulates centered co-moments rather than raw cross-products; on the raw ones
-this set is the textbook catastrophe.
+The certified intercept is -3482258.63459582 and the coefficient on year
+1829.15146461355. All seven agree to eleven digits, which is as many as the
+output prints. The plain solver manages it because it accumulates centered
+co-moments rather than raw cross-products.
 
-**Wampler1** is the case that separates the two solvers. It is y = 1 + x + x2 +
-x3 + x4 + x5 for x from 0 to 20, in whole numbers, with the powers supplied as
-columns. Every certified coefficient is 1 and the certified residual is exactly
-0, so anything other than that is the solver's own error with nothing in the
-data to hide behind.
+**Wampler1** separates the two solvers. Every certified coefficient is 1 and the
+certified residual is exactly 0, so anything else is the solver's own error with
+nothing in the data to hide behind.
 
     $ ./linearr -t example/wampler1.csv
     reading: column 1 is the group, 'y' is the value being predicted, and the other 5 columns are terms
@@ -709,10 +693,10 @@ data to hide behind.
     group,intercept,x,x2,x3,x4,x5
     A,1.00000000044,0.999999999992,1.00000000001,0.999999999997,1,1
 
-The true residual SD is zero. The normal equations report 0.0228 and QR reports
-7e-11. Neither is lying about its own arithmetic: x5 times x5 reaches 1e16 and a
-double has no places left to keep the difference. QR never forms that product.
-That is the case for `--qr`, on data a reader can check.
+The true residual SD is zero. The normal equations report 0.0228 and QR
+7e-11: x5 times x5 reaches 1e16 and a double has no places left for the
+difference, and QR never forms that product. That is the case for `--qr`, on
+data a reader can check.
 
 Both solvers are held to these numbers by `make check`, and the example files
 are held to them separately, so neither the code nor the data can drift alone.
@@ -1042,15 +1026,14 @@ batch work, where the memory a process holds is what it costs.
 ### The limitations of that, stated
 
 One core and one stream: no threading, no sharding, no restart from a partial
-fit. At 4.9 million rows a second the cost is reading and converting text, not
-the arithmetic, so a second core would buy more than a faster solver. Memory
-holds one accumulator per group, 8456 bytes at 24 terms, so 400,000 groups is
-3.15 GB; rows are free and groups are not. `--residuals` reads the file a
-second time and therefore needs a real file rather than a pipe.
+fit, and at 4.9 million rows a second the cost is reading text rather than the
+arithmetic, so a second core would buy more than a faster solver.
+`--residuals` reads the file a second time and needs a real file rather than a
+pipe.
 
-The rest of what it does not do is in [Where this is the right tool, and where
-it is not](#where-this-is-the-right-tool-and-where-it-is-not) and [What it will
-not read](#what-it-will-not-read), each stated once.
+What it costs in memory is in [Scale](#scale), and what it does not do at all
+is in [Where this is the right tool](#where-this-is-the-right-tool-and-where-it-is-not)
+and [What it will not read](#what-it-will-not-read).
 
 ### The original term set
 
@@ -1088,21 +1071,26 @@ example data is synthetic* above. Anyone reimplementing this fits their own.
 ## Build and test
 
     make            # build ./linearr
-    make check      # both test gates; run this before a commit
-    make ut         # the in-place unit tests
-    make cliut      # black-box: the binary driven through the shell
+    make check      # all five gates below; run this before a commit
+    make ut         # unit tests, in place
+    make cliut      # the binary driven through a shell and a pty
+    make readme     # every transcript in this file, run and diffed
+    make java       # both implementations fit every example; the output is diffed
+    make r          # the same against R's lm(), which uses a different method
     make ut-asan    # the tests under AddressSanitizer
     make ut-ubsan   # the tests under UndefinedBehaviorSanitizer
     make pedantic   # strict warnings (-pedantic -Wshadow -Wstrict-prototypes ...)
     make debug      # -g -O0
-    make hooks      # run the sanitizers before every git push
+    make hooks      # run every gate and both sanitizers before each git push
     make clean
 
-`make check` is five gates and each one exists because something got past the
-others: `ut` (unit), `cliut` (the binary through a shell and a pty), `readme`
-(every transcript in this file is run and diffed), `java` (both implementations
-fit every example and the output is compared), and `r` (the same against R's
-`lm()`, skipped where R is absent).
+Each gate exists because something got past the others.
+
+`java` and `r` skip themselves where there is no JDK or no R, and say so rather
+than failing. That is deliberate, and it has a consequence worth knowing: CI
+runs on machines without R, so a green badge does not mean `lm()` was consulted.
+The log says `R: no Rscript, skipped`. `make hooks` is where that gap closes,
+on a machine that has R.
 
 ## Layout
 
