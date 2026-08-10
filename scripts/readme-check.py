@@ -98,6 +98,20 @@ def main(path):
         if not runnable(cmd):
             continue                             # only our own commands are run
         checked += 1
+        # A transcript holding this checkout's own absolute path passes here and
+        # nowhere else, so the gate would go green for the author and red for
+        # every clone and for CI. That is worse than an unchecked transcript,
+        # because it reads as verified. It happened: a -y example pasted a
+        # file-not-found message carrying the author's home directory, and the
+        # only machine `make check` passed on was the one it was written on.
+        if ROOT in "\n".join(expected):
+            failed += 1
+            print("  MACHINE-SPECIFIC  %s:%d  $ %s\n"
+                  "      the expected output contains this checkout's path (%s),\n"
+                  "      so it can only pass here. Use a relative path, or an\n"
+                  "      example that does not print one."
+                  % (path, lineno, cmd, ROOT))
+            continue
         try:
             actual = run(cmd)
         except subprocess.TimeoutExpired:

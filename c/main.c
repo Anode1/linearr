@@ -149,6 +149,30 @@ static void print_terms(void) {
  * line per group" is what the model IS: the old default pooled every row into a
  * single line labelled '*', and getting a real table meant one invocation and
  * one full re-read of the training file per group. */
+/* What the file was read AS, before what came of it. The layout is fixed
+ * -- column 1 the group, column 2 the response, the rest terms -- and a file
+ * written in another order fits perfectly well and answers a question nobody
+ * asked. Nothing in the data can say which column is the response, so the
+ * program says which one it took, every time, where a reader will see it
+ * without being told to look.
+ *
+ * "Every time" is why this is a function. It lived inside train_all(), so the
+ * fits that go through train() -- `-g NAME` without --residuals, and the
+ * pooled `-g '*'` -- printed no such line, while the README said it was
+ * printed first on every fit. The one path that silently skipped the check
+ * against reading the wrong column was the one that fits a single named
+ * group. */
+static void print_reading(void) {
+    if (los_response_name()[0] == '\0') return;
+    (void)fprintf(stderr, "reading: column 1 is the group, '%s' is the "
+                  "value being predicted, and the other %d %s%s\n",
+                  los_response_name(), process_nterms(),
+                  process_nterms() == 1 ? "column is a term"
+                                        : "columns are terms",
+                  process_response_named() ? ""
+                                           : ". Use -y NAME if that is the wrong column");
+}
+
 static int train_all(const char *path, const char *only,
                      const char *resid_file, const char *stats_file) {
     struct fit_summary sum;
@@ -184,20 +208,7 @@ static int train_all(const char *path, const char *only,
             die("cannot write %s: %s", stats_file, strerror(errno));
         (void)fprintf(stderr, "per-group statistics: %s\n", stats_file);
     }
-    /* What the file was read AS, before what came of it. The layout is fixed
-     * -- column 1 the group, column 2 the response, the rest terms -- and a
-     * file written in another order fits perfectly well and answers a question
-     * nobody asked. Nothing in the data can say which column is the response,
-     * so the program says which one it took, every time, where a reader will
-     * see it without being told to look. */
-    if (los_response_name()[0] != '\0')
-        (void)fprintf(stderr, "reading: column 1 is the group, '%s' is the "
-                      "value being predicted, and the other %d %s%s\n",
-                      los_response_name(), process_nterms(),
-                      process_nterms() == 1 ? "column is a term"
-                                            : "columns are terms",
-                      process_response_named() ? ""
-                                               : ". Use -y NAME if that is the wrong column");
+    print_reading();
     (void)fprintf(stderr, "fit: %lld group%s, %lld row%s", sum.groups, s_(sum.groups),
             sum.rows, s_(sum.rows));
     if (sum.pinned > 0)
@@ -249,6 +260,7 @@ static int train(const char *path, const char *group) {
         (void)fprintf(stderr, "cannot fit: %s\n", process_error());
         return -1;
     }
+    print_reading();
     (void)printf("%s\n", out);
     (void)fprintf(stderr, "fit: %lld row%s", info.rows, s_(info.rows));
     if (info.r2 >= 0.0) fprintf(stderr, ", R2=%.4f", info.r2);

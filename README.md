@@ -178,7 +178,7 @@ nothing else changes.
 
 So the quartet exercises all three parts at once: groups fit in one pass, a
 summary that cannot tell the four apart, and a residual check that separates the
-one case it is built for and is honest about the two it is not.
+one case it is built for and says plainly that it does not catch the other two.
 
 ## What it is, and what it is not
 
@@ -350,6 +350,7 @@ minutes in the city and five on a highway route. Pooling the same eighteen rows
 into one line gives an average of the three that describes none of them:
 
     $ ./linearr -t example/routes.csv -g '*'
+    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
     fit: 18 rows, R2=0.8159, resid SD=7.693, df=15, cond=1.02 (normal equations)
     group,intercept,km,stops
     *,5.66666666667,2,2.83333333333
@@ -500,7 +501,7 @@ chosen so that fitting `train.csv` returns exactly the coefficients in
 `coefficients.csv`.
 
 **Two plain examples**, which are the ones to start from. `simple-train.csv` is
-the smallest honest fit, minutes on the road against distance and stops.
+the smallest fit worth showing, minutes on the road against distance and stops.
 `routes.csv` is the same terms over three kinds of route, and is why groups
 exist.
 
@@ -1067,7 +1068,7 @@ Extrapolating the memory, on a machine with 64 GB to give:
 | R, `read.csv` + `lm()` | about 340 million |
 | Python, materialised in memory | about 105 million |
 
-Those two are the honest shape of the comparison. The streaming implementations
+Those two are the shape of the comparison. The streaming implementations
 get slower; the frame ones stop. At a billion rows R would need about 200 GB and
 the materialising Python about 600 GB, while linearr holds 2.4 MB and takes
 about four minutes.
