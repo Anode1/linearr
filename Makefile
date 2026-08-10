@@ -16,13 +16,21 @@ TESTBIN = linearr_ut
 CC       ?= cc
 CFLAGS   ?= -O2
 CPPFLAGS ?=
+
+# The version, from the git tag, stamped into the binary. One source: the tag.
+# Override for a build from a tarball with no history: make LINEARR_VERSION=x.y.z
+LINEARR_VERSION := $(shell git describe --tags --always --dirty 2>/dev/null | sed 's/^v//')
+ifeq ($(strip $(LINEARR_VERSION)),)
+LINEARR_VERSION := 0.0.0-dev
+endif
+VERSION_DEF := -DLINEARR_VERSION='"$(LINEARR_VERSION)"'
 LDFLAGS  ?=
 LDLIBS   ?=
 
 # project-required flags, applied alongside (not over) the user's
 STD  = -std=c99
 WARN = -W -Wall
-PROJ = $(STD) $(WARN)
+PROJ = $(STD) $(WARN) $(VERSION_DEF)
 LIBM = -lm
 
 # every *.c under c/; add a file there, no edit needed. Scoped to c/ and

@@ -34,8 +34,16 @@
 #define GROUP_MAX         32   /* longest group code                           */
 #define RESOLVE_PATH_MAX 4096  /* longest path we will build looking for a file */
 
-/* Bumped by hand at a release, and printed by --version, so a bug report can
- * name something. */
-#define LINEARR_VERSION "0.4.0"
+/* Printed by --version, so a bug report can name something.
+ *
+ * Stamped in from the git tag at build time (-DLINEARR_VERSION, see the
+ * Makefile), which is the ais arrangement and exists so there is ONE place a
+ * version lives. It used to be edited here by hand, which meant a release
+ * could be tagged v0.4.0 and carry a binary that said 0.3.0, and the only
+ * thing stopping that was remembering. The fallback below is what a build
+ * outside a git checkout reports. */
+#ifndef LINEARR_VERSION
+#define LINEARR_VERSION "0.0.0-dev"
+#endif
 
 #endif /* CONSTANTS_H */

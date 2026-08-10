@@ -258,10 +258,17 @@ the redirect above is the workflow.
 **Which column is the value.** Column 2 unless you say otherwise, and nothing
 in the data can say which column you meant. A file written as
 `site,dose,age,response` therefore fits `dose` from `age` and `response`, prints
-plausible coefficients and exits 0. Name the column instead:
+plausible coefficients and exits 0. Name the column instead, and the `reading:`
+line reports what it took. Asking `simple-train.csv` for the wrong thing on
+purpose, predicting stops from minutes and distance:
 
-    $ ./linearr -t trial.csv -y response
-    cannot fit: cannot open the training file 'trial.csv' (looked in the current directory, in /home/vas/linearr, and in /home/vas/linearr/../share/linearr)
+    $ ./linearr -t example/simple-train.csv -y stops
+    reading: column 1 is the group, 'stops' is the value being predicted, and the other 2 columns are terms
+    fit: 2 groups, 13 rows, least df=3, worst resid SD<4.015e-08, worst cond=57.6 (normal equations)
+    # response: stops
+    group,intercept,minutes,km
+    A,-3.33333333333,0.666666666667,-1.66666666667
+    B,-8,0.666666666667,-1.66666666667
 
 Column 1 stays the group, the named column becomes the value, and every other
 column is a term in the order it appears. Without `-y` the `reading:` line ends

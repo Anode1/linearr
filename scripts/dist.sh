@@ -29,8 +29,10 @@ bin=linearr
 [ -f "$bin.exe" ] && bin=linearr.exe
 [ -x "$bin" ] || { echo "build first: make" >&2; exit 1; }
 
-ver=$(sed -n 's/.*LINEARR_VERSION "\([^"]*\)".*/\1/p' c/constants.h)
-[ -n "$ver" ] || { echo "cannot read LINEARR_VERSION from c/constants.h" >&2; exit 1; }
+# From the binary, which was stamped from the git tag. Asking the source would
+# be asking a second place, and two places drift.
+ver=$(./"$bin" --version 2>/dev/null | head -1 | awk '{print $2}')
+[ -n "$ver" ] || { echo "cannot read the version from ./$bin --version" >&2; exit 1; }
 
 out=dist
 stage=$out/linearr-$ver-$name

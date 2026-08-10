@@ -43,6 +43,8 @@ jobs:
         shell: ${{ matrix.os == 'windows-latest' && 'msys2 {0}' || 'bash' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0      # tags, so the build can stamp the version from one
 
       - name: MSYS2 toolchain (Windows only)
         if: matrix.os == 'windows-latest'
@@ -55,16 +57,6 @@ jobs:
             # CC=gcc above, because GNU make's built-in CC has origin
             # `default`, so the Makefile's `CC ?= cc` never assigns and the
             # job would look for cc.exe.
-
-      - name: the tag and LINEARR_VERSION must agree
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          ver=$(sed -n 's/.*LINEARR_VERSION "\([^"]*\)".*/\1/p' c/constants.h)
-          tag=${GITHUB_REF_NAME#v}
-          test "$ver" = "$tag" || {
-            echo "tag $GITHUB_REF_NAME says $tag, c/constants.h says $ver."
-            echo "dist.sh names the archive from constants.h, so these must match."
-            exit 1; }
 
       - name: build
         run: make CC=gcc
@@ -101,7 +93,23 @@ jobs:
           merge-multiple: true
       - name: what is being published
         run: ls -la dist
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          path: src
+      - name: the release body is this version's CHANGELOG section
+        run: |
+          ver=${GITHUB_REF_NAME#v}
+          awk -v v="## $ver" '
+            $0 == v { on = 1; next }
+            on && /^## / { exit }
+            on { print }' src/CHANGELOG.md > body.md
+          if [ ! -s body.md ]; then
+            echo "CHANGELOG.md has no section for $ver" >&2
+            exit 1
+          fi
+          cat body.md
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
-          generate_release_notes: true
+          body_path: body.md

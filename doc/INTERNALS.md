@@ -145,3 +145,27 @@ your own files may already carry them elsewhere. If your Excel writes semicolons
 rather than commas, which it does wherever the comma is the decimal mark, save
 as comma-separated; this program reads commas only, and says so if it finds
 semicolons. Line endings are not a problem: CRLF files are read correctly.
+
+## Cutting a release
+
+The version lives in ONE place: the git tag. `make` stamps it in with
+`git describe --tags`, `--version` prints it, and `scripts/dist.sh` reads it
+back off the binary rather than out of a source file. A build outside a
+checkout reports `0.0.0-dev`. Nothing has to be edited to bump it, and nothing
+can be tagged at one version while carrying another, which is what a hand-
+edited `#define` allowed.
+
+    sh scripts/release-notes.sh 0.5.0 --write   # scaffold from the git log
+    $EDITOR CHANGELOG.md                        # curate it
+    git commit -am "Version 0.5.0"
+    git push
+    git tag -a v0.5.0 -m "0.5.0" && git push origin v0.5.0
+
+The tag is what triggers `.github/workflows/release.yml`: four platforms built,
+unit-tested, made to fit Longley on their own runner, packaged with a SHA-256
+and attached to the release. The body is the `CHANGELOG.md` section for that
+version.
+
+The scaffolder is borrowed from the kul project. Commit subjects are not
+release notes and the generated entry needs editing, but generating it first
+means the entry records what happened rather than what somebody remembered.
