@@ -113,7 +113,7 @@
  * over the next term's shift; the probes went quiet rather than wrong, which is
  * the failure this file exists to complain about. */
 #define DIAG_PER_TERM 11
-#define DIAG_SHARED   7
+#define DIAG_SHARED   12
 
 struct diag {
     int     nvars;

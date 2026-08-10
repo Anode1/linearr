@@ -47,6 +47,9 @@ static void usage(FILE *out, const char *prog) {
         "  --qr   solve by QR instead of normal equations: slower per row, and\n"
         "         it does not square the condition number. Use it when the fit\n"
         "         reports a large cond=\n"
+        "  --stats F   with -t, one row per GROUP to F: rows, df, R2, resid SD,\n"
+        "         cond and how many terms were pinned. The summary reports the\n"
+        "         worst of each; this says which group they came from\n"
         "  --residuals F   with -t, also write one row per training row to F:\n"
         "         GROUP,observed,predicted,residual. Where the model is wrong,\n"
         "         which no summary number can show you\n"
@@ -147,15 +150,21 @@ static void print_terms(void) {
  * single line labelled '*', and getting a real table meant one invocation and
  * one full re-read of the training file per group. */
 static int train_all(const char *path, const char *only,
-                     const char *resid_file) {
+                     const char *resid_file, const char *stats_file) {
     struct fit_summary sum;
     FILE *resid = NULL;
+    FILE *stats = NULL;
 
     if (resid_file) {
         resid = fopen(resid_file, "w");
         if (!resid) die("cannot write %s: %s", resid_file, strerror(errno));
     }
-    if (process_train_residuals(path, only, stdout, resid, &sum) != 0) {
+    if (stats_file) {
+        stats = fopen(stats_file, "w");
+        if (!stats) die("cannot write %s: %s", stats_file, strerror(errno));
+    }
+    if (process_train_residuals(path, only, stdout, resid, stats, &sum) != 0) {
+        if (stats) (void)fclose(stats);
         if (resid) (void)fclose(resid);
         (void)fprintf(stderr, "cannot fit: %s\n", process_error());
         return -1;
@@ -169,6 +178,11 @@ static int train_all(const char *path, const char *only,
         if (fflush(resid) != 0 || ferror(resid) || fclose(resid) != 0)
             die("cannot write %s: %s", resid_file, strerror(errno));
         (void)fprintf(stderr, "residuals: %s\n", resid_file);
+    }
+    if (stats) {
+        if (fflush(stats) != 0 || ferror(stats) || fclose(stats) != 0)
+            die("cannot write %s: %s", stats_file, strerror(errno));
+        (void)fprintf(stderr, "per-group statistics: %s\n", stats_file);
     }
     /* What the file was read AS, before what came of it. The layout is fixed
      * -- column 1 the group, column 2 the response, the rest terms -- and a
@@ -291,6 +305,7 @@ int main(int argc, char **argv) {
         { "trim",    required_argument, NULL, 'R' },
         { "no-trim",   no_argument,       NULL, 'N' },
         { "residuals", required_argument, NULL, 'E' },
+        { "stats",     required_argument, NULL, 'G' },
         { "qr",        no_argument,       NULL, 'Q' },
         { "help",    no_argument,       NULL, 'h' },
         { NULL, 0, NULL, 0 }
@@ -298,6 +313,7 @@ int main(int argc, char **argv) {
     const char *train_file = NULL;
     const char *group = NULL;
     const char *resid_file = NULL;
+    const char *stats_file = NULL;
     char line[MAX_INPUT];
     int c, bad = 0, want_terms = 0;
     int  footprint_terms = 0;
@@ -332,6 +348,7 @@ int main(int argc, char **argv) {
             case 'R': process_use_trim(optarg); break;
             case 'N': process_use_trim(NULL); break;
             case 'E': resid_file = optarg; break;
+            case 'G': stats_file = optarg; break;
             case 'Q': process_use_qr(1); break;
             case 'V': printf("linearr %s\nBSD 2-Clause; no warranty.\n",
                              LINEARR_VERSION); return 0;
@@ -347,6 +364,8 @@ int main(int argc, char **argv) {
      * happened. Each of these used to be accepted and dropped. */
     if (group && !train_file)
         die("-g names a group to fit, so it needs -t TRAIN.CSV");
+    if (stats_file && !train_file)
+        die("--stats writes one row per GROUP fitted, so it needs -t");
     if (resid_file && !train_file)
         die("--residuals writes one row per TRAINING row, so it needs -t");
     if (want_terms && train_file)
@@ -373,8 +392,8 @@ int main(int argc, char **argv) {
          * easier fix and the wrong one: the residuals of ONE group are exactly
          * what you want when a summary line has told you which group is
          * wrong. */
-        bad = ((group && !resid_file) ? train(train_file, group)
-                     : train_all(train_file, group, resid_file)) != 0;
+        bad = ((group && !resid_file && !stats_file) ? train(train_file, group)
+                     : train_all(train_file, group, resid_file, stats_file)) != 0;
     } else if (optind < argc) {
         need_model();
         /* A comma in the first argument means the row form, and then every

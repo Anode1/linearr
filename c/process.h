@@ -175,9 +175,15 @@ int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum);
  * It costs a SECOND PASS over the training file, not a copy of it in memory:
  * the fit forgets each row as it goes, so the rows have to be read again to be
  * subtracted from. Memory stays a function of the model. */
-/* only: fit just that group, or NULL for every group in the file. */
+/* stats: with -t, also write one row per GROUP: its rows, degrees of freedom,
+ * R2, residual SD and conditioning. The summary reports the worst of each over
+ * the whole file, which for 580 groups is three numbers and no way to tell
+ * which group is bad; this is the per-group table R gets from broom::glance.
+ * NULL for none.
+ *
+ * only: fit just that group, or NULL for every group in the file. */
 int process_train_residuals(const char *csv_path, const char *only, FILE *out,
-                            FILE *resid, struct fit_summary *sum);
+                            FILE *resid, FILE *stats, struct fit_summary *sum);
 
 /* Release what scoring loaded. Idempotent. */
 void process_free(void);

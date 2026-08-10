@@ -618,6 +618,20 @@ check "a model fitted with -y scores normally" \
     "$("$bin" -c "$tmp/ym.csv" n dose=25 age=50)" \
     "n prediction=6.6938"
 
+# --- per-group statistics ---------------------------------------------------
+# The summary reports the worst of each figure over the whole file, which for
+# many groups says nothing about WHICH group. --stats is the table.
+"$bin" -t example/routes.csv --stats "$tmp/st.csv" >/dev/null 2>&1
+check "--stats writes a header" "$(head -1 "$tmp/st.csv")" \
+    "group,rows,df,r2,resid_sd,cond,pinned"
+check "--stats writes one row per group" "$(awk 'END{print NR-1}' "$tmp/st.csv")" "3"
+check "--stats names the groups" "$(cut -d, -f1 "$tmp/st.csv" | tail -3 | tr '\n' ' ')" \
+    "city suburb highway "
+set +e
+"$bin" --stats "$tmp/x.csv" 001 >/dev/null 2>&1; rc=$?
+set -e
+check "--stats without -t is an error" "$rc" "1"
+
 # Anscombe II is the canonical curve that a line cannot fit. The check must see
 # it, and must NOT see anything in set I, which is the same summary statistics
 # over data that is genuinely straight.

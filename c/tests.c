@@ -1155,6 +1155,45 @@ static void test_diag_center(void) {
           "diag centre: and to the same value, whichever row arrives first");
 }
 
+/* The spread check sees an error that grows SYMMETRICALLY about the middle of
+ * the range. It was a linear correlation of |r| against the prediction, and a
+ * linear correlation of a symmetric pattern is zero, so it was blind to the
+ * textbook picture of the thing it exists to find. */
+static void test_diag_spread(void) {
+    struct diag d;
+    struct diag_result r;
+    double x[1];
+    int i;
+
+    /* Symmetric: the residual's size grows with |fitted|, and its sign does
+     * not, so the old probe saw nothing here. */
+    diag_init(&d, 1, t_diag);
+    for (i = -150; i <= 150; i++) {
+        double u = i * 0.02;
+        double e = ((double)((i * 7919) % 23) - 11.0) / 11.0 * (0.2 + 3.0 * fabs(u));
+        x[0] = u;
+        diag_add(&d, x, e, u);
+    }
+    diag_result(&d, DIAG_T, &r);
+    CHECK(r.spread_t > DIAG_T, "diag spread: a symmetric change in spread is seen");
+
+    /* Constant spread: nothing to report. The noise has to be unstructured in
+     * u, so a small generator rather than i mod something, which is periodic
+     * in i and therefore in u. */
+    {   unsigned long seed = 12345UL;
+        diag_init(&d, 1, t_diag);
+        for (i = -150; i <= 150; i++) {
+            double u = i * 0.02, e;
+            seed = seed * 6364136223846793005UL + 1442695040888963407UL;
+            e = (double)((seed >> 33) % 2001) / 1000.0 - 1.0;
+            x[0] = u;
+            diag_add(&d, x, e, u);
+        }
+    }
+    diag_result(&d, DIAG_T, &r);
+    CHECK(r.spread_t == 0.0, "diag spread: and a constant one is not");
+}
+
 static void test_diag_offsets(void) {
     /* DEFECT TWO. The probes accumulated raw powers of the column, up to the
      * sixth, and recovered variances by subtracting: the naive formula
@@ -1568,6 +1607,7 @@ int main(int argc, char **argv) {
     test_diag();
     test_diag_probe_isolation();
     test_diag_center();
+    test_diag_spread();
     test_diag_offsets();
     test_progress();
     test_footprint();

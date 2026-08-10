@@ -710,11 +710,11 @@ static void group_fits_free(struct group_fit *head) {
 }
 
 int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum) {
-    return process_train_residuals(csv_path, NULL, out, NULL, sum);
+    return process_train_residuals(csv_path, NULL, out, NULL, NULL, sum);
 }
 
 int process_train_residuals(const char *csv_path, const char *only, FILE *out,
-                            FILE *resid, struct fit_summary *sum) {
+                            FILE *resid, FILE *stats, struct fit_summary *sum) {
     struct group_fit *head = NULL, *tail = NULL, *g;
     struct hash      *index = NULL;
     struct los_case   c;
@@ -724,6 +724,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
     size_t need;
     int    rc = -1, n, nvars = 0;
     long long rows = 0, seen = 0, groups = 0;
+    int    first_stat = 1;
 
     /* Checked before anything is read or written: the refusal used to arrive
      * after the coefficient table had already gone to stdout. */
@@ -859,6 +860,19 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
         }
 
         g->sigma = f.sigma;
+        if (stats) {
+            if (first_stat) {
+                (void)fprintf(stats, "group,rows,df,r2,resid_sd,cond,pinned\n");
+                first_stat = 0;
+            }
+            (void)fprintf(stats, "%s,%lld,%lld,", g->group, (long long)g->ny, f.df);
+            if (f.r2 >= 0.0) (void)fprintf(stats, "%.6f,", f.r2);
+            else             (void)fprintf(stats, ",");
+            if (f.sigma >= 0.0)
+                (void)fprintf(stats, "%s%.12g,", f.sigma_is_bound ? "<" : "", f.sigma);
+            else (void)fprintf(stats, ",");
+            (void)fprintf(stats, "%.6g,%d\n", f.condition, f.pinned);
+        }
         if (sum) {
             sum->pinned += f.pinned;
             if (sum->groups == 0 || f.df < sum->min_df) sum->min_df = f.df;

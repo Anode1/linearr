@@ -86,13 +86,27 @@ void diag_add(struct diag *d, const double *x, double resid, double fitted) {
          * the spread correlation is computed about a centre too. A correlation
          * is shift-invariant, and the sums are not. */
         double fs = fitted - FIT(d)[0];
+        double rr = resid * resid;
         sh[0] += resid;
-        sh[1] += resid * resid;
+        sh[1] += rr;
         sh[2] += a;
         sh[3] += a * a;
         sh[4] += a * fs;
         sh[5] += fs;
         sh[6] += fs * fs;
+        /* For the spread check: the SQUARED residual against the prediction
+         * and its square. Correlating |r| with the prediction, which is what
+         * this did, is a LINEAR correlation, and an error that grows
+         * symmetrically about the middle of the range has none: measured, that
+         * probe fired on 2.5% of samples where the spread genuinely varied
+         * with |x|. Regressing r^2 on 1, u and u^2 is the shape R's bptest and
+         * car::ncvTest use, and it sees both the monotone and the symmetric
+         * case. */
+        sh[7]  += rr * rr;
+        sh[8]  += rr * fs;
+        sh[9]  += rr * fs * fs;
+        sh[10] += fs * fs * fs;
+        sh[11] += fs * fs * fs * fs;
     }
 }
 
@@ -154,12 +168,36 @@ static double partial_corr3(const double *b, double sr, double srr) {
     return covrz / sqrt(varz * srr_c);
 }
 
-static double plain_corr(double n, double sx, double sxx, double sy, double syy,
-                         double sxy) {
-    double vx = n * sxx - sx * sx;
-    double vy = n * syy - sy * sy;
-    if (vx <= 0.0 || vy <= 0.0) return 0.0;
-    return (n * sxy - sx * sy) / sqrt(vx * vy);
+/* The spread check: how much of the squared residual's own variation is
+ * explained by the prediction and its square. R^2 of that auxiliary regression
+ * is the Breusch-Pagan score, and sqrt of its F is reported so the number sits
+ * on the same scale as the other probes.
+ *
+ * On [1, u] alone this would still be blind to a symmetric pattern, which is
+ * why u^2 is in it. */
+static double spread_stat(const double *sh, double n) {
+    double sw = sh[1], sww = sh[7], swu = sh[8], swu2 = sh[9];
+    double su = sh[5], su2 = sh[6], su3 = sh[10], su4 = sh[11];
+    /* Centred cross-products of the auxiliary design [u, u^2] and of w. */
+    double m11 = su2 - su * su / n;
+    double m12 = su3 - su * su2 / n;
+    double m22 = su4 - su2 * su2 / n;
+    double c1  = swu - sw * su / n;
+    double c2  = swu2 - sw * su2 / n;
+    double sww_c = sww - sw * sw / n;
+    double det, a1, a2, explained, r2;
+
+    if (n <= 4.0 || sww_c <= 0.0) return 0.0;
+    det = m11 * m22 - m12 * m12;
+    if (det <= 0.0) return 0.0;
+    a1 = ( m22 * c1 - m12 * c2) / det;
+    a2 = (-m12 * c1 + m11 * c2) / det;
+    explained = a1 * c1 + a2 * c2;
+    if (explained <= 0.0) return 0.0;
+    r2 = explained / sww_c;
+    if (r2 >= 1.0) return DIAG_T_CAP;
+    /* F on 2 and n-3, reported as its square root. */
+    return sqrt((r2 / 2.0) / ((1.0 - r2) / (n - 3.0)));
 }
 
 /* A correlation carries no sense of how much data stands behind it. The t
@@ -243,6 +281,6 @@ void diag_result(const struct diag *d, double bound, struct diag_result *out) {
     t = t_of(partial_corr(FIT(d), sh[0], sh[1]), n, d->nvars);
     if (fabs(t) >= bound) out->fitted_t = t;
 
-    t = t_of(plain_corr(n, sh[5], sh[6], sh[2], sh[3], sh[4]), n, d->nvars);
-    if (fabs(t) >= bound) out->spread_t = t;
+    t = spread_stat(sh, n);
+    if (t >= bound) out->spread_t = t;
 }
