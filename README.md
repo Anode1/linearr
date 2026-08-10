@@ -904,7 +904,7 @@ the transient holds far more rows than the table's ceiling suggests.
 | 100 million | 20 seconds | 8 minutes | 3 minutes, 32 GB |
 | a billion | 3.5 minutes | 1.3 hours | 318 GB, will not fit |
 | a trillion | 2.4 days | 54 days | will not fit |
-| **100 trillion** | **8 months** | **15 years** | **will not fit** |
+| **10 trillion** | **24 days** | **1.5 years** | **will not fit** |
 
 The R column stops at about 200 million rows on a machine with 64 GB if the
 peak is what has to fit, and around 1.3 billion if only the resident frame
