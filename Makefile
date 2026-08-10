@@ -176,16 +176,21 @@ hooks:
 #   make install                      -> /usr/local
 #   make install PREFIX=$$HOME/.local  -> ~/.local
 #   make install DESTDIR=/tmp/stage   -> staged, for a package
+# Quoted throughout: a PREFIX with a space in it used to split into several
+# arguments. And PREFIX is checked, because `make uninstall PREFIX=` expanded
+# to `rm -rf /share/linearr`.
 install: $(BIN)
-	mkdir -p $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/$(BIN)/example
-	cp $(BIN) $(DESTDIR)$(PREFIX)/bin/$(BIN)
-	cp example/*.csv $(DESTDIR)$(PREFIX)/share/$(BIN)/example/
+	@test -n "$(PREFIX)" || { echo "PREFIX is empty" >&2; exit 1; }
+	mkdir -p "$(DESTDIR)$(PREFIX)/bin" "$(DESTDIR)$(PREFIX)/share/$(BIN)/example"
+	cp "$(BIN)" "$(DESTDIR)$(PREFIX)/bin/$(BIN)"
+	cp example/*.csv "$(DESTDIR)$(PREFIX)/share/$(BIN)/example/"
 	@echo "installed $(BIN) to $(DESTDIR)$(PREFIX)/bin"
 	@echo "example tables in $(DESTDIR)$(PREFIX)/share/$(BIN)/example (use -c for your own)"
 
 uninstall:
-	-rm -f $(DESTDIR)$(PREFIX)/bin/$(BIN)
-	-rm -rf $(DESTDIR)$(PREFIX)/share/$(BIN)
+	@test -n "$(PREFIX)" || { echo "PREFIX is empty; refusing to remove /share" >&2; exit 1; }
+	-rm -f "$(DESTDIR)$(PREFIX)/bin/$(BIN)"
+	-rm -rf "$(DESTDIR)$(PREFIX)/share/$(BIN)"
 
 clean:
 	-rm -f $(BIN) $(TESTBIN) $(TESTBIN)_asan $(TESTBIN)_ubsan \

@@ -94,6 +94,11 @@ for f in example/*.csv; do
 
     set +e
     q=$(Rscript --vanilla "$tmp/cmp.R" "$f" "$tmp/qr.csv" 1e-6 2>"$tmp/rerr"); qrc=$?
+    # Reported, not gated, and the difference matters: the default solver
+    # squares the condition number, so on nearly-the-same.csv it is five orders
+    # of magnitude further from lm() than --qr is, and that is the documented
+    # behaviour rather than a regression. A tolerance of 1 means this column
+    # can never fail; --qr is the one under test.
     n=$(Rscript --vanilla "$tmp/cmp.R" "$f" "$tmp/ne.csv" 1 2>/dev/null)
     set -e
     if [ "$qrc" -ne 0 ]; then

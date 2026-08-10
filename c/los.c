@@ -274,6 +274,11 @@ static int load_coefficients(const char *path) {
             los_set_response_name(p);
         }
     }
+    if (n < 0) {
+        refuse("%s has a line over %d bytes, or one holding a NUL byte",
+               path, CSV_LINE_MAX - 2);
+        goto cleanup;
+    }
     if (n != 1) {
         refuse("%s has no header line", path);
         goto cleanup;
@@ -388,16 +393,22 @@ int los_load_trims(const char *path) {
     double first;
     int    rc = -1, n;
 
-    if (!models) { debug("los: no coefficient table to attach trims to"); return -1; }
+    if (!models)
+        return refuse("there is no coefficient table to attach %s to", path);
 
     fp = fopen(path, "r");
-    if (!fp) { debug("los: cannot open %s", path); return -1; }
+    if (!fp) return refuse("cannot open %s", path);
 
     /* Read the first line, and only DISCARD it if it is a header. It used to be
      * eaten unconditionally, so a headerless trim table silently lost its first
      * group's trim addition: a wrong number, quietly, for one group only. */
     while ((n = csv_next(fp, line, sizeof line)) == 2)
         ;
+    if (n < 0) {
+        refuse("%s has a line over %d bytes, or one holding a NUL byte",
+               path, CSV_LINE_MAX - 2);
+        goto cleanup;
+    }
     if (n != 1) {
         refuse("%s is empty", path);
         goto cleanup;

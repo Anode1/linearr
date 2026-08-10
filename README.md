@@ -739,6 +739,10 @@ The two columns differ by six orders of magnitude on `nearly-the-same.csv`,
 which is the file that exists to show what forming `X'X` costs. `make r` runs
 this and skips itself where R is not installed.
 
+Only the `--qr` column is a gate. The default column is printed and not tested,
+because squaring the condition number is what that solver does and a threshold
+on it would be a threshold on the documented behaviour.
+
 ## Scale
 
 Two properties this section exists to test. **The terms are not compiled in:**
@@ -753,13 +757,18 @@ what decides the fitter's footprint, and you set it at build time:
 
     make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32'
 
-| ceiling | fitter matrices | note |
+| ceiling | one group holds | note |
 | --- | --- | --- |
-| 32 terms | ~17 KB | |
-| 64 | ~68 KB | |
-| 128 | ~266 KB | |
-| 256 (default) | ~1.06 MB | |
-| 510 | ~4.2 MB | the maximum; above this raise `CSV_MAX_FIELDS` too |
+| 32 terms | 13.1 KB | |
+| 64 | 41.9 KB | |
+| 128 | 147 KB | |
+| 256 (default) | 550 KB | |
+| 510 | 2.1 MB | the maximum; needs a rebuild to measure, and above it raise `CSV_MAX_FIELDS` too |
+
+Those are `./linearr --footprint N 1`, which is the figure the program
+allocates rather than one written down beside it. An earlier version of this
+table was about twice each of them, because it counted the fitter's matrix
+twice.
 
 Three things that table does **not** cover:
 

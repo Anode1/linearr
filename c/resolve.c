@@ -19,6 +19,22 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+
+/* The last directory separator. Windows argv[0] is normally C:\...\linearr.exe
+ * and _fullpath gives backslashes back, so looking only for '/' meant the
+ * "beside the program" lookup this file exists for never happened there: the
+ * whole path was taken as a file name and searched for inside each PATH entry.
+ * On POSIX a backslash is a legal character in a name, but it cannot appear in
+ * a path that a Windows shell produced, so checking both is safe on one and
+ * necessary on the other. */
+static char *last_sep(const char *p) {
+    char *a = strrchr(p, '/');
+#ifdef _WIN32
+    char *b = strrchr(p, '\\');
+    if (!a || (b && b > a)) a = b;
+#endif
+    return a;
+}
 #include <sys/stat.h>
 
 /* Windows has every function this file needs under another name, and lacks
@@ -65,7 +81,7 @@ const char *resolve_program_dir(void) {
 
     if (!g_prog || !g_prog[0]) return NULL;
 
-    slash = strrchr(g_prog, '/');
+    slash = last_sep(g_prog);
     if (slash) {                                  /* invoked by a path */
         /* Through the symlink first: installing one binary by linking it into
          * a bin directory is normal, and dirname(argv[0]) then pointed at the
@@ -74,7 +90,7 @@ const char *resolve_program_dir(void) {
         const char *use = g_prog;
         if (realpath(g_prog, real) != NULL) use = real;
 
-        slash = strrchr(use, '/');
+        slash = last_sep(use);
         if (!slash) return NULL;
         n = (size_t)(slash - use);
         if (n == 0) n = 1;                        /* "/prog" -> "/" */
@@ -99,7 +115,7 @@ const char *resolve_program_dir(void) {
             if (w > 0 && (size_t)w < sizeof cand && access(cand, X_OK_MODE) == 0) {
                 char real[RESOLVE_PATH_MAX];
                 const char *sl;
-                if (realpath(cand, real) != NULL && (sl = strrchr(real, '/')) != NULL) {
+                if (realpath(cand, real) != NULL && (sl = last_sep(real)) != NULL) {
                     size_t rn = (size_t)(sl - real);
                     if (rn == 0) rn = 1;
                     if (rn < sizeof dir) { memcpy(dir, real, rn); dir[rn] = '\0'; return dir; }

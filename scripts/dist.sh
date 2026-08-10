@@ -48,6 +48,8 @@ cp README.md LICENSE CHANGELOG.md "$stage/" 2>/dev/null || true
       *)         tar czf "linearr-$ver-$name.tar.gz" "linearr-$ver-$name" ;;
   esac )
 
+rm -rf "$stage"          # the archive holds it; shipping both doubles the artifact
+
 ( cd "$out" && for f in linearr-$ver-$name.tar.gz linearr-$ver-$name.zip; do
       [ -f "$f" ] || continue
       if command -v sha256sum >/dev/null 2>&1; then sha256sum "$f" > "$f.sha256"

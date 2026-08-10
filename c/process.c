@@ -210,7 +210,11 @@ static long prog_start, prog_last;
 
 /* Seconds from some fixed point; only differences are ever used. */
 static long progress_now(void) {
-#if defined(CLOCK_MONOTONIC) && defined(_POSIX_TIMERS)
+/* Not on Windows: MinGW's headers declare CLOCK_MONOTONIC and _POSIX_TIMERS
+ * and its default libraries have no clock_gettime, so the guard those two
+ * suggest compiles and then fails to link. Found by cross-compiling, which is
+ * the only way to find it from here. */
+#if defined(CLOCK_MONOTONIC) && defined(_POSIX_TIMERS) && !defined(_WIN32)
     struct timespec ts;
     if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) return (long)ts.tv_sec;
 #endif
@@ -306,10 +310,20 @@ static int ensure_tables(void) {
     trim = trim_override_set ? trim_override : NULL;
     if (!trim || trim[0] == '\0') {
         debug("process: no --trim; the trim point is the prediction");
-    } else if (resolve_file(trim, path, sizeof path) != 0 ||
-               los_load_trims(path) != 0) {
+    } else if (resolve_file(trim, path, sizeof path) != 0) {
+        /* Two different failures, and they were reported as one. When
+         * resolve_file is what failed, los_load_trims never ran and los_error()
+         * still held whatever was there before, which on a first load is
+         * nothing: the message was a leading space and a parenthesis. */
         los_free();
-        return fail("%s (leave --trim off if there is none)", los_error());
+        return fail("cannot find the trim table %s (leave --trim off if there "
+                    "is none)", path);
+    } else if (los_load_trims(path) != 0) {
+        /* Read BEFORE los_free, which clears it. */
+        char why[MAX_OUTPUT];
+        (void)snprintf(why, sizeof why, "%s", los_error());
+        los_free();
+        return fail("%s (leave --trim off if there is none)", why);
     }
 
     tables_loaded = 1;
