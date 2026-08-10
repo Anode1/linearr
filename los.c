@@ -215,8 +215,20 @@ static int load_coefficients(const char *path) {
 
     if (!fp) return refuse("cannot open %s", path);
 
-    while ((n = csv_next(fp, line, sizeof line)) == 2)
-        ;                                   /* leading comments precede a header */
+    /* Leading comments precede a header, and one of them is not decoration:
+     * `# response: NAME` is what the file predicts, written by -t from the
+     * training header. Without it a coefficient file says group,intercept,km,
+     * stops and nothing in it says the answer is in minutes. */
+    response[0] = '\0';
+    while ((n = csv_next(fp, line, sizeof line)) == 2) {
+        const char *p = line;
+        while (*p == '#' || *p == ' ' || *p == '\t') p++;
+        if (strncmp(p, "response:", 9) == 0) {
+            p += 9;
+            while (*p == ' ' || *p == '\t') p++;
+            los_set_response_name(p);
+        }
+    }
     if (n != 1) {
         refuse("%s has no header line", path);
         goto cleanup;

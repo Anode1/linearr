@@ -46,6 +46,10 @@ jobs:
         run: make ut
       - name: CLI black-box tests
         run: make cliut
+      - name: README transcripts still match what the program prints
+        run: make readme
+      - name: the Java twin still behaves like the C
+        run: make java
       - name: strict warnings
         run: make pedantic
       - name: AddressSanitizer

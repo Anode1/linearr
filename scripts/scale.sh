@@ -64,6 +64,28 @@ gen_train() {                              # gen_train FILE ROWS
     }' > "$1"
 }
 
+# The same, spread over every group, so the multi-group fit can be MEASURED.
+# Without it the FIT rows above hold one accumulator and the group figure this
+# script prints is a claim standing beside a measurement of something else.
+gen_train_groups() {                       # gen_train_groups FILE ROWS
+    awk -v terms="$TERMS" -v rows="$2" -v groups="$GROUPS" -v seed=13 'BEGIN {
+        srand(seed)
+        printf "group,value"
+        for (j = 1; j <= terms; j++) printf ",term_%d", j
+        printf "\n"
+        for (j = 1; j <= terms; j++) b[j] = int(rand() * 2000) / 100
+        for (i = 0; i < rows; i++) {
+            y = 4.25; line = ""
+            for (j = 1; j <= terms; j++) {
+                x = (rand() < 0.3) ? 1 : 0
+                y += b[j] * x
+                line = line "," x
+            }
+            printf "G%03d,%.4f%s\n", (i % groups) + 1, y, line
+        }
+    }' > "$1"
+}
+
 gen_table() {                              # gen_table FILE  (GROUPS groups wide)
     awk -v terms="$TERMS" -v groups="$GROUPS" -v seed=11 'BEGIN {
         srand(seed)
@@ -105,6 +127,18 @@ printf "  %-12s %s\n" "$BIG"    "$(run "$bin" -t "$tmp/big.csv"   -g G001)"
 echo "  ^ RSS should be flat: 10x the data, the same memory."
 echo
 
+# And with every group fitted at once, which is where the memory actually goes.
+printf "generating %s rows spread over %s groups ... " "$BIG" "$GROUPS"
+gen_train_groups "$tmp/groups.csv" "$BIG"
+echo "done"
+echo "FIT ALL: the same rows, one line per group:"
+printf "  %-12s %s\n" "groups" "seconds  peak RSS (KB)"
+printf "  %-12s %s\n" "1"        "$(run "$bin" -t "$tmp/big.csv"    -g G001)"
+printf "  %-12s %s\n" "$GROUPS"  "$(run "$bin" -t "$tmp/groups.csv")"
+echo "  ^ this one is NOT flat, and should not be: the difference is the"
+echo "    per-group figure below, times $GROUPS."
+echo
+
 printf "generating a %s-group table and cases ... " "$GROUPS"
 gen_table "$tmp/coef.csv"
 gen_cases "$tmp/cases.csv" "$BIG"
@@ -116,5 +150,10 @@ cd "$tmp"
 printf "  %-12s %s\n" "cases" "seconds  peak RSS (KB)"
 printf "  %-12s %s\n" "$BIG" "$(run sh -c "'$bin' < '$tmp/cases.csv' > /dev/null")"
 echo
-echo "The coefficient table is the only thing that grows with the problem:"
-echo "  $GROUPS groups x ($TERMS + 1) doubles = about $(( GROUPS * (TERMS + 1) * 8 / 1024 )) KB, held once."
+# Asked of the program rather than recomputed here. This line used to say
+# "$GROUPS groups x ($TERMS + 1) doubles", which counted the coefficients and
+# nothing else: not the fitter, not the residual-check block, and not the fact
+# that a LOADED model is dimensioned at the build ceiling rather than at its own
+# term count. Three files quoted three different numbers, all of them low.
+echo "Memory grows with the GROUPS and not with the rows. What that costs here:"
+"$bin" --footprint "$TERMS" "$GROUPS" | sed 's/^/  /' 

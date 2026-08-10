@@ -28,6 +28,57 @@ public class Linearr {
     /** Significant digits in a published coefficient. See the C's los.c. */
     static final java.math.MathContext COEF_DIGITS = new java.math.MathContext(12);
 
+    /** The C's printf("%.4g"), which Java's %.4g is not: C removes trailing
+     *  zeros and a trailing point, Java keeps them, so 0.5 prints as 0.5000 and
+     *  the two summary lines stop matching. Four significant digits, because
+     *  a residual SD quoted to more than that is quoting the noise. */
+    static String g4(double v) { return g(v, 4); }
+    static String g3(double v) { return g(v, 3); }
+
+    static String g(double v, int digits) {
+        if (v != v || v == Double.POSITIVE_INFINITY || v == Double.NEGATIVE_INFINITY)
+            return String.valueOf(v);
+        String s = String.format("%." + digits + "g", Double.valueOf(v));
+        int e = s.indexOf('e');
+        String mant = (e < 0) ? s : s.substring(0, e);
+        String rest = (e < 0) ? "" : s.substring(e);
+        if (mant.indexOf('.') >= 0) {
+            int end = mant.length();
+            while (end > 0 && mant.charAt(end - 1) == '0') end--;
+            if (end > 0 && mant.charAt(end - 1) == '.') end--;
+            mant = mant.substring(0, end);
+        }
+        return mant + rest;
+    }
+
+    /** The C's format_pinned(), same wording and same order: constants first,
+     *  then collinears. Returns null when every term was estimated.
+     *
+     *  It was missing here, so the Java printed a coefficient of 0 with nothing
+     *  saying whether it was measured as 0 or pinned there because the column
+     *  could not be separated from another. Those are different facts and the
+     *  C says which. */
+    static String pinnedNote(String group, Regress.Fit fit, String[] names, int p) {
+        boolean any = false;
+        for (int i = 0; i < p; i++) if (fit.term[i] != Regress.FITTED) any = true;
+        if (!any) return null;
+
+        StringBuffer sb = new StringBuffer("# pinned ");
+        sb.append(group);
+        sb.append(':');
+        for (int kind = Regress.CONSTANT; kind <= Regress.COLLINEAR; kind++) {
+            boolean first = true;
+            for (int i = 0; i < p; i++) {
+                if (fit.term[i] != kind) continue;
+                if (first) sb.append(kind == Regress.CONSTANT ? " constant " : " collinear ");
+                else       sb.append(',');
+                sb.append(names[i]);
+                first = false;
+            }
+        }
+        return sb.toString();
+    }
+
     /** One group's fit. The C calls this struct group_fit. */
     static class Group {
         String  name;
@@ -45,6 +96,7 @@ public class Linearr {
         Hashtable index = new Hashtable();      /* group name -> Group */
         Vector    order = new Vector();         /* first-seen order    */
         String[]  names = null;
+        String    response = null;              /* the header's second field */
         double[]  x     = null;                 /* THE reused record   */
         int       p     = 0;
         long      rows  = 0, seen = 0;
@@ -63,6 +115,7 @@ public class Linearr {
                 }
                 p = hdr.size() - 2;
                 if (p < 1) { System.err.println("no terms in the header"); System.exit(1); }
+                response = (String) hdr.elementAt(1);
                 names = new String[p];
                 for (int j = 0; j < p; j++) names[j] = (String) hdr.elementAt(j + 2);
                 x = new double[p];              /* allocated once, for the run */
@@ -103,6 +156,12 @@ public class Linearr {
         }
         reader.close();
 
+        /* What the file predicts, from the header's second field. A table of
+         * coefficients that does not name its response cannot be identified a
+         * week later: group,intercept,km,stops says nothing about minutes. */
+        if (response != null && response.length() > 0)
+            System.out.println("# response: " + response);
+
         StringBuffer sb = new StringBuffer("group,intercept");
         for (int j = 0; j < p; j++) { sb.append(SEPARATOR); sb.append(names[j]); }
         System.out.println(sb.toString());
@@ -112,6 +171,17 @@ public class Linearr {
         Regress.Fit fit  = new Regress.Fit();
         int pinned = 0;
         long minDf = Long.MAX_VALUE;
+        /* The worst residual SD over the groups. The C reports it and this did
+         * not, so the one number in the summary that says how far a prediction
+         * typically lands from the truth was missing from the Java. */
+        double worstSigma = -1.0;
+        /* And the worst conditioning. The C prints it, and warns above 1e8,
+         * because an ill-conditioned design fits its own sample beautifully and
+         * predicts nothing: R2 cannot see that failure. This file reported
+         * neither, so the Java's summary looked healthier than the C's on the
+         * same data. Its solver is the normal equations, as regress.c is, so
+         * the parenthesis says so for the same reason the C's does. */
+        double worstCond = 1.0;
 
         for (Enumeration e = order.elements(); e.hasMoreElements(); ) {
             Group g = (Group) e.nextElement();
@@ -136,14 +206,35 @@ public class Linearr {
                               .stripTrailingZeros().toPlainString());
             }
             System.out.println(sb.toString());
+            String note = pinnedNote(g.name, fit, names, p);
+            if (note != null) System.out.println(note);
             pinned += fit.pinned;
             if (fit.df < minDf) minDf = fit.df;
+            if (fit.sigma > worstSigma) worstSigma = fit.sigma;
+            if (fit.condition > worstCond) worstCond = fit.condition;
         }
 
+        long leastDf = (minDf == Long.MAX_VALUE) ? 0 : minDf;
         System.err.println("fit: " + order.size() + " group" + (order.size() == 1 ? "" : "s")
                 + ", " + rows + " row" + (rows == 1 ? "" : "s")
                 + (pinned > 0 ? ", " + pinned + " term-slot" + (pinned == 1 ? "" : "s")
                                 + " pinned to 0" : "")
-                + ", least df=" + (minDf == Long.MAX_VALUE ? 0 : minDf));
+                + ", least df=" + leastDf
+                + (worstSigma >= 0.0 ? ", worst resid SD=" + g4(worstSigma) : "")
+                + (worstCond > 1.0 ? ", worst cond=" + g3(worstCond)
+                                     + " (normal equations)" : ""));
+
+        /* The same two warnings the C prints, in the same order and the same
+         * words. The residual checks are not here: diag.c has no twin in this
+         * directory, and saying so is better than a summary that is quietly
+         * less careful than the one it is meant to mirror. */
+        if (leastDf <= 0)
+            System.err.println("warning: at least one group has no residual degrees of "
+                + "freedom; its line passes through every row by construction. "
+                + "Fit those groups on more rows.");
+        if (worstCond > 1e8)
+            System.err.println("warning: at least one group is ill-conditioned (cond="
+                + g3(worstCond) + "); the trailing digits of its coefficients are "
+                + "noise. Try --qr, which does not square the condition number.");
     }
 }

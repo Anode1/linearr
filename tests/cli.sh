@@ -25,9 +25,13 @@ EXPECT1='001 prediction=19.9611 trim=46.5'
 
 cd "$root"
 
-# an argument is scored
-check "argument"      "$("$bin" "$CASE1")" "$EXPECT1"
-check "argument exit" "$?" "0"
+# an argument is scored. The status is captured from the program: written as
+# check "$?" on the line after, it was the status of the CHECK before it, which
+# is 0 whenever check itself runs, so the assertion held no matter what the
+# program returned.
+out=$("$bin" "$CASE1"); rc=$?
+check "argument"      "$out" "$EXPECT1"
+check "argument exit" "$rc" "0"
 
 # a pipe is a filter
 check "pipe" "$(printf '%s\n%s\n' "$CASE1" "$CASE1" | "$bin" | wc -l | tr -d ' ')" "2"
@@ -452,6 +456,32 @@ check "Wampler1: the normal equations report a residual that is not there" \
 check "Wampler1: QR does not" \
     "$("$bin" -t example/wampler1.csv --qr 2>&1 >/dev/null | sed -n 's/.*resid SD=\([0-9.e-]*\).*/\1/p')" \
     "6.663e-11"
+
+# Each group's residual checks are judged against ITS OWN spread. They used to
+# be judged against the worst residual SD of any group in the file and the
+# spread of every row together, so a group that fits to rounding error, sitting
+# beside a noisy one, had its rounding error correlated with things. The file
+# below did produce a spread warning that way, on data that has no such thing.
+{
+    echo "group,y,x"
+    awk 'BEGIN{for(i=0;i<40;i++){x=i*0.7; printf "exact,%.17g,%.17g\n", 0.1+0.3*x, x}}'
+    awk 'BEGIN{srand(3);for(i=0;i<40;i++) printf "noisy,%.17g,%d\n", 5+(rand()-0.5)*4000, i}'
+} > "$tmp/mixed.csv"
+check "an exactly fitting group is not judged by another group's error" \
+    "$("$bin" -t "$tmp/mixed.csv" --residuals /dev/null 2>&1 >/dev/null | grep -c warning)" \
+    "0"
+
+# Written by -t from the training header, and read back. Without it a
+# coefficient file says group,intercept,km,stops and nothing in it says the
+# answer is in minutes. los_response_name() had no caller at all.
+"$bin" -t example/simple-train.csv > "$tmp/m.csv" 2>/dev/null
+check "the coefficient file records what it predicts" \
+    "$(head -1 "$tmp/m.csv")" "# response: minutes"
+check "and reading it back recovers the name" \
+    "$("$bin" -c "$tmp/m.csv" --terms | sed -n 's/^it predicts: //p')" "minutes"
+check "a coefficient file without the line still loads" \
+    "$(grep -v '^# response' "$tmp/m.csv" > "$tmp/m2.csv"; "$bin" -c "$tmp/m2.csv" --terms | grep -c 'it predicts')" \
+    "0"
 
 # Anscombe II is the canonical curve that a line cannot fit. The check must see
 # it, and must NOT see anything in set I, which is the same summary statistics

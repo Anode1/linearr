@@ -6,11 +6,14 @@
 #define _POSIX_C_SOURCE 200809L  /* isatty */
 
 #include "common.h"
+#include "regress.h"
+#include "los.h"
 #include "process.h"
 #include "params.h"
 #include "constants.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
 #include <unistd.h>
@@ -46,6 +49,9 @@ static void usage(FILE *out, const char *prog) {
         "         which no summary number can show you\n"
         "  --trim F / --no-trim   the trim table, or none\n"
         "  --terms  what the loaded coefficient file expects, in order\n"
+        "  --footprint TERMS [GROUPS]   how much memory a run of that shape\n"
+        "         holds, for fitting and for scoring. Neither figure depends\n"
+        "         on the number of rows\n"
         "  -d     debug tracing to stderr\n"
         "  --version  which build this is\n"
         "  -h     this help\n"
@@ -84,11 +90,45 @@ static int score_named(const char *group, char *const *assign, int n) {
 
 /* --terms: the answer to "what am I supposed to type?". Without it the only way
  * to learn the model's column names was to open the CSV and count. */
+/* What a run will hold. Asked often enough to be worth answering without a
+ * trial run, and the only figure in this program that depends on the problem
+ * rather than on the model alone. */
+static void print_bytes(const char *label, double b) {
+    if (b < 1024.0)                     (void)printf("%s%.0f bytes\n", label, b);
+    else if (b < 1024.0 * 1024)         (void)printf("%s%.1f KB\n", label, b / 1024.0);
+    else if (b < 1024.0 * 1024 * 1024)  (void)printf("%s%.1f MB\n", label, b / (1024.0 * 1024));
+    else                                (void)printf("%s%.2f GB\n", label, b / (1024.0 * 1024 * 1024));
+}
+
+static void print_footprint(int terms, long groups) {
+    size_t fit   = process_group_bytes(terms);
+    size_t score = process_model_bytes();
+
+    (void)printf("%d term%s, %ld group%s\n\n", terms, s_(terms), groups, s_(groups));
+    (void)printf("fitting, -t, one accumulator per group\n");
+    (void)printf("  per group   %zu bytes\n", fit);
+    print_bytes("  in total    ", (double)fit * (double)groups);
+    (void)printf("\nscoring, a loaded coefficient table\n");
+    (void)printf("  per group   %zu bytes\n", score);
+    print_bytes("  in total    ", (double)score * (double)groups);
+    (void)printf("\nThe scoring figure does not move with the term count: the\n"
+                 "coefficient array is sized at this build's ceiling of %d, so a\n"
+                 "small model pays for a large one. The fitting figure does move.\n",
+                 LOS_MAX_VARS);
+    (void)printf("\nNeither depends on the number of ROWS, which is the point:\n"
+                 "the same figures cover a thousand rows and a trillion.\n");
+}
+
 static void print_terms(void) {
     int i, n = process_nterms();
 
     (void)printf("%d term%s and %ld group%s in %s\n", n, s_(n), process_ngroups(),
            s_(process_ngroups()), process_coef_path());
+    /* What the model predicts, when the file says so. A table of coefficients
+     * with no response named cannot be identified a week later, and -t writes
+     * the name in for exactly that reason. */
+    if (los_response_name()[0] != '\0')
+        (void)printf("it predicts: %s\n", los_response_name());
     for (i = 0; i < n; i++)
         (void)printf("  %3d  %s\n", i + 1, process_term_name(i));
     (void)printf("\nname them: GROUP %s=1 ...\n", n > 0 ? process_term_name(0) : "TERM");
@@ -212,6 +252,7 @@ static void need_model(void) {
 int main(int argc, char **argv) {
     static struct option longopts[] = {
         { "terms",   no_argument,       NULL, 'T' },
+        { "footprint", required_argument, NULL, 'F' },
         { "version", no_argument,       NULL, 'V' },
         { "coef",    required_argument, NULL, 'c' },
         { "trim",    required_argument, NULL, 'R' },
@@ -226,6 +267,8 @@ int main(int argc, char **argv) {
     const char *resid_file = NULL;
     char line[MAX_INPUT];
     int c, bad = 0, want_terms = 0;
+    int  footprint_terms = 0;
+    long footprint_groups = 1;
 
     g_prog = argv[0];               /* resolve.c finds our files from this */
 
@@ -235,6 +278,7 @@ int main(int argc, char **argv) {
             case 't': train_file = optarg; break;
             case 'g': group = optarg; break;
             case 'T': want_terms = 1; break;
+            case 'F': footprint_terms = atoi(optarg); break;
             case 'c': process_use_coef(optarg); break;
             case 'R': process_use_trim(optarg); break;
             case 'N': process_use_trim(NULL); break;
@@ -260,10 +304,25 @@ int main(int argc, char **argv) {
         die("--residuals writes one row per TRAINING row, so it needs -t");
     if (want_terms && train_file)
         die("--terms lists the loaded model; it cannot be combined with -t");
+    if (footprint_terms > 0) {
+        if (footprint_terms > REGRESS_MAX_VARS)
+            die("--footprint takes 1..%d terms; this build fits no more",
+                REGRESS_MAX_VARS);
+        /* An optional group count follows, so the common question ("how much
+         * for 400,000 groups of 24 terms?") is one command and no arithmetic. */
+        if (optind < argc) {
+            footprint_groups = atol(argv[optind]);
+            if (footprint_groups < 1) die("--footprint needs a group count of 1 or more");
+        }
+    } else if (footprint_terms < 0) {
+        die("--footprint takes a term count of 1 or more");
+    }
 
     if (want_terms) {
         need_model();
         print_terms();
+    } else if (footprint_terms > 0) {
+        print_footprint(footprint_terms, footprint_groups);
     } else if (train_file) {
         /* -g with --residuals used to be refused, because the single-group
          * path had never been wired for the second pass. The refusal was the

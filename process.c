@@ -407,6 +407,12 @@ static int open_training(const char *csv_path, FILE **fpp, int *nvars) {
                     "(run with -d for which one)", csv_path, n - 2, LOS_MAX_VARS,
                     LOS_NAME_MAX);
 
+    /* What the file predicts. It is the header's second field, and it was
+     * being read, stored and never used: los_response_name() had no caller at
+     * all, so a coefficient file said group,intercept,km,stops and nothing in
+     * it said the answer was in minutes. */
+    los_set_response_name(field[1]);
+
     /* The schema now belongs to this training file, not to the coefficient
      * table, so anything scoring afterwards must load the real one again. This
      * is set HERE and not on the caller's success path: every `goto cleanup`
@@ -533,8 +539,42 @@ struct group_fit {
     struct fitter r;
     struct diag   d;                /* its own, so groups are not pooled       */
     double *beta;
+    /* This group's own residual SD, and a Welford pair for its own response.
+     * The residual checks compare the two to decide whether there is anything
+     * left to explain, and both used to be taken from the WHOLE file: the worst
+     * residual SD of any group against the spread of every row together. A
+     * group that fits exactly, sitting beside one that does not, was therefore
+     * judged by the other group's error, and the guard that exists to stop the
+     * checks correlating rounding error never fired for it. */
+    double sigma;
+    long   ny;
+    double ymean, ym2;
     double storage[1];              /* fitter + (nvars+1) beta + diag          */
 };
+
+/* What ONE group costs, exactly. The allocation below calls this rather than
+ * repeating the arithmetic, so the number a user is told and the number the
+ * program asks for cannot differ.
+ *
+ * They did. scale.sh said "groups x (terms + 1) doubles", the README said
+ * "about 2 KB per group", and process.h said the bound was groups x terms^2.
+ * All three were describing the fitter alone, or a guess at it, and none
+ * counted the beta vector or the residual-check block. */
+size_t process_group_bytes(int nvars) {
+    if (nvars < 1) return 0;
+    return sizeof(struct group_fit)
+         + (fitter_storage(nvars) + (size_t)nvars + diag_storage(nvars))
+           * sizeof(double);
+}
+
+/* And what one group costs on the SCORING side, which is a different number
+ * and was being quoted as if it were this one. A loaded model is a fixed
+ * struct: the coefficient array is dimensioned at the build ceiling, not at
+ * the model's own term count, so a two-term model pays for LOS_MAX_VARS. That
+ * is a real cost and it is stated rather than averaged away. */
+size_t process_model_bytes(void) {
+    return sizeof(struct los_model);
+}
 
 static void group_fits_free(struct group_fit *head) {
     while (head) {
@@ -559,7 +599,6 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
     size_t need;
     int    rc = -1, n, nvars = 0;
     long   rows = 0, seen = 0, groups = 0;
-    double ry_mean = 0.0, ry_m2 = 0.0, response_sd = -1.0;   /* spread of y */
 
     /* Checked before anything is read or written: the refusal used to arrive
      * after the coefficient table had already gone to stdout. */
@@ -594,8 +633,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
         if (only && strcmp(c.group, only) != 0) continue;
         g = hash_get(index, c.group);
         if (!g) {
-            g = xmalloc(sizeof *g +
-                        (need + (size_t)nvars + diag_storage(nvars)) * sizeof(double));
+            g = xmalloc(process_group_bytes(nvars));
             g->next = NULL;
             g->beta = g->storage + need;     /* nvars+1 doubles, after the fitter */
             (void)diag_init(&g->d, nvars, g->beta + nvars + 1);
@@ -606,16 +644,25 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
                      csv_path, nvars, REGRESS_MAX_VARS);
                 goto cleanup;
             }
+            g->sigma = -1.0;
+            g->ny    = 0;
+            g->ymean = 0.0;
+            g->ym2   = 0.0;
             free(hash_put(index, c.group, g));
             if (tail) tail->next = g; else head = g;
             tail = g;
             groups++;
         }
-        {   /* Welford over every response, whatever its group: the residual
-             * checks need something to judge the residuals against. */
-            double dy = los - ry_mean;
-            ry_mean += dy / (double)(rows + 1);
-            ry_m2   += dy * (los - ry_mean);
+        {   /* Welford over this group's response. It is what the group's
+             * residual checks are judged against, and it is two doubles and a
+             * count, so it does not make the footprint a function of the data.
+             * There used to be one of these for the WHOLE FILE instead, which
+             * meant a group that fits exactly was judged by the spread of every
+             * other group's rows. */
+            double dy = los - g->ymean;
+            g->ny++;
+            g->ymean += dy / (double)g->ny;
+            g->ym2   += dy * (los - g->ymean);
         }
         if (fitter_add(&g->r, c.x, los) != 0) {
             fail("%s row %ld holds a value that is not finite", csv_path, seen);
@@ -643,8 +690,9 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
              csv_path, rows);
         goto cleanup;
     }
-    if (rows > 1) response_sd = sqrt(ry_m2 / (double)(rows - 1));
 
+    if (los_response_name()[0] != '\0')
+        (void)fprintf(out, "# response: %s\n", los_response_name());
     if (los_format_header(row, sizeof row) != 0) {
         fail("the header does not fit in %zu bytes", sizeof row);
         goto cleanup;
@@ -680,6 +728,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
                 (void)fprintf(out, "%s\n", note);
         }
 
+        g->sigma = f.sigma;
         if (sum) {
             sum->pinned += f.pinned;
             if (sum->groups == 0 || f.df < sum->min_df) sum->min_df = f.df;
@@ -703,10 +752,11 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             fail("cannot re-read %s for the residuals", csv_path);
             goto cleanup;
         }
-        /* The response's own spread, so a residual of rounding error can be
-         * told from one with structure in it. */
+        /* Each group against its OWN spread, so a residual of rounding error
+         * can be told from one with structure in it. */
         for (g = head; g; g = g->next)
-            diag_scale(&g->d, sum ? sum->max_sigma : -1.0, response_sd);
+            diag_scale(&g->d, g->sigma,
+                       (g->ny > 1) ? sqrt(g->ym2 / (double)(g->ny - 1)) : -1.0);
         fprintf(resid, "group,observed,predicted,residual\n");
         while ((n = csv_next(again, line, sizeof line)) == 2)
             ;                                    /* skip to past the header */

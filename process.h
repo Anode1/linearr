@@ -94,6 +94,16 @@ struct fit_info {
  * produces a table the scorer can read straight back. info may be NULL.
  * Returns 0, or -1 (see process_error). A group with few rows still fits: see
  * info.df before believing the result. */
+/* Bytes held for ONE group while -t fits every group in one pass. The fitter,
+ * the coefficients and the residual-check block, plus the record around them.
+ * Multiply by the number of groups; nothing here depends on the row count. */
+size_t process_group_bytes(int nvars);
+
+/* Bytes held for one group of a LOADED coefficient table, which is the scoring
+ * side and a different figure. Independent of the term count: the coefficient
+ * array is dimensioned at the build ceiling. */
+size_t process_model_bytes(void);
+
 int process_train(const char *csv_path, const char *group,
                   char *out, size_t outsz, struct fit_info *info);
 
@@ -103,12 +113,16 @@ int process_train(const char *csv_path, const char *group,
  * of the training file per group.
  *
  * Memory here is the one place this program's footprint depends on something
- * other than the term count: one accumulator per group, each
- * regress_storage(nvars) doubles. That is bounded by (groups x terms^2) and
- * never by the number of rows (580 groups of 35 terms is about 6 MB), and it
- * is freed on every path. sum may be NULL.
+ * other than the model: fitting every group in one pass holds one accumulator
+ * per group. process_group_bytes() below says exactly what one costs, and
+ * `linearr --footprint TERMS [GROUPS]` prints it, so the figure in a document
+ * and the figure the program allocates come from the same line of code. They
+ * used not to: three places in this project quoted three different numbers,
+ * all of them counting the fitter alone.
  *
- * Returns 0, or -1 (see process_error). */
+ * Nothing grows with the number of ROWS, which is the property the whole
+ * design exists for.
+ */
 struct fit_summary {
     long   groups;      /* groups fitted                                  */
     long   rows;        /* training rows used                             */

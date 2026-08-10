@@ -25,6 +25,11 @@
 #include <math.h>
 
 static int pass, fail;
+
+/* argv[0], so test_resolve can ask about the binary that is actually running
+ * rather than about a name written down a second time in a file that cannot
+ * see the Makefile. Kept as a fallback for a caller that passes none. */
+static const char *t_argv0 = "./linearr_ut";
 #define CHECK(cond, msg) do { \
     if (cond) pass++; \
     else { fail++; printf("  FAIL %s  (%s:%d)\n", msg, __FILE__, __LINE__); } \
@@ -398,7 +403,11 @@ static void test_wide_fit(void) {
 static void test_resolve(void) {
     char path[RESOLVE_PATH_MAX];
 
-    g_prog = "./linearr_ut";
+    /* This binary's own argv[0], not a copy of its name. It was written out as
+     * "./linearr_ut", which is the Makefile's TESTBIN spelled a second time in
+     * a file that cannot see the Makefile: renaming one and not the other made
+     * resolve_program_dir() resolve a path that does not exist. */
+    g_prog = t_argv0;
     /* Absolute, because argv[0] is run through realpath first: a symlinked
      * binary must find the files beside the REAL one, not beside the link. */
     CHECK(resolve_program_dir() != NULL && resolve_program_dir()[0] == '/',
@@ -1102,6 +1111,60 @@ static void test_diag_offsets(void) {
     }
 }
 
+/* The memory figure quoted to a user and the memory the program asks for. They
+ * were three different numbers in three files, none of them counting more than
+ * the fitter, so this checks the arithmetic rather than the prose: the growth
+ * per term must match what the three sizing functions actually return. */
+static void test_footprint(void) {
+    size_t two   = process_group_bytes(2);
+    size_t three = process_group_bytes(3);
+    size_t fixed;
+
+    CHECK(process_group_bytes(0) == 0 && process_group_bytes(-1) == 0,
+          "footprint: a model with no terms costs nothing to report");
+    CHECK(two > 0 && three > two, "footprint: another term costs more");
+
+    /* The figure must cover the residual-check block, which is the part every
+     * earlier statement of it left out: three files quoted the fitter alone.
+     * fitter_storage() is private to process.c, so the check is that the growth
+     * per term exceeds what the fitter alone would explain. */
+    fixed = (size_t)(diag_storage(3) - diag_storage(2)) * sizeof(double);
+    CHECK(three - two > fixed,
+          "footprint: a term costs more than its residual-check block alone");
+    CHECK(three - two > (size_t)(3 + 1) * sizeof(double),
+          "footprint: and more than its coefficients alone");
+    CHECK(two > (size_t)sizeof(void *) + GROUP_MAX,
+          "footprint: the record around the arrays is counted too");
+
+    /* The scoring side is a different number, and it does NOT move with the
+     * term count: the coefficient array is dimensioned at the build ceiling.
+     * This was the figure being quoted for the fitting side. */
+    CHECK(process_model_bytes() >= (size_t)(LOS_MAX_VARS + 2) * sizeof(double),
+          "footprint: a loaded model carries the build's whole ceiling");
+    CHECK(process_model_bytes() != process_group_bytes(LOS_MAX_VARS < REGRESS_MAX_VARS
+                                                       ? LOS_MAX_VARS : REGRESS_MAX_VARS),
+          "footprint: fitting and scoring are not the same figure");
+
+    /* The two formulas the documents quote. qr.h said its factor was smaller
+     * than the normal equations' and README.md said larger, and neither counted
+     * the three per-column vectors qr.c keeps. Stated here as arithmetic so the
+     * prose cannot drift from the allocation again. */
+    {
+        int w[] = { 1, 2, 8, 24, 35, 64 };
+        size_t i;
+        int ok_r = 1, ok_q = 1, ok_d = 1;
+        for (i = 0; i < sizeof w / sizeof w[0]; i++) {
+            size_t n = (size_t)w[i];
+            if (regress_storage(w[i]) != n * n + 2 * n) ok_r = 0;
+            if (qr_storage(w[i]) != n * n + 6 * n + 5) ok_q = 0;
+            if (qr_storage(w[i]) != regress_storage(w[i]) + 4 * n + 5) ok_d = 0;
+        }
+        CHECK(ok_r, "footprint: the normal equations hold p^2 + 2p doubles");
+        CHECK(ok_q, "footprint: QR holds p^2 + 6p + 5");
+        CHECK(ok_d, "footprint: which is 4p + 5 MORE than the normal equations, not less");
+    }
+}
+
 static void test_los_round(void) {
     /* Half away from zero, NOT printf's round half to even, which would make
      * these 2 and -2. */
@@ -1352,7 +1415,8 @@ static void test_other_schema(void) {
     process_free();
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+    if (argc > 0 && argv[0] && argv[0][0]) t_argv0 = argv[0];
     test_utils();
     test_hash();
     test_params();
@@ -1363,6 +1427,7 @@ int main(void) {
     test_diag();
     test_diag_probe_isolation();
     test_diag_offsets();
+    test_footprint();
     test_canonical();
     test_fit_quality_cost();
     test_resolve();

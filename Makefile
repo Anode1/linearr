@@ -5,7 +5,8 @@
 # library the project adds for you is -lm, which the fit and the rounding need.
 # Drop in a .c (here or one directory down) and it compiles, no editing
 # this file.
-#   make | release | debug | pedantic | check | ut | cliut | ut-asan | ut-ubsan
+#   make | release | debug | pedantic | check | ut | cliut | readme | java
+#   ut-asan | ut-ubsan
 #   | hooks | clean
 SHELL = /bin/sh
 
@@ -79,7 +80,7 @@ endif
 %.o: %.c
 	$(CC) $(PROJ) $(CPPFLAGS) $(CFLAGS) -MMD -c $< -o $@
 
-.PHONY: all release debug pedantic check ut cliut readme ut-asan ut-ubsan hooks \
+.PHONY: all release debug pedantic check ut cliut readme java ut-asan ut-ubsan hooks \
         install uninstall clean modeclean
 
 PREFIX ?= /usr/local
@@ -127,8 +128,16 @@ cliut: $(BIN)
 readme: $(BIN)
 	@python3 scripts/readme-check.py
 
-# check: all three gates. Run it before a commit.
-check: ut cliut readme
+# java: fit every example with both implementations and diff. java/ is meant to
+# be read beside the C, and nothing checked that it still BEHAVED like it. It
+# had stopped: the pinned notes, the response line, the residual SD and the
+# conditioning were all in the C and none of them in the Java. Skips itself
+# where there is no JDK, so the C build never needs one.
+java: $(BIN)
+	@sh scripts/java-check.sh
+
+# check: all four gates. Run it before a commit.
+check: ut cliut readme java
 
 # ut-asan / ut-ubsan: the same tests under AddressSanitizer and under
 # UndefinedBehaviorSanitizer. A leak, an overflow, or UB aborts with a file:line

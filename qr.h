@@ -10,8 +10,11 @@
  * This module reaches the same answer by rotating each row into an upper
  * triangular factor R with Givens rotations, one row at a time. The row is used
  * and dropped, exactly as in regress.c, so the memory is still a function of
- * the model alone: (p+1)(p+2) doubles, slightly less than the normal equations
- * need. What it does not do is square anything, so the digits lost are the
+ * the model alone: p^2 + 6p + 5 doubles, against the normal equations' p^2 +
+ * 2p. It is 4p + 5 doubles MORE, not less. This header said less, and the
+ * README said more, and neither counted the three per-column vectors this
+ * module keeps; the figures now come from qr_storage() and regress_storage(),
+ * which are what the callers allocate. What it does not do is square anything, so the digits lost are the
  * design's own condition number rather than its square.
  *
  * What it is NOT: a strictly better solver. It does not centre the data, and a

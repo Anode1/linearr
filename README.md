@@ -31,6 +31,7 @@ determine:
 
     $ ./linearr -t example/together.csv
     fit: 1 group, 5 rows, 1 term-slot pinned to 0, least df=3, worst resid SD=4.397
+    # response: minutes
     group,intercept,night,headlights
     A,6,8,0
     # pinned A: collinear headlights
@@ -49,6 +50,7 @@ numbers whatsoever, so a perfect fit tells you nothing:
     $ ./linearr -t example/three-rows.csv
     fit: 1 group, 3 rows, least df=0, worst cond=1.33 (normal equations)
     warning: at least one group has no residual degrees of freedom; its line passes through every row by construction. Fit those groups on more rows.
+    # response: minutes
     group,intercept,km,stops
     A,1,3,6
 
@@ -68,6 +70,7 @@ differ in the sixth decimal, asked for `1 + 2*x1 + 3*x2`:
     $ ./linearr -t example/nearly-the-same.csv
     fit: 1 group, 40 rows, least df=37, worst resid SD=0, worst cond=5.34e+10 (normal equations)
     warning: at least one group is ill-conditioned (cond=5.34e+10); the trailing digits of its coefficients are noise. Try --qr, which does not square the condition number.
+    # response: value
     group,intercept,x1,x2
     A,1.00000000001,2.00002262993,2.99997737008
 
@@ -91,6 +94,7 @@ dataset. Fitting all four at once is what groups are for:
 
     $ ./linearr -t example/anscombe.csv
     fit: 4 groups, 44 rows, least df=9, worst resid SD=1.237
+    # response: y
     group,intercept,x
     I,3.00009090909,0.500090909091
     II,3.00090909091,0.5
@@ -108,6 +112,7 @@ only one of the four is a straight line with scatter around it.
     residuals: r.csv
     fit: 4 groups, 44 rows, least df=9, worst resid SD=1.237
     warning: in group II the residuals still depend on x after the line is subtracted (t=-2219.2). A straight line is probably the wrong shape in that term; consider adding its square as a column.
+    # response: y
     group,intercept,x
     I,3.00009090909,0.500090909091
     II,3.00090909091,0.5
@@ -181,6 +186,7 @@ of route. The terms are the same everywhere; what each term is worth is not:
 
     $ ./linearr -t example/routes.csv
     fit: 3 groups, 18 rows, least df=3, worst resid SD=3.832e-07, worst cond=1.02 (normal equations)
+    # response: minutes
     group,intercept,km,stops
     city,5,3,2
     suburb,4,2,1.5
@@ -225,6 +231,7 @@ produces summary statistics that give no sign of the problem:
     residuals: r.csv
     fit: 1 group, 13 rows, least df=11, worst resid SD=13.49
     warning: in group A the residuals still depend on x after the line is subtracted (t=9999.0). A straight line is probably the wrong shape in that term; consider adding its square as a column.
+    # response: value
     group,intercept,x
     A,24,0
 
@@ -259,9 +266,9 @@ The fit accumulates `X'X` and solves it. That is what bounds the memory, and it
 squares the condition number of the design, so a near-collinear or badly scaled
 problem loses about twice the digits it needs to. `--qr` rotates each row into a
 triangular factor instead, with Givens rotations, one row at a time. It squares
-nothing. It is still streaming. Its factor is (p+1)(p+2) doubles against the normal
-equations' p^2+2p, so it is slightly LARGER, not smaller; an earlier version of
-this paragraph had that backwards.
+nothing. It is still streaming. Its factor is `p^2 + 6p + 5` doubles against the
+normal equations' `p^2 + 2p`, so it is LARGER by `4p + 5`, not smaller. At 24
+terms that is 725 doubles against 624.
 
 On `example/nearly-the-same.csv`, where two columns differ in the sixth decimal
 and the answer is `1 + 2*x1 + 3*x2`:
@@ -304,6 +311,7 @@ case since.
 
     $ ./linearr -t example/longley.csv
     fit: 1 group, 16 rows, least df=9, worst resid SD=304.9, worst cond=934 (normal equations)
+    # response: employment
     group,intercept,deflator,gnp,unemployed,armed_forces,population,year
     A,-3482258.6346,15.0618722714,-0.0358191792926,-2.02022980382,-1.03322686717,-0.0511041056535,1829.15146461
 
@@ -321,11 +329,13 @@ data to hide behind.
 
     $ ./linearr -t example/wampler1.csv
     fit: 1 group, 21 rows, least df=15, worst resid SD=0.02282, worst cond=9.96e+04 (normal equations)
+    # response: y
     group,intercept,x,x2,x3,x4,x5
     A,0.999999995576,0.999999996707,1.0000000034,0.999999999361,1.00000000004,0.999999999999
 
     $ ./linearr -t example/wampler1.csv --qr
     fit: 1 group, 21 rows, least df=15, worst resid SD=6.663e-11, worst cond=234 (QR)
+    # response: y
     group,intercept,x,x2,x3,x4,x5
     A,1.00000000044,0.999999999992,1.00000000001,0.999999999997,1,1
 
@@ -348,6 +358,7 @@ alone.) With `--residuals` the pass that writes them also checks two things.
     residuals: r.csv
     fit: 1 group, 13 rows, least df=11, worst resid SD=13.49
     warning: in group A the residuals still depend on x after the line is subtracted (t=9999.0). A straight line is probably the wrong shape in that term; consider adding its square as a column.
+    # response: value
     group,intercept,x
     A,24,0
 
@@ -459,9 +470,11 @@ Three things that table does **not** cover:
   at the default: it runs under `ulimit -s 192` and fails under 160. Setting the
   ceiling is all a small target needs, and it pays twice: a
   `-DLOS_MAX_VARS=32 -DREGRESS_MAX_VARS=32` build runs under `ulimit -s 64`.
-- Fitting **every** group in one pass holds one accumulator per group, so that
-  path costs `groups x terms^2`, about 6 MB for 580 groups of 35 terms. It is
-  still never a function of how many rows you feed it.
+- Fitting **every** group in one pass holds one accumulator per group. That is
+  the fitter, the coefficients and the residual-check block, and `linearr
+  --footprint TERMS GROUPS` prints it: 8.4 MB for 580 groups of 35 terms, which
+  `scripts/scale.sh` then measures at 8.5 MB. It is still never a function of
+  how many rows you feed it.
 
 `scripts/scale.sh` exists to falsify the memory claim rather than repeat it: it
 fits the same model over row counts an order of magnitude apart and prints peak
@@ -475,19 +488,46 @@ model had (35 terms, 580 groups), output verbatim:
     generating training data (10000 and 100000 rows) ... done (816K, 8.0M)
     FIT: the same 35-term model, 10000 rows then 100000:
       rows         seconds  peak RSS (KB)
-      10000        0.02 2432
-      100000       0.24 2432
+      10000        0.01 2432
+      100000       0.12 2432
       ^ RSS should be flat: 10x the data, the same memory.
+
+    generating 100000 rows spread over 580 groups ... done
+    FIT ALL: the same rows, one line per group:
+      groups       seconds  peak RSS (KB)
+      1            0.12 2432
+      580          0.14 11136
+      ^ this one is NOT flat, and should not be: the difference is the
+        per-group figure below, times 580.
 
     generating a 580-group table and cases ... done
     SCORE: 100000 cases against 580 groups:
       cases        seconds  peak RSS (KB)
-      100000       0.16 3712
+      100000       0.07 3584
 
-    The coefficient table is the only thing that grows with the problem:
-      580 groups x (35 + 1) doubles = about 163 KB, held once.
+    Memory grows with the GROUPS and not with the rows. What that costs here:
+      35 terms, 580 groups
 
-Ten times the data, the same memory. Time scales with the number of rows.
+      fitting, -t, one accumulator per group
+        per group   15232 bytes
+        in total    8.4 MB
+
+      scoring, a loaded coefficient table
+        per group   2064 bytes
+        in total    1.1 MB
+
+      The scoring figure does not move with the term count: the
+      coefficient array is sized at this build's ceiling of 256, so a
+      small model pays for a large one. The fitting figure does move.
+
+      Neither depends on the number of ROWS, which is the point:
+      the same figures cover a thousand rows and a trillion.
+
+Ten times the data, the same memory: that is the first pair of rows. The second
+pair is the part a memory claim usually omits. Fitting 580 groups instead of one
+costs 8.5 MB more, and the per-group figure printed underneath predicts 8.4 MB,
+so the script measures the claim rather than restating it. Time scales with the
+number of rows, memory with the number of groups.
 
 ## The same job in other languages
 
@@ -586,8 +626,10 @@ names the terms:
     fit: 2 groups, 13 rows, least df=3, worst resid SD=0, worst cond=1.03 (normal equations)
 
     $ cat model.csv
+    # response: minutes
     group,intercept,km,stops
     A,5,2.5,1.5
+    B,12,2.5,1.5
 
     $ ./linearr -c model.csv --no-trim A km=10 stops=3
     A prediction=34.5000
@@ -766,9 +808,32 @@ accumulator per group, which is memory in the groups, not in the rows.
 - **One stream.** It reads one input sequentially. There is no sharding, no
   distribution, no restart from a partial fit.
 - **Memory is bounded by the MODEL, not by the data, and the model includes the
-  groups.** Fitting every group in one pass holds one accumulator per group:
-  about 2 KB per group at the default term ceiling. 500 groups is 1 MB; 400,000
-  groups is 800 MB. Rows are free, groups are not.
+  groups.** Fitting every group in one pass holds one accumulator per group.
+  Ask the program rather than trusting this sentence:
+
+      $ ./linearr --footprint 24 400000
+      24 terms, 400000 groups
+
+      fitting, -t, one accumulator per group
+        per group   8456 bytes
+        in total    3.15 GB
+
+      scoring, a loaded coefficient table
+        per group   2064 bytes
+        in total    787.4 MB
+
+      The scoring figure does not move with the term count: the
+      coefficient array is sized at this build's ceiling of 256, so a
+      small model pays for a large one. The fitting figure does move.
+
+      Neither depends on the number of ROWS, which is the point:
+      the same figures cover a thousand rows and a trillion.
+
+  Rows are free, groups are not. The two figures are different and used to be
+  quoted as one: this section said 2 KB per group for fitting, which is the
+  scoring number, and three other places in the project each said something
+  else. They now all come from `process_group_bytes()`, which is also what the
+  allocation calls.
 - **`--residuals` needs a second pass**, so it needs a real file. From a pipe it
   refuses rather than half-work.
 - **The parsing is the cost, not the arithmetic.** At 4.7 million rows a second
