@@ -256,6 +256,7 @@ public class Linearr {
          * not, so the one number in the summary that says how far a prediction
          * typically lands from the truth was missing from the Java. */
         double worstSigma = -1.0;
+        double worstR2 = -1.0;
         boolean sigmaBound = false;
         /* And the worst conditioning. The C prints it, and warns above 1e8,
          * because an ill-conditioned design fits its own sample beautifully and
@@ -293,6 +294,7 @@ public class Linearr {
             pinned += fit.pinned;
             if (fit.df < minDf) minDf = fit.df;
             if (fit.sigma > worstSigma) { worstSigma = fit.sigma; sigmaBound = fit.sigmaIsBound; }
+            if (fit.r2 >= 0.0 && (worstR2 < 0.0 || fit.r2 < worstR2)) worstR2 = fit.r2;
             if (fit.condition > worstCond) worstCond = fit.condition;
         }
 
@@ -306,15 +308,37 @@ public class Linearr {
                 + "' is the value being predicted, and the other " + p
                 + (p == 1 ? " column is a term" : " columns are terms")
                 + ". Use -y NAME if that is the wrong column");
-        System.err.println("fit: " + order.size() + " group" + (order.size() == 1 ? "" : "s")
-                + ", " + rows + " row" + (rows == 1 ? "" : "s")
-                + (pinned > 0 ? ", " + pinned + " term-slot" + (pinned == 1 ? "" : "s")
-                                + " pinned to 0" : "")
-                + ", least df=" + leastDf
-                + (worstSigma >= 0.0 ? ", worst resid SD" + (sigmaBound ? "<" : "=")
-                                     + g4(worstSigma) : "")
-                + (worstCond > 1.0 ? ", worst cond=" + g3(worstCond)
-                                     + " (normal equations)" : ""));
+
+        /* One vocabulary, as the C has: with a single group the aggregates ARE
+         * that group's figures, so "worst" and "least" would be telling a
+         * reader there might be others. */
+        boolean many = order.size() != 1;
+        StringBuffer f = new StringBuffer("fit: ");
+        if (many) { f.append(order.size()); f.append(" groups, "); }
+        f.append(rows); f.append(rows == 1 ? " row" : " rows");
+        if (worstR2 >= 0.0) {
+            f.append(", "); if (many) f.append("worst ");
+            f.append("R2="); f.append(String.format("%.4f", Double.valueOf(worstR2)));
+        }
+        if (worstSigma >= 0.0) {
+            f.append(", "); if (many) f.append("worst ");
+            f.append("resid SD"); f.append(sigmaBound ? "<" : "=");
+            f.append(g4(worstSigma));
+        }
+        if (pinned > 0) {
+            f.append(", "); f.append(pinned);
+            f.append(pinned == 1 ? " term unidentified and set to 0"
+                                 : " terms unidentified and set to 0");
+        }
+        f.append(", "); if (many) f.append("least ");
+        f.append("df="); f.append(leastDf);
+        if (worstCond > 1.0) {
+            f.append(", "); if (many) f.append("worst ");
+            f.append("cond="); f.append(g3(worstCond));
+            f.append(" (normal equations");
+            f.append(pinned > 0 ? ", over the terms kept)" : ")");
+        }
+        System.err.println(f.toString());
 
         /* The same two warnings the C prints, in the same order and the same
          * words. The residual checks are not here: diag.c has no twin in this

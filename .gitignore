@@ -1,4 +1,5 @@
 # build output
+c/version.h
 linearr
 linearr_ut
 linearr_ut_asan

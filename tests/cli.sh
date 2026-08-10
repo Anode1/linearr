@@ -631,6 +631,11 @@ set +e
 "$bin" --stats "$tmp/x.csv" 001 >/dev/null 2>&1; rc=$?
 set -e
 check "--stats without -t is an error" "$rc" "1"
+# "-" is stdout, as it is stdin for -t. It used to open a FILE named "-", and
+# one of those was committed to the repository.
+( cd "$tmp" && rm -f -- - && "$bin" -t "$root/example/routes.csv" --stats - >/dev/null 2>&1 )
+check "--stats - does not create a file called -" \
+    "$( [ -e "$tmp/-" ] && echo present || echo absent )" "absent"
 
 # Anscombe II is the canonical curve that a line cannot fit. The check must see
 # it, and must NOT see anything in set I, which is the same summary statistics

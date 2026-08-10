@@ -10,6 +10,7 @@
 #include "los.h"
 #include "process.h"
 #include "constants.h"
+#include "version.h"   /* generated: LINEARR_VERSION, from the git tag */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -47,9 +48,10 @@ static void usage(FILE *out, const char *prog) {
         "  --qr   solve by QR instead of normal equations: slower per row, and\n"
         "         it does not square the condition number. Use it when the fit\n"
         "         reports a large cond=\n"
-        "  --stats F   with -t, one row per GROUP to F: rows, df, R2, resid SD,\n"
-        "         cond and how many terms were pinned. The summary reports the\n"
-        "         worst of each; this says which group they came from\n"
+        "  --stats F   with -t, one row per GROUP to F (- for stdout): rows, df,\n"
+        "         R2, resid SD, cond and how many terms were pinned. The\n"
+        "         summary reports the worst of each; this says which group\n"
+        "         they came from\n"
         "  --residuals F   with -t, also write one row per training row to F:\n"
         "         GROUP,observed,predicted,residual. Where the model is wrong,\n"
         "         which no summary number can show you\n"
@@ -184,7 +186,9 @@ static int train_all(const char *path, const char *only,
         if (!resid) die("cannot write %s: %s", resid_file, strerror(errno));
     }
     if (stats_file) {
-        stats = fopen(stats_file, "w");
+        /* "-" is stdout, as it is stdin for -t. It used to open a FILE named
+         * "-", and one of those reached the repository. */
+        stats = (strcmp(stats_file, "-") == 0) ? stdout : fopen(stats_file, "w");
         if (!stats) die("cannot write %s: %s", stats_file, strerror(errno));
     }
     if (process_train_residuals(path, only, stdout, resid, stats, &sum) != 0) {
@@ -204,21 +208,41 @@ static int train_all(const char *path, const char *only,
         (void)fprintf(stderr, "residuals: %s\n", resid_file);
     }
     if (stats) {
-        if (fflush(stats) != 0 || ferror(stats) || fclose(stats) != 0)
+        if (fflush(stats) != 0 || ferror(stats))
             die("cannot write %s: %s", stats_file, strerror(errno));
-        (void)fprintf(stderr, "per-group statistics: %s\n", stats_file);
+        if (stats != stdout && fclose(stats) != 0)
+            die("cannot write %s: %s", stats_file, strerror(errno));
+        if (stats != stdout)
+            (void)fprintf(stderr, "per-group statistics: %s\n", stats_file);
     }
     print_reading();
-    (void)fprintf(stderr, "fit: %lld group%s, %lld row%s", sum.groups, s_(sum.groups),
-            sum.rows, s_(sum.rows));
-    if (sum.pinned > 0)
-        fprintf(stderr, ", %d term-slot%s pinned to 0", sum.pinned, s_(sum.pinned));
-    (void)fprintf(stderr, ", least df=%lld", sum.min_df);
-    if (sum.max_sigma >= 0.0)
-        fprintf(stderr, ", worst resid SD%s%.4g",
-                sum.sigma_is_bound ? "<" : "=", sum.max_sigma);
-    if (sum.max_condition > 1.0)
-        fprintf(stderr, ", worst cond=%.3g (%s)", sum.max_condition, process_solver());
+    /* One vocabulary. With a single group the aggregates ARE that group's
+     * figures, so calling them "worst" and "least" told a reader who had
+     * already written -g that there might be others. Worse, the same fit
+     * printed a different line depending on whether --residuals was given,
+     * because that routes through this path: `R2=0.6662, resid SD=1.237, df=9`
+     * one way and `1 group, least df=9, worst resid SD=1.237` the other, with
+     * R2 simply absent. A flag whose job is to write a file must not change
+     * what the summary says. */
+    {
+        int many = (sum.groups != 1);
+        if (many) (void)fprintf(stderr, "fit: %lld groups, %lld row%s",
+                                sum.groups, sum.rows, s_(sum.rows));
+        else      (void)fprintf(stderr, "fit: %lld row%s", sum.rows, s_(sum.rows));
+        if (sum.min_r2 >= 0.0)
+            fprintf(stderr, ", %sR2=%.4f", many ? "worst " : "", sum.min_r2);
+        if (sum.max_sigma >= 0.0)
+            fprintf(stderr, ", %sresid SD%s%.4g", many ? "worst " : "",
+                    sum.sigma_is_bound ? "<" : "=", sum.max_sigma);
+        if (sum.pinned > 0)
+            fprintf(stderr, ", %d term%s unidentified and set to 0",
+                    sum.pinned, s_(sum.pinned));
+        (void)fprintf(stderr, ", %sdf=%lld", many ? "least " : "", sum.min_df);
+        if (sum.max_condition > 1.0)
+            fprintf(stderr, ", %scond=%.3g (%s%s)", many ? "worst " : "",
+                    sum.max_condition, process_solver(),
+                    sum.pinned > 0 ? ", over the terms kept" : "");
+    }
     (void)fprintf(stderr, "\n");
     if (sum.min_df <= 0)
         (void)fprintf(stderr, "warning: at least one group has no residual degrees of "

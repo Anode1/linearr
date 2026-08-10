@@ -736,6 +736,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
     if (sum) {
         sum->groups = 0; sum->rows = 0; sum->min_df = 0;
         sum->max_condition = 1.0; sum->pinned = 0; sum->max_sigma = -1.0; sum->sigma_is_bound = 0;
+        sum->min_r2 = -1.0;
         sum->curved_term = -1; sum->curved_t = 0.0; sum->curved_pow = 0;
         sum->fitted_t = 0.0; sum->spread_t = 0.0; sum->worst_group[0] = '\0';
     }
@@ -877,6 +878,11 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             sum->pinned += f.pinned;
             if (sum->groups == 0 || f.df < sum->min_df) sum->min_df = f.df;
             if (f.condition > sum->max_condition) sum->max_condition = f.condition;
+            /* The lowest R2 over the groups, skipping the ones where it is
+             * not defined. With 580 groups it is as useful as the worst
+             * residual SD, and --stats says which group it came from. */
+            if (f.r2 >= 0.0 && (sum->min_r2 < 0.0 || f.r2 < sum->min_r2))
+                sum->min_r2 = f.r2;
             if (f.sigma > sum->max_sigma) {
                 sum->max_sigma = f.sigma;
                 sum->sigma_is_bound = f.sigma_is_bound;

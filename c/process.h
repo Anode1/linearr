@@ -146,6 +146,7 @@ struct fit_summary {
     long long groups;   /* groups fitted                                  */
     long long rows;     /* training rows used                             */
     long long min_df;   /* the least residual freedom any group had       */
+    double min_r2;      /* the worst group's R2, or -1 if none was defined  */
     double max_sigma;   /* the worst group's residual standard deviation   */
     int    sigma_is_bound;  /* max_sigma is an upper bound, not a value    */
     double max_condition;  /* the worst-conditioned group                 */

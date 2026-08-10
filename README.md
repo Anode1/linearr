@@ -37,7 +37,7 @@ determine:
 
     $ ./linearr -t example/together.csv
     reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 1 group, 5 rows, 1 term-slot pinned to 0, least df=3, worst resid SD=4.397
+    fit: 5 rows, R2=0.5697, resid SD=4.397, 1 term unidentified and set to 0, df=3
     # response: minutes
     group,intercept,night,headlights
     A,6,8,0
@@ -56,7 +56,7 @@ numbers whatsoever, so a perfect fit tells you nothing:
 
     $ ./linearr -t example/three-rows.csv
     reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 1 group, 3 rows, least df=0, worst cond=1.33 (normal equations)
+    fit: 3 rows, R2=1.0000, df=0, cond=1.33 (normal equations)
     warning: at least one group has no residual degrees of freedom; its line passes through every row by construction. Fit those groups on more rows.
     # response: minutes
     group,intercept,km,stops
@@ -77,7 +77,7 @@ differ in the sixth decimal, asked for `1 + 2*x1 + 3*x2`:
 
     $ ./linearr -t example/nearly-the-same.csv
     reading: column 1 is the group, 'value' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 1 group, 40 rows, least df=37, worst resid SD<3.109e-08, worst cond=5.34e+10 (normal equations)
+    fit: 40 rows, R2=1.0000, resid SD<3.109e-08, df=37, cond=5.34e+10 (normal equations)
     warning: at least one group is ill-conditioned (cond=5.34e+10); the trailing digits of its coefficients are noise. Try --qr, which does not square the condition number.
     # response: value
     group,intercept,x1,x2
@@ -100,7 +100,7 @@ Anscombe's quartet, fitted four at once, which is what groups are for:
 
     $ ./linearr -t example/anscombe.csv
     reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term. Use -y NAME if that is the wrong column
-    fit: 4 groups, 44 rows, least df=9, worst resid SD=1.237
+    fit: 4 groups, 44 rows, worst R2=0.6662, worst resid SD=1.237, least df=9
     # response: y
     group,intercept,x
     I,3.00009090909,0.500090909091
@@ -116,7 +116,7 @@ tools.
     $ ./linearr -t example/anscombe.csv --residuals r.csv
     residuals: r.csv
     reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term. Use -y NAME if that is the wrong column
-    fit: 4 groups, 44 rows, least df=9, worst resid SD=1.237
+    fit: 4 groups, 44 rows, worst R2=0.6662, worst resid SD=1.237, least df=9
     warning: in group II the residuals still depend on x after the line is subtracted (t=-2219.2). A straight line is probably the wrong shape in that term; consider adding its square as a column.
     # response: y
     group,intercept,x
@@ -139,7 +139,7 @@ them:
     $ ./linearr -t example/anscombe.csv -g II --residuals r.csv
     residuals: r.csv
     reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term. Use -y NAME if that is the wrong column
-    fit: 1 group, 11 rows, least df=9, worst resid SD=1.237
+    fit: 11 rows, R2=0.6662, resid SD=1.237, df=9
     warning: in group II the residuals still depend on x after the line is subtracted (t=-2219.2). A straight line is probably the wrong shape in that term; consider adding its square as a column.
     # response: y
     group,intercept,x
@@ -237,7 +237,7 @@ names the terms:
 
     $ ./linearr -t example/simple-train.csv > model.csv
     reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 2 groups, 13 rows, least df=3, worst resid SD<4.007e-07, worst cond=1.03 (normal equations)
+    fit: 2 groups, 13 rows, worst R2=1.0000, worst resid SD<4.007e-07, least df=3, worst cond=1.03 (normal equations)
 
     $ cat model.csv
     # response: minutes
@@ -264,7 +264,7 @@ purpose, predicting stops from minutes and distance:
 
     $ ./linearr -t example/simple-train.csv -y stops
     reading: column 1 is the group, 'stops' is the value being predicted, and the other 2 columns are terms
-    fit: 2 groups, 13 rows, least df=3, worst resid SD<4.015e-08, worst cond=57.6 (normal equations)
+    fit: 2 groups, 13 rows, worst R2=1.0000, worst resid SD<4.015e-08, least df=3, worst cond=57.6 (normal equations)
     # response: stops
     group,intercept,minutes,km
     A,-3.33333333333,0.666666666667,-1.66666666667
@@ -338,7 +338,7 @@ of route. The terms are the same everywhere; what each term is worth is not:
 
     $ ./linearr -t example/routes.csv
     reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 3 groups, 18 rows, least df=3, worst resid SD<5.368e-07, worst cond=1.02 (normal equations)
+    fit: 3 groups, 18 rows, worst R2=1.0000, worst resid SD<5.368e-07, least df=3, worst cond=1.02 (normal equations)
     # response: minutes
     group,intercept,km,stops
     city,5,3,2
@@ -384,7 +384,7 @@ what it took, which it does, first, on every fit:
 
     $ ./linearr -t example/simple-train.csv
     reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 2 groups, 13 rows, least df=3, worst resid SD<4.007e-07, worst cond=1.03 (normal equations)
+    fit: 2 groups, 13 rows, worst R2=1.0000, worst resid SD<4.007e-07, least df=3, worst cond=1.03 (normal equations)
     # response: minutes
     group,intercept,km,stops
     A,5,2.5,1.5
@@ -544,7 +544,7 @@ parabola fitted with a line:
     $ ./linearr -t example/curve.csv --residuals r.csv
     residuals: r.csv
     reading: column 1 is the group, 'value' is the value being predicted, and the other 1 column is a term. Use -y NAME if that is the wrong column
-    fit: 1 group, 13 rows, least df=11, worst resid SD=13.49
+    fit: 13 rows, R2=0.0000, resid SD=13.49, df=11
     warning: in group A the residuals still depend on x after the line is subtracted (t=9999.0). A straight line is probably the wrong shape in that term; consider adding its square as a column.
     # response: value
     group,intercept,x
@@ -593,14 +593,17 @@ which for 580 groups is three numbers and no way to tell which group they came
 from. `--stats` writes the table:
 
     $ ./linearr -t example/routes.csv --stats -
-    per-group statistics: -
     reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 3 groups, 18 rows, least df=3, worst resid SD<5.368e-07, worst cond=1.02 (normal equations)
+    fit: 3 groups, 18 rows, worst R2=1.0000, worst resid SD<5.368e-07, least df=3, worst cond=1.02 (normal equations)
     # response: minutes
     group,intercept,km,stops
     city,5,3,2
+    group,rows,df,r2,resid_sd,cond,pinned
+    city,6,3,1.000000,<5.36796492495e-07,1.02103,0
     suburb,4,2,1.5
+    suburb,6,3,1.000000,<3.66558788568e-07,1.02103,0
     highway,8,1,5
+    highway,6,3,1.000000,<3.19594302617e-07,1.02103,0
 
 R gets this from `broom::glance` over a `split`; here it is one flag and one
 pass.
@@ -720,7 +723,7 @@ not notice when something ordinary breaks:
 
     $ ./linearr -t example/norris.csv
     reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term. Use -y NAME if that is the wrong column
-    fit: 1 group, 36 rows, least df=34, worst resid SD=0.8848
+    fit: 36 rows, R2=1.0000, resid SD=0.8848, df=34
     # response: y
     group,intercept,x
     A,-0.262323073774,1.00211681802
@@ -732,7 +735,7 @@ agree, which is every digit printed.
 
     $ ./linearr -t example/longley.csv
     reading: column 1 is the group, 'employment' is the value being predicted, and the other 6 columns are terms. Use -y NAME if that is the wrong column
-    fit: 1 group, 16 rows, least df=9, worst resid SD=304.9, worst cond=934 (normal equations)
+    fit: 16 rows, R2=0.9955, resid SD=304.9, df=9, cond=934 (normal equations)
     # response: employment
     group,intercept,deflator,gnp,unemployed,armed_forces,population,year
     A,-3482258.6346,15.0618722714,-0.0358191792926,-2.02022980382,-1.03322686717,-0.0511041056535,1829.15146461
@@ -748,14 +751,14 @@ nothing in the data to hide behind.
 
     $ ./linearr -t example/wampler1.csv
     reading: column 1 is the group, 'y' is the value being predicted, and the other 5 columns are terms. Use -y NAME if that is the wrong column
-    fit: 1 group, 21 rows, least df=15, worst resid SD=0.02282, worst cond=9.96e+04 (normal equations)
+    fit: 21 rows, R2=1.0000, resid SD=0.02282, df=15, cond=9.96e+04 (normal equations)
     # response: y
     group,intercept,x,x2,x3,x4,x5
     A,0.999999995576,0.999999996707,1.0000000034,0.999999999361,1.00000000004,0.999999999999
 
     $ ./linearr -t example/wampler1.csv --qr
     reading: column 1 is the group, 'y' is the value being predicted, and the other 5 columns are terms. Use -y NAME if that is the wrong column
-    fit: 1 group, 21 rows, least df=15, worst resid SD=6.663e-11, worst cond=234 (QR)
+    fit: 21 rows, R2=1.0000, resid SD=6.663e-11, df=15, cond=234 (QR)
     # response: y
     group,intercept,x,x2,x3,x4,x5
     A,1.00000000044,0.999999999992,1.00000000001,0.999999999997,1,1
