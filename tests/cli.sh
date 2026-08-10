@@ -143,7 +143,7 @@ printf 'group,value,bytes\nA,3.0,0\nA,3.15,100000\nA,3.30,200000\nA,3.45,300000\
 "$bin" -t "$tmp/tiny.csv" -g A 2>/dev/null > "$tmp/tiny_coef.csv"
 printf 'coef.file = %s/tiny_coef.csv\ntrim.file =\n' "$tmp" > "$tmp/system.properties"
 check "a tiny coefficient survives the round trip" \
-    "$(cd "$tmp" && "$bin" A bytes=1000000)" "A prediction=4.5000 trim=4.5"
+    "$(cd "$tmp" && "$bin" A bytes=1000000)" "A prediction=4.5000"
 rm -f "$tmp/system.properties"
 
 # The fit summary goes to stderr, so stdout stays a clean coefficient file.
@@ -153,7 +153,7 @@ esac
 
 printf 'coef.file = %s\ntrim.file =\n' "$tmp/coef.csv" > "$tmp/system.properties"
 check "score against the fitted table" \
-    "$(cd "$tmp" && "$bin" 'A,10,3')" "A prediction=34.5000 trim=34.5"
+    "$(cd "$tmp" && "$bin" 'A,10,3')" "A prediction=34.5000"
 
 # an unreadable table named in the config is an error, not a shrug
 printf 'coef.file = %s/nope.csv\n' "$tmp" > "$tmp/system.properties"
@@ -214,6 +214,18 @@ if command -v make >/dev/null 2>&1; then
     case "$line" in
         *-Wall*) ok ;; *) no "the build uses -Wall: got [$line]" ;;
     esac
+    # The TEST build must be warning-free too. It compiles every source afresh
+    # with -DUNIT_TEST, so it sees code the object build never does, and it had
+    # six warnings while the README's first style rule says a warning is a
+    # defect. Checking one of the two builds is half a gate. In the scratch
+    # copy, never in the live tree: an earlier version of this check ran
+    # `make clean` where the binary under test lives and deleted it mid-run.
+    # `|| true`: grep -c exits 1 when the count is zero, and under `set -e` that
+    # made a clean build kill the test run with no output at all.
+    wn=$(cd "$src" && env -u MAKEFLAGS -u MAKELEVEL sh -c \
+         'make clean >/dev/null 2>&1; make ut 2>&1 | grep -c "warning:" || true')
+    check "the test build is warning-free" "$wn" "0"
+
     # A real warning must actually surface, not merely appear on the command line.
     printf '\nstatic int cli_probe(void) { int x; return x; }\n' >> "$src/utils.c"
     n=$(cd "$src" && env -u MAKEFLAGS -u MAKELEVEL \
@@ -283,7 +295,7 @@ check "a fit-all writes one row per group" \
     "$(grep -c '^00' "$tmp/all.csv")" "2"
 check "and the round trip reproduces the reference prediction" \
     "$("$bin" -c "$tmp/all.csv" --no-trim 001 Cardioversion=1 icu_indicator=1)" \
-    "001 prediction=19.9611 trim=20.0"
+    "001 prediction=19.9611"
 check "-g '*' still pools on request" \
     "$("$bin" -t example/train.csv -g '*' 2>/dev/null | grep -c '^\*,')" "1"
 
@@ -297,7 +309,7 @@ esac
 "$bin" -t example/train.csv > "$tmp/pinned.csv" 2>/dev/null
 check "a table with pinned notes still loads" \
     "$("$bin" -c "$tmp/pinned.csv" --no-trim 001 Cardioversion=1 icu_indicator=1)" \
-    "001 prediction=19.9611 trim=20.0"
+    "001 prediction=19.9611"
 
 # tables that used to be misread silently
 printf 'group,intercept,a\nX,10,1\nX,999,1\n' > "$tmp/dup.csv"
@@ -349,11 +361,11 @@ check "a commented-out trim.file still loads the default table" \
 
 printf 'coef.file = conf/coefficients.csv\ntrim.file =\n' > "$tmp/tf/system.properties"
 check "an EMPTY trim.file is how you turn it off" \
-    "$(cd "$tmp/tf" && "$bin" X a=0)" "X prediction=10.0000 trim=10.0"
+    "$(cd "$tmp/tf" && "$bin" X a=0)" "X prediction=10.0000"
 
 printf 'coef.file = conf/coefficients.csv\n' > "$tmp/tf/system.properties"
 check "--no-trim turns it off too" \
-    "$(cd "$tmp/tf" && "$bin" --no-trim X a=0)" "X prediction=10.0000 trim=10.0"
+    "$(cd "$tmp/tf" && "$bin" --no-trim X a=0)" "X prediction=10.0000"
 
 # --- the README's teaching section must keep saying what the program says -----
 # Three transcripts explain what least squares does when it cannot answer. They

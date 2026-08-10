@@ -273,7 +273,15 @@ int main(int argc, char **argv) {
     } else {
         need_model();
         while (fgets(line, sizeof line, stdin)) {
-            size_t n = strcspn(line, "\r\n");
+            size_t n;
+            /* Excel's "CSV UTF-8" puts three invisible bytes at the start of
+             * the file. Left in place they join the first group name, and the
+             * program then reports that a group is missing from a table it is
+             * plainly in. */
+            if ((unsigned char)line[0] == 0xEF && (unsigned char)line[1] == 0xBB &&
+                (unsigned char)line[2] == 0xBF)
+                memmove(line, line + 3, strlen(line + 3) + 1);
+            n = strcspn(line, "\r\n");
 
             /* No line ending and not at end of file means the line did not fit.
              * Reading on would score the REMAINDER as a case of its own: one

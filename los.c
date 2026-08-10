@@ -47,6 +47,8 @@ static struct hash *models;
 static char         var_name[LOS_MAX_VARS][LOS_NAME_MAX];
 static int          nvars;
 static long         ngroups;
+static int          have_trims;
+static char         response[LOS_NAME_MAX];
 
 static int ci_equal(const char *a, const char *b) {
     for (; *a && *b; a++, b++) {
@@ -108,6 +110,13 @@ int los_var_index(const char *name) {
 }
 
 long los_ngroups(void) { return ngroups; }
+int  los_has_trims(void) { return have_trims; }
+const char *los_response_name(void) { return response; }
+
+void los_set_response_name(const char *name) {
+    if (!name || strlen(name) >= sizeof response) { response[0] = '\0'; return; }
+    strcpy(response, name);                 /* checked on the line above */
+}
 
 /* Every power of ten up to 1e22 is exactly representable as a double. Past
  * that they are not, which is where the fast path below stops. */
@@ -214,8 +223,18 @@ static int load_coefficients(const char *path) {
     }
     n = csv_split(line, field, CSV_MAX_FIELDS);
     if (n < 3) {
-        refuse("%s needs a header of GROUP, Intercept and at least one term; "
-               "this one has %d column%s", path, n, n == 1 ? "" : "s");
+        /* One field usually means the file is not comma-separated at all.
+         * Excel writes semicolons wherever the comma is the decimal mark, and
+         * blaming the header sends the reader to inspect a header that is
+         * visibly correct. */
+        if (n == 1 && (strchr(field[0], ';') || strchr(field[0], '\t')))
+            refuse("%s has no commas in its header, but does have %s. It looks "
+                   "%s-separated; this program reads commas only", path,
+                   strchr(field[0], ';') ? "semicolons" : "tabs",
+                   strchr(field[0], ';') ? "semicolon" : "tab");
+        else
+            refuse("%s needs a header of group, intercept and at least one term; "
+                   "this one has %d column%s", path, n, n == 1 ? "" : "s");
         goto cleanup;
     }
     /* A "header" whose every field is a number is not a header. It used to be
@@ -328,7 +347,7 @@ int los_load_trims(const char *path) {
     }
     if (csv_split(line, field, CSV_MAX_FIELDS) == 2 && parse_num(field[1], &first) == 0) {
         struct los_model *m0 = hash_get(models, field[0]);
-        if (m0) m0->trim_addition = first;      /* it was data, not a header */
+        if (m0) { m0->trim_addition = first; have_trims = 1; }  /* data, not a header */
         debug("los: %s has no header line; treating the first line as data", path);
     }
 
@@ -349,7 +368,7 @@ int los_load_trims(const char *path) {
         /* A trim for a group with no coefficients is not an error: the trim
          * table may be the wider of the two. It has nothing to attach to. */
         m = hash_get(models, field[0]);
-        if (m) m->trim_addition = v;
+        if (m) { m->trim_addition = v; have_trims = 1; }
     }
     if (n < 0) {
         refuse("%s has a line over %d bytes, or one holding a NUL byte",
@@ -377,6 +396,8 @@ const struct los_model *los_model_get(const char *group) {
 void los_free(void) {
     nvars = 0;
     ngroups = 0;
+    have_trims = 0;
+    response[0] = '\0';
     if (!models) return;
     hash_call(models, free);                    /* the struct los_model per group */
     hash_delete(models);                        /* keys + table                   */

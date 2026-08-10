@@ -21,6 +21,24 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
+/* Windows has every function this file needs under another name, and lacks
+ * exactly one. A reviewer cross-compiled with mingw-w64: all thirteen sources
+ * compiled and the link failed on realpath alone, twice. These few lines are
+ * the whole difference between "no Windows build" and an .exe. */
+#ifdef _WIN32
+#include <stdlib.h>
+#define PATH_SEP ';'                 /* and a PATH entry contains a colon    */
+#define X_OK_MODE 0                  /* _access has no execute mode; 0 is
+                                        "does it exist", which is what the
+                                        PATH walk is actually asking          */
+static char *realpath(const char *path, char *out) {
+    return _fullpath(out, path, RESOLVE_PATH_MAX);
+}
+#else
+#define PATH_SEP ':'
+#define X_OK_MODE X_OK
+#endif
+
 /* Readable AND a regular file. Without the second half, naming a FIFO as
  * coef.file or as -t's argument made the program block forever on open with no
  * output and no diagnostic, indistinguishable from a hang. Directories,
@@ -71,14 +89,14 @@ const char *resolve_program_dir(void) {
     path = getenv("PATH");
     if (!path) return NULL;
     while (*path) {
-        const char *end = strchr(path, ':');
+        const char *end = strchr(path, PATH_SEP);
         size_t len = end ? (size_t)(end - path) : strlen(path);
         char cand[RESOLVE_PATH_MAX];
 
         if (len == 0) { len = 1; path = "."; }    /* an empty entry means "." */
         if (len < sizeof dir) {
             int w = snprintf(cand, sizeof cand, "%.*s/%s", (int)len, path, g_prog);
-            if (w > 0 && (size_t)w < sizeof cand && access(cand, X_OK) == 0) {
+            if (w > 0 && (size_t)w < sizeof cand && access(cand, X_OK_MODE) == 0) {
                 char real[RESOLVE_PATH_MAX];
                 const char *sl;
                 if (realpath(cand, real) != NULL && (sl = strrchr(real, '/')) != NULL) {
@@ -101,7 +119,13 @@ int resolve_file(const char *name, char *out, size_t outsz) {
     const char *dir;
     int w;
 
+    /* An absolute path on Windows is "C:\..." as well as "/...". */
+#ifdef _WIN32
+    if (name[0] == '/' || name[0] == '\\' ||
+        (name[0] != '\0' && name[1] == ':')) {
+#else
     if (name[0] == '/') {                         /* absolute: as given */
+#endif
         w = snprintf(out, outsz, "%s", name);
         if (w < 0 || (size_t)w >= outsz) return -1;
         return readable(out) ? 0 : -1;

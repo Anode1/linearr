@@ -29,6 +29,9 @@ int qr_init(struct qr *q, int nvars, double *storage) {
     q->cyy   = 0.0;
     q->rss   = 0.0;
     q->r     = storage;
+    {   int i;
+        for (i = 0; i <= nvars; i++) { q->colmin[i] = 0.0; q->colmax[i] = 0.0; }
+    }
     return 0;
 }
 
@@ -46,6 +49,20 @@ int qr_add(struct qr *q, const double *x, double y) {
     row[0] = 1.0;                        /* the intercept IS a column here */
     for (i = 0; i < p; i++) row[i + 1] = x[i];
     row[p + 1] = y;
+
+    /* Each column's own scale, accumulated as we go. Without it the rank test
+     * below compares a column against the LARGEST column's magnitude, so a term
+     * in small units is deleted for being small: the identical defect regress.c
+     * documents as fixed, reintroduced here. A reviewer produced a case where
+     * an indicator worth 5 was deleted beside a column of size 1e15, and the
+     * fit then reported R2=1.0000 for a model whose residuals were 4.0. */
+    for (i = 0; i <= p; i++) {
+        if (q->n == 0) { q->colmin[i] = q->colmax[i] = row[i]; }
+        else {
+            if (row[i] < q->colmin[i]) q->colmin[i] = row[i];
+            if (row[i] > q->colmax[i]) q->colmax[i] = row[i];
+        }
+    }
 
     /* SST, kept separately and centered, because R holds the fit and not the
      * spread of the response. */
@@ -87,7 +104,8 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
     const int p = q->nvars;
     const int w = p + 2;
     double dmax = 0.0, dmin = 0.0;
-    int    keep[REGRESS_MAX_TERMS];
+    double rel[REGRESS_MAX_TERMS + 1];
+    int    keep[REGRESS_MAX_TERMS + 1];
     int    i, j, rank = 0;
     double eps;
 
@@ -97,20 +115,34 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
     for (i = 0; i <= p; i++) beta[i] = 0.0;
     if (fit) for (i = 0; i < p; i++) fit->term[i] = REGRESS_COLLINEAR;
 
+    /* Judge each diagonal against ITS OWN column's scale, so the test is about
+     * rank and carries no units. dmax/dmin are then collected on the same
+     * scaled footing, which also makes cond= comparable between runs whose
+     * columns are measured differently. */
     for (i = 0; i <= p; i++) {
-        double d = fabs(q->r[(size_t)i * (size_t)w + (size_t)i]);
+        double mag = fabs(q->colmax[i]) > fabs(q->colmin[i])
+                     ? fabs(q->colmax[i]) : fabs(q->colmin[i]);
+        double scale = (mag > 0.0) ? mag * sqrt((double)q->n) : 1.0;
+        double d = fabs(q->r[(size_t)i * (size_t)w + (size_t)i]) / scale;
+        rel[i] = d;
         if (d > dmax) dmax = d;
     }
     eps = (dmax > 0.0 ? dmax : 1.0) * QR_RANK_EPS;
 
     for (i = 0; i <= p; i++) {
-        double d = fabs(q->r[(size_t)i * (size_t)w + (size_t)i]);
-        keep[i] = (d > eps);
+        /* The intercept is never dropped. Dropping it silently set beta[0] to 0
+         * with nothing naming it, and a model without an intercept is a
+         * different model, not a rank finding. */
+        keep[i] = (i == 0) || (rel[i] > eps);
         if (keep[i]) {
             rank++;
-            if (dmin == 0.0 || d < dmin) dmin = d;
-        } else if (fit && i > 0) {
-            fit->term[i - 1] = REGRESS_CONSTANT;   /* no scale of its own left */
+            if (dmin == 0.0 || rel[i] < dmin) dmin = rel[i];
+        } else if (fit) {
+            /* A column with no spread of its own is CONSTANT; one that had
+             * spread and still lost its diagonal is COLLINEAR with another.
+             * These are different verdicts and regress.c already says so. */
+            fit->term[i - 1] = (q->colmax[i] == q->colmin[i]) ? REGRESS_CONSTANT
+                                                              : REGRESS_COLLINEAR;
         }
     }
 
@@ -130,16 +162,25 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
         if (!isfinite(beta[i])) { debug("qr: coefficient %d is not finite", i); return -1; }
 
     if (fit) {
-        fit->pinned = (p + 1) - rank;
+        fit->pinned = (p + 1) - rank;          /* slopes only: the intercept is kept */
         fit->df     = q->n - rank;
         fit->condition = (dmin > 0.0) ? dmax / dmin : 1.0;
-        fit->rss    = q->rss;
-        fit->sigma  = (fit->df > 0) ? sqrt(q->rss / (double)fit->df) : -1.0;
-        if (q->cyy > 0.0) {
-            fit->r2 = 1.0 - q->rss / q->cyy;
+
+        /* q->rss is the residual of the rotation, which used every column
+         * INCLUDING the ones just discarded. At full rank that is the model's
+         * residual; once a column is dropped it is the residual of a model that
+         * was never returned, and reporting it understated the error by fifteen
+         * orders of magnitude in a case a reviewer built. Say nothing rather
+         * than say that. */
+        if (fit->pinned == 0) {
+            fit->rss   = q->rss;
+            fit->sigma = (fit->df > 0) ? sqrt(q->rss / (double)fit->df) : -1.0;
+            fit->r2    = (q->cyy > 0.0) ? 1.0 - q->rss / q->cyy : -1.0;
             if (fit->r2 < 0.0) fit->r2 = 0.0;
         } else {
-            fit->r2 = -1.0;
+            fit->rss   = -1.0;
+            fit->sigma = -1.0;
+            fit->r2    = -1.0;
         }
     }
     return 0;

@@ -76,6 +76,18 @@ int los_load(const char *coef_path);
  * allowed to be the wider of the two. */
 int los_load_trims(const char *trim_path);
 
+/* Whether any trim table was loaded. Printing "trim=" when none was is noise
+ * that reads as a second quantity; without a table it is only the prediction
+ * again. */
+int los_has_trims(void);
+
+/* The response's name, from the training header, or "" if none was read. A
+ * coefficient file that does not say what it predicts cannot be identified a
+ * week later; group,intercept,mark is the header of a model that predicts
+ * hours, and nothing in it says so. */
+const char *los_response_name(void);
+void        los_set_response_name(const char *name);
+
 /* Why the last los_load/los_load_trims returned -1. Never NULL. */
 const char *los_error(void);
 

@@ -270,8 +270,14 @@ static int score_case(const struct los_case *c, char *out, size_t outsz) {
     prediction = los_round(los_predict(m, c), pscale);
     trim       = los_round(los_trim_point(m, prediction), tscale);
 
-    w = snprintf(out, outsz, "%s prediction=%.*f trim=%.*f",
-                 c->group, pscale, prediction, tscale, trim);
+    /* Without a trim table the trim point IS the prediction, so printing it
+     * again invents a second quantity. A reader who passed --no-trim and still
+     * saw trim= could not tell what the flag had done. */
+    if (los_has_trims())
+        w = snprintf(out, outsz, "%s prediction=%.*f trim=%.*f",
+                     c->group, pscale, prediction, tscale, trim);
+    else
+        w = snprintf(out, outsz, "%s prediction=%.*f", c->group, pscale, prediction);
     if (w < 0 || (size_t)w >= outsz)
         return fail("the result does not fit in %zu bytes", outsz);
     return 0;
@@ -365,8 +371,15 @@ static int open_training(const char *csv_path, FILE **fpp, int *nvars) {
         return fail("%s has no header line", csv_path);
     n = csv_split(line, field, CSV_MAX_FIELDS);
     if (n < 3)
-        return fail("%s needs a header of GROUP, the observed value, and at "
+    {
+        if (n == 1 && (strchr(field[0], ';') || strchr(field[0], '\t')))
+            return fail("%s has no commas in its header, but does have %s. It "
+                        "looks %s-separated; this program reads commas only",
+                        csv_path, strchr(field[0], ';') ? "semicolons" : "tabs",
+                        strchr(field[0], ';') ? "semicolon" : "tab");
+        return fail("%s needs a header of group, the observed value, and at "
                     "least one term", csv_path);
+    }
     if (los_schema_set((const char *const *)(field + 2), n - 2) != 0)
         return fail("%s does not name %d usable terms: they must be 1..%d, "
                     "non-empty, under %d characters, and distinct ignoring case "
@@ -582,6 +595,17 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
         goto cleanup;
     }
     if (groups == 0) { fail("%s has no data rows", csv_path); goto cleanup; }
+    /* Every row in a group of its own cannot be fitted: a line through one
+     * point is not a fit. It is also what omitting the group column looks
+     * like, which is the commonest way to write this file wrongly, and it used
+     * to produce a table of one-row models and exit 0. */
+    if (rows >= 3 && groups == rows) {
+        fail("%s puts every one of its %ld rows in a different group, so there "
+             "is nothing to fit. The first column is the group; if your data "
+             "has no groups, add a column with the same value on every row",
+             csv_path, rows);
+        goto cleanup;
+    }
     if (rows > 1) response_sd = sqrt(ry_m2 / (double)(rows - 1));
 
     if (los_format_header(row, sizeof row) != 0) {

@@ -162,8 +162,9 @@ The fit accumulates `X'X` and solves it. That is what bounds the memory, and it
 squares the condition number of the design, so a near-collinear or badly scaled
 problem loses about twice the digits it needs to. `--qr` rotates each row into a
 triangular factor instead, with Givens rotations, one row at a time. It squares
-nothing. It is still streaming, and its factor is slightly smaller than the
-normal equations it replaces.
+nothing. It is still streaming. Its factor is (p+1)(p+2) doubles against the normal
+equations' p^2+2p, so it is slightly LARGER, not smaller; an earlier version of
+this paragraph had that backwards.
 
 On `example/nearly-the-same.csv`, where two columns differ in the sixth decimal
 and the answer is `1 + 2*x1 + 3*x2`:
@@ -171,11 +172,24 @@ and the answer is `1 + 2*x1 + 3*x2`:
     normal equations   A,1.00000000001,2.00002262993,2.99997737008
     --qr               A,1,1.99999999974,3.00000000026
 
-Five correct digits against ten. Both report `cond=`, but on different scales:
-the normal equations report cond(X'X) and QR reports cond(X), so the QR figure
-is about the square root of the other. The summary names the solver for that
-reason. On a well-conditioned design the two agree and the default is faster,
-which is why it is the default; when `cond=` is large the fit says to try `--qr`.
+Five correct digits against ten. Both report `cond=`, and neither figure is a
+condition number in the textbook sense: each is a ratio of pivots, on
+differently scaled matrices, meant as an order-of-magnitude alarm. They are not
+comparable to each other, which is why the summary names the solver. The square
+root relationship holds for well-scaled designs and not otherwise: on the
+example above the two are 5.34e10 and 2e6, and the square root of the first is
+2.3e5.
+
+`--qr` is not a strictly better solver. It does not centre the data, and the
+first version of it deleted a well-identified column for being measured in a
+small unit, which is the defect the default solver documents as fixed. Columns
+are scaled before the rank test now, and the figures that depend on a dropped
+column (`R2`, `resid SD`) are withheld rather than reported. The cost measured
+at 300k rows by 20 terms is about 7 percent, not the larger penalty an earlier
+version of this section implied.
+
+The algorithm is Gentleman's 1974 row-wise updating QR, which R's `biglm` has
+used for two decades. Nothing about the method is new here.
 
 ## When a straight line is the wrong shape
 

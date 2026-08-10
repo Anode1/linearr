@@ -5,9 +5,21 @@
 
 #include <string.h>
 
+/* Excel's "CSV UTF-8" writes three invisible bytes at the start of the file.
+ * They are not part of any field, and left in place they attach to the first
+ * value: a case file scored from stdin then reported that group '001' was not
+ * in a table where '001' plainly is, with nothing on screen to explain it. */
+static void skip_bom(char *buf) {
+    const unsigned char *u = (const unsigned char *)buf;
+    if (u[0] == 0xEF && u[1] == 0xBB && u[2] == 0xBF)
+        memmove(buf, buf + 3, strlen(buf + 3) + 1);
+}
+
 int csv_next(FILE *fp, char *buf, size_t bufsz) {
     while (fgets(buf, (int)bufsz, fp)) {
-        size_t n = strcspn(buf, "\r\n");
+        size_t n;
+        skip_bom(buf);
+        n = strcspn(buf, "\r\n");
         if (buf[n] == '\0' && !feof(fp))
             return -1;                      /* no line ending: it did not fit */
         buf[n] = '\0';

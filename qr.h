@@ -14,6 +14,18 @@
  * need. What it does not do is square anything, so the digits lost are the
  * design's own condition number rather than its square.
  *
+ * What it is NOT: a strictly better solver. It does not centre the data, and a
+ * reviewer found that without column scaling its rank test deleted a
+ * well-identified indicator for being measured in a small unit, which is the
+ * same defect regress.c documents as fixed. Columns are scaled here now, and
+ * the figures that depend on a dropped column are withheld rather than
+ * reported, but the honest summary is that the two solvers are different
+ * trade-offs and not an upgrade path.
+ *
+ * The algorithm is Gentleman's 1974 row-wise updating QR (AS 75 / AS 274), the
+ * same method R's biglm has used for two decades. Nothing here is new; the
+ * packaging is.
+ *
  * The cost is arithmetic: a rotation per column per row, against one
  * multiply-add per pair of columns per row. For a well-conditioned design the
  * two agree and regress.c is faster; when cond= is large this one is right.
@@ -33,7 +45,13 @@ struct qr {
     long    n;
     double *r;
     double  my, cyy;    /* running mean and centered sum of squares of y */
-    double  rss;        /* residual sum of squares, accumulated as we go  */
+    double  rss;        /* residual of the ROTATION; only the model's when
+                           nothing was dropped                            */
+    double  colmin[REGRESS_MAX_TERMS + 1];  /* each column's own range, so   */
+    double  colmax[REGRESS_MAX_TERMS + 1];  /* the rank test can be relative
+                                               to it and a column with no
+                                               spread can be told from one
+                                               that is merely collinear      */
 };
 
 size_t qr_storage(int nvars);

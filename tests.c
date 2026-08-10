@@ -382,7 +382,7 @@ static void test_wide_fit(void) {
             (void)snprintf(names[i], sizeof names[i], "term_%d", i);
             namep[i] = names[i];
         }
-        CHECK(los_schema_set(namep, LOS_MAX_VARS) == 0, "wide: a full-width schema");
+        CHECK(los_schema_set((const char *const *)namep, LOS_MAX_VARS) == 0, "wide: a full-width schema");
         CHECK(los_nvars() == LOS_MAX_VARS, "wide: all of it kept");
         CHECK(streq(los_var_name(LOS_MAX_VARS - 1), names[LOS_MAX_VARS - 1]),
               "wide: the last column is named");
@@ -514,6 +514,45 @@ static void test_qr(void) {
         CHECK(fq.condition < fr.condition, "qr: reports the unsquared conditioning");
     }
 
+    /* THE UNITS TEST, for QR as for the normal equations. The first version of
+     * this module judged each diagonal of R against the LARGEST column's
+     * magnitude, so a term in a small unit was deleted for being small: the
+     * same defect regress.c documents as fixed. A reviewer produced a case
+     * where an indicator worth 5 was deleted beside a column of size 1e15 and
+     * the fit then reported R2=1.0000 for a model whose residuals were 4. */
+    {
+        int u;
+        for (u = 0; u < 3; u++) {
+            double unit = (u == 0) ? 1.0 : (u == 1) ? 1e-6 : 1e-13;
+            qr_init(&q, 2, t_store);
+            for (i = 0; i < 30; i++) {
+                x[0] = 1.0 + i * 0.1;
+                x[1] = (1.0 + sin((double)i)) * unit;
+                qr_add(&q, x, 1.0 + 2.0 * x[0] + (3.0 / unit) * x[1]);
+            }
+            CHECK(qr_solve(&q, t_beta, NULL, &fq) == 0, "qr units: solves");
+            CHECK(fq.pinned == 0, "qr units: nothing deleted for being small");
+            CHECK(fabs(t_beta[1] - 2.0) < 1e-6, "qr units: the ordinary slope");
+            CHECK(fabs(t_beta[2] * unit - 3.0) < 1e-6, "qr units: the small one");
+        }
+    }
+
+    /* When a column IS dropped, the residual of the rotation is the residual of
+     * a model that was never returned. Withheld rather than reported: it once
+     * understated the error by fifteen orders of magnitude. */
+    {
+        qr_init(&q, 2, t_store);
+        for (i = 0; i < 20; i++) {
+            x[0] = (double)i;
+            x[1] = 7.0;                       /* constant: will be dropped */
+            qr_add(&q, x, 3.0 + 2.0 * x[0] + ((i % 3) - 1));
+        }
+        qr_solve(&q, t_beta, NULL, &fq);
+        CHECK(fq.pinned == 1, "qr: the constant column is dropped");
+        CHECK(fq.r2 < 0.0 && fq.sigma < 0.0,
+              "qr: and R2 and the residual SD are withheld, not guessed");
+    }
+
     /* A column that never varies is dropped, as in the normal equations. */
     qr_init(&q, 2, t_store);
     x[0] = 0; x[1] = 7; qr_add(&q, x, 1.0);
@@ -522,6 +561,9 @@ static void test_qr(void) {
     CHECK(qr_solve(&q, t_beta, NULL, &fq) == 0, "qr: solves a rank-deficient design");
     CHECK(fq.pinned == 1, "qr: the constant column is pinned");
     CHECK(NEAR(t_beta[1], 2.0), "qr: the identified slope is right");
+    CHECK(fq.term[1] == REGRESS_CONSTANT,
+          "qr: a column with no spread is reported constant, not collinear");
+    CHECK(NEAR(t_beta[0], 1.0), "qr: and the intercept is never dropped");
 
     /* Non-finite input is refused at the door, as in regress.c. */
     qr_init(&q, 1, t_store);
@@ -593,7 +635,7 @@ static void test_los_schema(void) {
 
     names[0] = (char *)"km"; names[1] = (char *)"stops"; names[2] = (char *)"";
 
-    CHECK(los_schema_set(names, 2) == 0, "schema: set");
+    CHECK(los_schema_set((const char *const *)names, 2) == 0, "schema: set");
     CHECK(los_nvars() == 2, "schema: term count");
     CHECK(streq(los_var_name(1), "stops"), "schema: names in order");
     CHECK(los_var_name(2) == NULL, "schema: nothing past the last term");
@@ -603,9 +645,9 @@ static void test_los_schema(void) {
     CHECK(los_var_index("STOPS") == 1, "schema: name lookup ignores case");
     CHECK(los_var_index("nope") == -1, "schema: unknown name");
 
-    CHECK(los_schema_set(names, 0) == -1, "schema: refuses no terms");
-    CHECK(los_schema_set(names, LOS_MAX_VARS + 1) == -1, "schema: refuses too many terms");
-    CHECK(los_schema_set(names, 3) == -1, "schema: refuses an empty column name");
+    CHECK(los_schema_set((const char *const *)names, 0) == -1, "schema: refuses no terms");
+    CHECK(los_schema_set((const char *const *)names, LOS_MAX_VARS + 1) == -1, "schema: refuses too many terms");
+    CHECK(los_schema_set((const char *const *)names, 3) == -1, "schema: refuses an empty column name");
     /* A rejected header must leave the working schema alone, not half-replace it. */
     CHECK(los_nvars() == 2 && streq(los_var_name(0), "km"),
           "schema: a rejected header changes nothing");
@@ -692,7 +734,7 @@ static void test_los_predict(void) {
     int i;
 
     names[0] = (char *)"a"; names[1] = (char *)"b";
-    los_schema_set(names, 2);
+    los_schema_set((const char *const *)names, 2);
 
     for (i = 0; i < LOS_MAX_VARS; i++) { m.b[i] = 0.0; c.x[i] = 0.0; }
     m.intercept = 2.0;
