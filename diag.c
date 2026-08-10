@@ -28,22 +28,38 @@ void diag_scale(struct diag *d, double resid_sd, double response_sd) {
     d->response_sd = response_sd;
 }
 
-/* Per-probe block: x, x^2, x^3, x^4, r*x, r*x^2. Term j at j*6; the fitted
- * value's block sits after the terms; the shared sums after that. */
+/* Term j's block at j*DIAG_PER_TERM; the fitted value's block after the terms;
+ * the shared sums after that. */
 #define B(d, j)    ((d)->s + (size_t)(j) * DIAG_PER_TERM)
 #define FIT(d)     ((d)->s + (size_t)(d)->nvars * DIAG_PER_TERM)
 #define SH(d)      ((d)->s + ((size_t)(d)->nvars + 1) * DIAG_PER_TERM)
 
+/* Powers about the column's own centre, taken from its first value. Shifting by
+ * a constant changes none of the partial correlations below, and it removes the
+ * cancellation that destroyed them: a raw sum of v^6 at v ~ 1e5 has no
+ * significant digits left for a variance recovered by subtraction. A reviewer
+ * measured the square probe going silent at offset 1e5 and, worse, inflating at
+ * 1e4 into a departure that was not there.
+ *
+ * Layout: [0] shift, [1] n, then sums of u, u^2, u^3, u^4, u^5, u^6, r*u,
+ * r*u^2, r*u^3 where u = v - shift. */
 static void probe_add(double *b, double v, double r) {
-    double v2 = v * v, v3 = v2 * v;
-    b[0] += v;
-    b[1] += v2;
-    b[2] += v3;
-    b[3] += v2 * v2;
-    b[4] += r * v;
-    b[5] += r * v2;
-    b[6] += v3 * v3;          /* v^6, for the variance of v^3 */
-    b[7] += r * v3;
+    double u, u2, u3;
+
+    if (b[1] == 0.0) b[0] = v;              /* the shift, from the first row */
+    b[1] += 1.0;
+    u  = v - b[0];
+    u2 = u * u;
+    u3 = u2 * u;
+    b[2]  += u;
+    b[3]  += u2;
+    b[4]  += u3;
+    b[5]  += u2 * u2;
+    b[6]  += u2 * u3;
+    b[7]  += u3 * u3;
+    b[8]  += r * u;
+    b[9]  += r * u2;
+    b[10] += r * u3;
 }
 
 void diag_add(struct diag *d, const double *x, double resid, double fitted) {
@@ -57,51 +73,75 @@ void diag_add(struct diag *d, const double *x, double resid, double fitted) {
     probe_add(FIT(d), fitted, resid);
 
     sh = SH(d);
-    sh[0] += resid;
-    sh[1] += resid * resid;
-    sh[2] += a;
-    sh[3] += a * a;
-    sh[4] += a * fitted;
+    {   /* The fitted value shifted by the same constant the fit probe uses, so
+         * the spread correlation is computed about a centre too. A correlation
+         * is shift-invariant, and the sums are not. */
+        double fs = fitted - FIT(d)[0];
+        sh[0] += resid;
+        sh[1] += resid * resid;
+        sh[2] += a;
+        sh[3] += a * a;
+        sh[4] += a * fs;
+        sh[5] += fs;
+        sh[6] += fs * fs;
+    }
 }
 
-/* The correlation between the residual and the part of v^2 that 1 and v do not
- * explain. Partialling is the whole point: the residual is orthogonal to v by
- * construction, so a raw correlation with v^2 mostly measures what v already
- * accounts for, and vanishes as v moves away from zero. */
-static double partial_corr(const double *b, double n, double sr, double srr) {
-    double sxx   = b[1] - b[0] * b[0] / n;              /* var of v      */
-    double sxx2  = b[2] - b[0] * b[1] / n;              /* cov(v, v^2)   */
-    double sx2x2 = b[3] - b[1] * b[1] / n;              /* var of v^2    */
-    double srx   = b[4] - sr * b[0] / n;                /* cov(r, v)     */
-    double srx2  = b[5] - sr * b[1] / n;                /* cov(r, v^2)   */
-    double srr_c = srr - sr * sr / n;                   /* var of r      */
-    double bslope, varz, covrz;
+/* The correlation between the residual and the part of u^2 that 1 and u do not
+ * explain. Partialling is the point: the residual is orthogonal to u by
+ * construction, so a raw correlation with u^2 measures mostly what u already
+ * accounts for. */
+static double partial_corr(const double *b, double sr, double srr) {
+    double n    = b[1];
+    double su   = b[2], su2 = b[3], su3 = b[4], su4 = b[5];
+    double sru  = b[8], sru2 = b[9];
+    double suu  = su2 - su * su / n;                 /* var u        */
+    double su_2 = su3 - su * su2 / n;                /* cov(u, u^2)  */
+    double s22  = su4 - su2 * su2 / n;               /* var u^2      */
+    double cru  = sru - sr * su / n;
+    double cru2 = sru2 - sr * su2 / n;
+    double srr_c = srr - sr * sr / n;
+    double bs, varz, covrz;
 
-    if (sxx <= 0.0 || srr_c <= 0.0) return 0.0;         /* v or r never varies */
-    bslope = sxx2 / sxx;
-    varz   = sx2x2 - bslope * sxx2;                     /* var of the residual
-                                                           of v^2 on [1, v]   */
-    if (varz <= 0.0) return 0.0;                        /* v^2 is a line in v  */
-    covrz = srx2 - bslope * srx;
+    if (suu <= 0.0 || srr_c <= 0.0) return 0.0;
+    bs    = su_2 / suu;
+    varz  = s22 - bs * su_2;
+    if (varz <= 0.0) return 0.0;
+    covrz = cru2 - bs * cru;
     return covrz / sqrt(varz * srr_c);
 }
 
-/* The same idea one power up. A cubic departure is odd in v, and the square
- * probe above is even, so it cannot see one however large it is. */
-static double partial_corr3(const double *b, double n, double sr, double srr) {
-    double sxx   = b[1] - b[0] * b[0] / n;              /* var of v        */
-    double sxx3  = b[3] - b[0] * b[2] / n;              /* cov(v, v^3)     */
-    double sx3x3 = b[6] - b[2] * b[2] / n;              /* var of v^3      */
-    double srx   = b[4] - sr * b[0] / n;                /* cov(r, v)       */
-    double srx3  = b[7] - sr * b[2] / n;                /* cov(r, v^3)     */
+/* The cube, partialled on 1, u AND u^2. On [1, u] alone it is not
+ * offset-invariant even in exact arithmetic: u^3 about a shifted origin carries
+ * a 3*c*u^2 term that [1, u] cannot absorb, so the probe was dominated by an
+ * even component orthogonal to the odd residual it exists to find. A reviewer
+ * showed a cubic with amplitude 25 against noise 1 going undetected at an
+ * offset of 10. Solving the 2x2 normal equations for u^3 on [u, u^2] (both
+ * already centred) restores it. */
+static double partial_corr3(const double *b, double sr, double srr) {
+    double n   = b[1];
+    double su  = b[2], su2 = b[3], su3 = b[4], su4 = b[5], su5 = b[6], su6 = b[7];
+    double sru = b[8], sru2 = b[9], sru3 = b[10];
+    /* centred moments */
+    double m11 = su2 - su * su / n;                  /* <u,u>     */
+    double m12 = su3 - su * su2 / n;                 /* <u,u^2>   */
+    double m22 = su4 - su2 * su2 / n;                /* <u^2,u^2> */
+    double c1  = su4 - su * su3 / n;                 /* <u,u^3>   */
+    double c2  = su5 - su2 * su3 / n;                /* <u^2,u^3> */
+    double m33 = su6 - su3 * su3 / n;                /* <u^3,u^3> */
+    double cru = sru - sr * su / n, cru2 = sru2 - sr * su2 / n;
+    double cru3 = sru3 - sr * su3 / n;
     double srr_c = srr - sr * sr / n;
-    double bslope, varz, covrz;
+    double det, a1, a2, varz, covrz;
 
-    if (sxx <= 0.0 || srr_c <= 0.0) return 0.0;
-    bslope = sxx3 / sxx;
-    varz   = sx3x3 - bslope * sxx3;
+    if (srr_c <= 0.0) return 0.0;
+    det = m11 * m22 - m12 * m12;
+    if (det <= 0.0) return 0.0;
+    a1 = ( m22 * c1 - m12 * c2) / det;               /* u^3 on [u, u^2] */
+    a2 = (-m12 * c1 + m11 * c2) / det;
+    varz  = m33 - a1 * c1 - a2 * c2;
     if (varz <= 0.0) return 0.0;
-    covrz = srx3 - bslope * srx;
+    covrz = cru3 - a1 * cru - a2 * cru2;
     return covrz / sqrt(varz * srr_c);
 }
 
@@ -121,8 +161,13 @@ static double t_of(double r, double n) {
     double denom = 1.0 - r * r;
     if (n <= 3.0) return 0.0;
     /* Capped: an exact relation would otherwise print a t of 1e9, which reads
-     * as a number rather than as "exactly". */
-    if (denom <= 1e-15) return (r < 0.0 ? -9999.0 : 9999.0);
+     * as a number rather than as "exactly". The bound is 1e-12 and not the
+     * 1e-15 it was, because 1e-15 sits BELOW the rounding floor of the sums
+     * that produced r: on an exactly quadratic residual the same probe returned
+     * 9.0e7, 8.6e7, 7.3e7 and 9999 at four offsets of the same column, which is
+     * rounding noise in 1 - r^2 and nothing else. A test that compared those
+     * four failed, correctly, and the fault was here. */
+    if (denom <= 1e-12) return (r < 0.0 ? -9999.0 : 9999.0);
     return r * sqrt(n - 3.0) / sqrt(denom);
 }
 
@@ -145,9 +190,9 @@ void diag_result(const struct diag *d, struct diag_result *out) {
         d->resid_sd < DIAG_MIN_SHARE * d->response_sd) return;
 
     for (j = 0; j < d->nvars; j++) {
-        t = t_of(partial_corr(B(d, j), n, sh[0], sh[1]), n);
+        t = t_of(partial_corr(B(d, j), sh[0], sh[1]), n);
         if (fabs(t) > fabs(best)) { best = t; out->curved_term = j; out->curved_pow = 2; }
-        t = t_of(partial_corr3(B(d, j), n, sh[0], sh[1]), n);
+        t = t_of(partial_corr3(B(d, j), sh[0], sh[1]), n);
         if (fabs(t) > fabs(best)) { best = t; out->curved_term = j; out->curved_pow = 3; }
     }
     if (fabs(best) < DIAG_T) { out->curved_term = -1; out->curved_pow = 0; }
@@ -155,9 +200,9 @@ void diag_result(const struct diag *d, struct diag_result *out) {
 
     /* The same probe against the fitted value. A per-term probe cannot see an
      * omitted interaction or an odd power; this can. */
-    t = t_of(partial_corr(FIT(d), n, sh[0], sh[1]), n);
+    t = t_of(partial_corr(FIT(d), sh[0], sh[1]), n);
     if (fabs(t) >= DIAG_T) out->fitted_t = t;
 
-    t = t_of(plain_corr(n, FIT(d)[0], FIT(d)[1], sh[2], sh[3], sh[4]), n);
+    t = t_of(plain_corr(n, sh[5], sh[6], sh[2], sh[3], sh[4]), n);
     if (fabs(t) >= DIAG_T) out->spread_t = t;
 }

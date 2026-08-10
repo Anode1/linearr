@@ -1,0 +1,4 @@
+# example/cases.csv: cases to score, in the row form, one per line.
+# The header is the coefficient table's, minus the intercept column.
+001,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0
+002,0,0,0,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0

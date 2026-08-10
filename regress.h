@@ -30,7 +30,26 @@
  *
  * The module allocates nothing. The caller supplies storage, which is what lets
  * one fit live in static memory and a hundred simultaneous fits live in one
- * heap block sized to the actual term count. */
+ * heap block sized to the actual term count. *
+ * WHAT THE RESIDUAL SD COSTS. RSS is recovered here as Syy - beta'Sxy, which is
+ * a subtraction of two numbers that agree to more and more places as the fit
+ * gets better. The coefficients do not suffer; the residual SD does, in
+ * proportion to 1/(1 - R^2). Measured, on one data set at six noise levels:
+ *
+ *      1 - R^2      relative error in the reported residual SD
+ *      2.5e-01                 8e-16
+ *      3.3e-05                 2e-11
+ *      3.3e-09                 2e-07
+ *      3.3e-11                 8e-06
+ *
+ * At R^2 = 0.99999999997 the residual SD is good to six digits, not sixteen.
+ * That is enough for every use it is put to here, and it is worth knowing
+ * before quoting it to more places than that. qr.c does not pay this cost: it
+ * carries the residual through the rotation rather than subtracting for it.
+ * tests.c holds the measurement as a test, so the property cannot drift
+ * unnoticed in either direction.
+ *
+ */
 #ifndef REGRESS_H
 #define REGRESS_H
 

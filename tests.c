@@ -17,6 +17,7 @@
 #include "process.h"
 #include "resolve.h"
 #include "constants.h"
+#include "canon.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -617,24 +618,51 @@ static void test_diag(void) {
      * first version correlated against RAW x^2, and since the residual is
      * already orthogonal to x, the signal fell from 0.20 to 0.0001 as the
      * offset grew: invisible on any variable with an origin, which is most of
-     * them. Partialling x^2 on [1, x] makes it invariant. */
+     * them. Partialling x^2 on [1, x], about the column's own centre, makes it
+     * invariant.
+     *
+     * The curve carries noise on purpose. Without it the residual is an EXACT
+     * quadratic, the correlation is 1 to the last bit, and what the test then
+     * compares across offsets is the rounding error in 1 - r^2, which is free
+     * to vary by a factor of ten and did. An exact relation is checked
+     * separately, below, and only for the cap it is supposed to print. */
     {
         int k;
         double first = 0.0;
-        for (k = 0; k < 4; k++) {
-            double off = (k == 0) ? 0.0 : (k == 1) ? 1.0 : (k == 2) ? 10.0 : 1000.0;
+        for (k = 0; k < 5; k++) {
+            double off = (k == 0) ? 0.0 : (k == 1) ? 1.0 : (k == 2) ? 10.0 :
+                         (k == 3) ? 1000.0 : 1000000.0;
             diag_init(&d, 1, dstore);
             for (i = -60; i <= 60; i++) {
-                double xx = off + i * 0.05;
-                double c = (xx - off) * (xx - off);
-                x[0] = xx;
-                diag_add(&d, x, c - 3.0, 24.0);      /* residual is the curve */
+                double u = i * 0.05;
+                double noise = ((double)((i * 7919) % 23) - 11.0) * 0.1;
+                x[0] = off + u;
+                diag_add(&d, x, u * u + noise, 24.0);
             }
             diag_result(&d, &r);
             CHECK(r.curved_term == 0, "diag location: the curve is seen at every offset");
             if (k == 0) first = fabs(r.curved_t);
             else CHECK(fabs(fabs(r.curved_t) - first) < 0.01 * first,
                        "diag location: and with the same strength");
+        }
+    }
+
+    /* An exact relation prints the cap rather than a t of 1e8: past r = 1 to
+     * within 1e-12 the divisor has no digits left and the number would be an
+     * artefact of the summation order. */
+    {
+        int k;
+        for (k = 0; k < 4; k++) {
+            double off = (k == 0) ? 0.0 : (k == 1) ? 1.0 : (k == 2) ? 10.0 : 1000.0;
+            diag_init(&d, 1, dstore);
+            for (i = -60; i <= 60; i++) {
+                double u = i * 0.05;
+                x[0] = off + u;
+                diag_add(&d, x, u * u - 3.0, 24.0);
+            }
+            diag_result(&d, &r);
+            CHECK(r.curved_term == 0 && fabs(r.curved_t) == 9999.0,
+                  "diag: an exact curve reports the cap, at any offset");
         }
     }
 
@@ -656,6 +684,177 @@ static void test_diag(void) {
     for (i = 0; i < 5; i++) { x[0] = (double)i; diag_add(&d, x, (double)(i*i), 1.0); }
     diag_result(&d, &r);
     CHECK(r.curved_term == -1, "diag: says nothing from five rows");
+}
+
+/* ---------------------------------------------------------------------------
+ * The certified sets. See canon.h for why these are here and the rest of this
+ * file is not enough on its own.
+ *
+ * The tolerances below are relative and were MEASURED, not chosen: each is
+ * roughly ten times the error the solver actually makes today, which is loose
+ * enough to survive a compiler with a different order of operations and tight
+ * enough that losing a digit fails the build. They are stated per solver
+ * because the two do not agree, and the difference is the point.
+ */
+static double worst_rel(const double *got, const double *want, int m) {
+    double w = 0.0;
+    int i;
+    for (i = 0; i < m; i++) {
+        double d = fabs(got[i] - want[i]);
+        double s = fabs(want[i]);
+        double rel = (s > 1e-300) ? d / s : d;    /* Wampler's zero residual */
+        if (rel > w) w = rel;
+    }
+    return w;
+}
+
+/* Fit one set with each solver and report the worst relative error in the
+ * coefficients, plus the residual SD each reported. */
+static void canon_fit(const struct canon_set *c, int use_qr, double *rel,
+                      double *sigma, double *r2) {
+    struct regress_fit f;
+    struct regress rg;
+    struct qr q;
+    const double *row;
+    int i;
+
+    if (use_qr) (void)qr_init(&q, c->nvars, t_store);
+    else        (void)regress_init(&rg, c->nvars, t_store);
+    for (i = 0; i < c->n; i++) {
+        row = c->data + (size_t)i * (c->nvars + 1);
+        if (use_qr) (void)qr_add(&q, row + 1, row[0]);
+        else        (void)regress_add(&rg, row + 1, row[0]);
+    }
+    if (use_qr) (void)qr_solve(&q, t_beta, t_scratch, &f);
+    else        (void)regress_solve(&rg, t_beta, t_scratch, &f);
+    *rel   = worst_rel(t_beta, c->beta, c->nvars + 1);
+    *sigma = f.sigma;
+    *r2    = f.r2;
+}
+
+static void test_canonical(void) {
+    double rel, sigma, r2;
+
+    /* NORRIS. The easy set. Both solvers should be at the double's own limit,
+     * and if either is not, something ordinary is broken. */
+    canon_fit(&canon_norris, 0, &rel, &sigma, &r2);
+    CHECK(rel < 1e-12, "Norris: normal equations match the certified coefficients");
+    /* 1e-9 and not the 1e-12 the coefficients get. The normal equations form
+     * RSS by subtraction, Syy - beta'Sxy, and Norris fits so well that those
+     * two agree to five digits before they are subtracted. What survives is
+     * the certified value to about eleven digits. This is not a defect to fix
+     * in this solver; it is what one pass over X'X can tell you, and it is
+     * measured as a property of its own below. */
+    CHECK(fabs(sigma - canon_norris.sigma) < 1e-9 * canon_norris.sigma,
+          "Norris: and the certified residual SD");
+    CHECK(fabs(r2 - canon_norris.r2) < 1e-12, "Norris: and the certified R2");
+    canon_fit(&canon_norris, 1, &rel, &sigma, &r2);
+    CHECK(rel < 1e-11, "Norris: QR matches the certified coefficients");
+    CHECK(fabs(sigma - canon_norris.sigma) < 1e-13 * canon_norris.sigma,
+          "Norris: QR and the certified residual SD, to the double's own limit");
+
+    /* LONGLEY. The set published because packages of the day returned two
+     * correct digits on it. Both solvers here return eleven. The normal
+     * equations manage it only because regress.c accumulates CENTERED
+     * co-moments: on the raw cross-products this set is the textbook
+     * catastrophe, and a change that quietly drops the centering will be
+     * caught here and nowhere else in this file. */
+    canon_fit(&canon_longley, 0, &rel, &sigma, &r2);
+    CHECK(rel < 1e-9, "Longley: normal equations match the certified coefficients");
+    CHECK(fabs(sigma - canon_longley.sigma) < 1e-9 * canon_longley.sigma,
+          "Longley: and the certified residual SD");
+    CHECK(fabs(r2 - canon_longley.r2) < 1e-11, "Longley: and the certified R2");
+    canon_fit(&canon_longley, 1, &rel, &sigma, &r2);
+    CHECK(rel < 1e-10, "Longley: QR matches the certified coefficients");
+    CHECK(fabs(sigma - canon_longley.sigma) < 1e-10 * canon_longley.sigma,
+          "Longley: QR and the certified residual SD");
+
+    /* WAMPLER1. An exact quintic: certified coefficients all 1, certified
+     * residual 0. Nothing in the data can absorb a solver's error, so this is
+     * the cleanest statement of the difference between the two, and the
+     * measured numbers are worth writing down.
+     *
+     *                 worst coefficient error     reported residual SD
+     *   normal eqns          4.4e-9                     2.3e-2
+     *   QR                   4.4e-10                    6.7e-11
+     *
+     * The certified residual SD is zero. The normal equations report 0.023,
+     * which is not a small number in a column of y running to four million,
+     * but is the honest size of what squaring x^5 threw away. QR reports 7e-11.
+     * Neither is wrong about its own arithmetic; only one of them is close to
+     * the answer, and this is what --qr is for. */
+    canon_fit(&canon_wampler1, 0, &rel, &sigma, &r2);
+    CHECK(rel < 1e-7, "Wampler1: normal equations recover the quintic");
+    CHECK(sigma > 1e-4 && sigma < 1.0,
+          "Wampler1: and report a residual SD that is visibly not zero");
+    canon_fit(&canon_wampler1, 1, &rel, &sigma, &r2);
+    CHECK(rel < 1e-8, "Wampler1: QR recovers the quintic");
+    CHECK(sigma < 1e-6, "Wampler1: and its residual SD is near the certified zero");
+    {   /* Stated as a comparison, so the ordering itself is under test: a
+         * change that makes QR the worse solver here should not pass. */
+        double rq, rn, sq, sn, junk;
+        canon_fit(&canon_wampler1, 0, &rn, &sn, &junk);
+        canon_fit(&canon_wampler1, 1, &rq, &sq, &junk);
+        CHECK(rq < rn, "Wampler1: QR is the more accurate of the two");
+        CHECK(sq < sn * 1e-6, "Wampler1: by orders of magnitude on the residual");
+    }
+}
+
+/* The residual SD from the normal equations loses digits in proportion to how
+ * well the model fits, because RSS is recovered as Syy - beta'Sxy and those two
+ * agree to more and more places as R^2 approaches 1. Measured on the same data
+ * at six noise levels:
+ *
+ *      1 - R^2      relative error in the reported residual SD
+ *      2.5e-01                 8e-16
+ *      3.3e-03                 4e-13
+ *      3.3e-05                 2e-11
+ *      3.3e-07                 1e-09
+ *      3.3e-09                 2e-07
+ *      3.3e-11                 8e-06
+ *
+ * A hundredfold better fit costs a hundredfold worse residual SD. QR does not
+ * pay it: it carries the residual through the rotation instead of subtracting
+ * for it. Nothing in the fit summary would tell you this was happening, which
+ * is why it is written down here and in regress.h rather than left to be
+ * rediscovered.
+ *
+ * Under test as a RATIO, not as absolute numbers: the absolute figures depend
+ * on the compiler's order of operations, but that the loss tracks 1/(1-R^2),
+ * and that QR does not share it, are properties of the two methods. */
+static void test_fit_quality_cost(void) {
+    struct regress rg;
+    struct qr q;
+    struct regress_fit fr, fq;
+    double loose = 0.0, tight = 0.0, r2_tight = 0.0;
+    int k;
+
+    for (k = 0; k < 2; k++) {
+        double amp = (k == 0) ? 1.0 : 1e-4;
+        double x[1], err;
+        int i;
+
+        regress_init(&rg, 1, t_store);
+        qr_init(&q, 1, t_store2);
+        for (i = 0; i < 2000; i++) {
+            double y;
+            x[0] = 100.0 + i * 0.01;
+            y = 1.0 + 2.0 * x[0] + amp * (double)(((i * 7919) % 23) - 11);
+            (void)regress_add(&rg, x, y);
+            (void)qr_add(&q, x, y);
+        }
+        (void)regress_solve(&rg, t_beta, t_scratch, &fr);
+        (void)qr_solve(&q, t_beta2, t_scratch, &fq);
+        /* QR is the reference: on this data it agrees with the exact answer to
+         * the last bit at both noise levels. */
+        err = fabs(fr.sigma - fq.sigma) / fq.sigma;
+        if (k == 0) loose = err; else { tight = err; r2_tight = fr.r2; }
+    }
+    CHECK(1.0 - r2_tight < 1e-6, "sigma cost: the tight fit really is tight");
+    CHECK(loose < 1e-13, "sigma cost: a loose fit costs the normal equations nothing");
+    CHECK(tight > loose * 1e3,
+          "sigma cost: a tight fit costs them digits, in proportion to the fit");
+    CHECK(tight < 1e-6, "sigma cost: but not so many that the number is useless");
 }
 
 static void test_los_round(void) {
@@ -917,6 +1116,8 @@ int main(void) {
     test_wide_fit();
     test_qr();
     test_diag();
+    test_canonical();
+    test_fit_quality_cost();
     test_resolve();
     test_named_case();
     test_los_round();

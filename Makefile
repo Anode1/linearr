@@ -66,13 +66,14 @@ release  : CFLAGS = -O2
 FLAGS_NOW := $(CC) $(PROJ) $(CPPFLAGS) $(CFLAGS)
 FLAGS_WAS := $(shell cat .build-flags 2>/dev/null)
 ifneq ($(FLAGS_NOW),$(FLAGS_WAS))
-$(shell rm -f $(OBJS) $(OBJS:.o=.d) $(BIN); printf '%s' '$(FLAGS_NOW)' > .build-flags)
+$(shell rm -f $(OBJS) $(OBJS:.o=.d) $(BIN) $(TESTBIN) $(TESTBIN)_asan $(TESTBIN)_ubsan; \
+        printf '%s\n' "$(FLAGS_NOW)" > .build-flags)
 endif
 
 %.o: %.c
 	$(CC) $(PROJ) $(CPPFLAGS) $(CFLAGS) -MMD -c $< -o $@
 
-.PHONY: all release debug pedantic check ut cliut ut-asan ut-ubsan hooks \
+.PHONY: all release debug pedantic check ut cliut readme ut-asan ut-ubsan hooks \
         install uninstall clean modeclean
 
 PREFIX ?= /usr/local
@@ -101,7 +102,7 @@ $(BIN): $(OBJS)
 
 # ut: all sources with -DUNIT_TEST: main.c's main() compiles out, tests.c's in.
 # Run from the project root: the tests read conf/ and example/ by relative path.
-$(TESTBIN): $(SOURCES.c)
+$(TESTBIN): $(SOURCES.c) .build-flags
 	$(CC) $(PROJ) -g -DUNIT_TEST $(CPPFLAGS) $(SOURCES.c) -o $(TESTBIN) $(LDLIBS) $(LIBM)
 ut: $(TESTBIN)
 	./$(TESTBIN)
@@ -113,23 +114,30 @@ ut: $(TESTBIN)
 cliut: $(BIN)
 	@sh tests/cli.sh
 
-# check: both gates. Run it before a commit.
-check: ut cliut
+# readme: run every command the README prints and diff its output. Three
+# reviews found stale transcripts here, and the third found fixes reported as
+# done that had never landed. Prose can be proof-read; a transcript has to be
+# executed.
+readme: $(BIN)
+	@python3 scripts/readme-check.py
+
+# check: all three gates. Run it before a commit.
+check: ut cliut readme
 
 # ut-asan / ut-ubsan: the same tests under AddressSanitizer and under
 # UndefinedBehaviorSanitizer. A leak, an overflow, or UB aborts with a file:line
 # report instead of passing silently under -O2. Run both before tagging; the
 # pre-push hook (make hooks) and .github/workflows/sanitizers.yml do it for you.
 # A fresh build each time, not the plain objects.
-ut-asan: $(SOURCES.c)
+ut-asan: $(SOURCES.c) .build-flags
 	$(CC) $(PROJ) -g -DUNIT_TEST -fsanitize=address -fno-omit-frame-pointer \
-		$(CPPFLAGS) $(SOURCES.c) -o $(TESTBIN) $(LDLIBS) $(LIBM)
-	./$(TESTBIN)
+		$(CPPFLAGS) $(SOURCES.c) -o $(TESTBIN)_asan $(LDLIBS) $(LIBM)
+	./$(TESTBIN)_asan
 
-ut-ubsan: $(SOURCES.c)
+ut-ubsan: $(SOURCES.c) .build-flags
 	$(CC) $(PROJ) -g -DUNIT_TEST -fsanitize=undefined -fno-sanitize-recover=undefined \
-		-fno-omit-frame-pointer $(CPPFLAGS) $(SOURCES.c) -o $(TESTBIN) $(LDLIBS) $(LIBM)
-	./$(TESTBIN)
+		-fno-omit-frame-pointer $(CPPFLAGS) $(SOURCES.c) -o $(TESTBIN)_ubsan $(LDLIBS) $(LIBM)
+	./$(TESTBIN)_ubsan
 
 # hooks: point git at scripts/hooks, so pre-push runs the sanitizers locally
 # before anything reaches the remote. Bypass once with `git push --no-verify`.
@@ -157,6 +165,7 @@ uninstall:
 	-rm -rf $(DESTDIR)$(PREFIX)/share/$(BIN)
 
 clean:
-	-rm -f $(BIN) $(TESTBIN) $(OBJS) $(OBJS:.o=.d) $(OBJS:.o=.su)
+	-rm -f $(BIN) $(TESTBIN) $(TESTBIN)_asan $(TESTBIN)_ubsan \
+	       $(OBJS) $(OBJS:.o=.d) $(OBJS:.o=.su) .build-flags
 
 -include $(OBJS:.o=.d)

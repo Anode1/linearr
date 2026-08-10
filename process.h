@@ -141,8 +141,9 @@ int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum);
  * It costs a SECOND PASS over the training file, not a copy of it in memory:
  * the fit forgets each row as it goes, so the rows have to be read again to be
  * subtracted from. Memory stays a function of the model. */
-int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
-                            struct fit_summary *sum);
+/* only: fit just that group, or NULL for every group in the file. */
+int process_train_residuals(const char *csv_path, const char *only, FILE *out,
+                            FILE *resid, struct fit_summary *sum);
 
 /* Release what scoring loaded. Idempotent. */
 void process_free(void);

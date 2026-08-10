@@ -1,0 +1,40 @@
+# example/wampler1.csv: NIST StRD "Wampler1".
+#
+# y = 1 + x + x^2 + x^3 + x^4 + x^5 for x = 0..20, with the powers given as
+# separate columns. Exact in whole numbers: every certified coefficient is 1
+# and the certified residual is 0, so anything a solver returns other than 1 is
+# its own arithmetic and nothing else.
+#
+# This is the file that shows what --qr is for.
+#
+#     $ linearr -t example/wampler1.csv         residual SD 0.0228
+#     $ linearr -t example/wampler1.csv --qr    residual SD 6.7e-11
+#
+# The certified residual SD is zero. Neither solver is lying; forming x^5 times
+# x^5 reaches 1e16 and a double has run out of places to keep the difference.
+# QR never forms that product.
+#
+# From the NIST Statistical Reference Datasets, a US Government work and not
+# under copyright.
+group,y,x,x2,x3,x4,x5
+A,1,0,0,0,0,0
+A,6,1,1,1,1,1
+A,63,2,4,8,16,32
+A,364,3,9,27,81,243
+A,1365,4,16,64,256,1024
+A,3906,5,25,125,625,3125
+A,9331,6,36,216,1296,7776
+A,19608,7,49,343,2401,16807
+A,37449,8,64,512,4096,32768
+A,66430,9,81,729,6561,59049
+A,111111,10,100,1000,10000,100000
+A,177156,11,121,1331,14641,161051
+A,271453,12,144,1728,20736,248832
+A,402234,13,169,2197,28561,371293
+A,579195,14,196,2744,38416,537824
+A,813616,15,225,3375,50625,759375
+A,1118481,16,256,4096,65536,1048576
+A,1508598,17,289,4913,83521,1419857
+A,2000719,18,324,5832,104976,1889568
+A,2613660,19,361,6859,130321,2476099
+A,3368421,20,400,8000,160000,3200000

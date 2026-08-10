@@ -69,9 +69,21 @@ const char *process_solver(void) { return use_qr ? "QR" : "normal equations"; }
 
 /* One accumulator, one of two shapes. The caller owns the storage in both
  * cases, so the choice costs nothing but a branch. */
+/* A union, not a struct: as a struct every group carried BOTH solvers, and
+ * struct qr is 4 KB because it holds its column ranges inline, so a two-term
+ * model paid 4232 bytes a group for the one it was not using.
+ *
+ * And it remembers which one it is. use_qr was read afresh in init, add and
+ * solve, so nothing bound the three: a caller that changed the flag between
+ * them would have a struct regress block reinterpreted as a struct qr, with
+ * q->r read as a garbage pointer. Unreachable from today's main, which parses
+ * options before it fits, and one field to remove for good. */
 struct fitter {
-    struct regress r;
-    struct qr      q;
+    int is_qr;
+    union {
+        struct regress r;
+        struct qr      q;
+    } u;
 };
 
 static size_t fitter_storage(int nvars) {
@@ -80,18 +92,19 @@ static size_t fitter_storage(int nvars) {
 }
 
 static int fitter_init(struct fitter *f, int nvars, double *storage) {
-    return use_qr ? qr_init(&f->q, nvars, storage)
-                  : regress_init(&f->r, nvars, storage);
+    f->is_qr = use_qr;                  /* decided once, here, and remembered */
+    return f->is_qr ? qr_init(&f->u.q, nvars, storage)
+                    : regress_init(&f->u.r, nvars, storage);
 }
 
 static int fitter_add(struct fitter *f, const double *x, double y) {
-    return use_qr ? qr_add(&f->q, x, y) : regress_add(&f->r, x, y);
+    return f->is_qr ? qr_add(&f->u.q, x, y) : regress_add(&f->u.r, x, y);
 }
 
 static int fitter_solve(const struct fitter *f, double *beta, double *scratch,
                         struct regress_fit *fit) {
-    return use_qr ? qr_solve(&f->q, beta, scratch, fit)
-                  : regress_solve(&f->r, beta, scratch, fit);
+    return f->is_qr ? qr_solve(&f->u.q, beta, scratch, fit)
+                    : regress_solve(&f->u.r, beta, scratch, fit);
 }
 
 static const char *coef_override;
@@ -532,11 +545,11 @@ static void group_fits_free(struct group_fit *head) {
 }
 
 int process_train_all(const char *csv_path, FILE *out, struct fit_summary *sum) {
-    return process_train_residuals(csv_path, out, NULL, sum);
+    return process_train_residuals(csv_path, NULL, out, NULL, sum);
 }
 
-int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
-                            struct fit_summary *sum) {
+int process_train_residuals(const char *csv_path, const char *only, FILE *out,
+                            FILE *resid, struct fit_summary *sum) {
     struct group_fit *head = NULL, *tail = NULL, *g;
     struct hash      *index = NULL;
     struct los_case   c;
@@ -578,6 +591,7 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
                  csv_path, seen, nvars);
             goto cleanup;
         }
+        if (only && strcmp(c.group, only) != 0) continue;
         g = hash_get(index, c.group);
         if (!g) {
             g = xmalloc(sizeof *g +
@@ -613,7 +627,11 @@ int process_train_residuals(const char *csv_path, FILE *out, FILE *resid,
         fail("%s has a line that is over-long or holds a NUL byte", csv_path);
         goto cleanup;
     }
-    if (groups == 0) { fail("%s has no data rows", csv_path); goto cleanup; }
+    if (groups == 0) {
+        if (only) { fail("%s has no rows in group %s", csv_path, only); goto cleanup; }
+        fail("%s has no data rows", csv_path);
+        goto cleanup;
+    }
     /* Every row in a group of its own cannot be fitted: a line through one
      * point is not a fit. It is also what omitting the group column looks
      * like, which is the commonest way to write this file wrongly, and it used

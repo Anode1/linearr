@@ -1,6 +1,8 @@
 # build output
 linearr
 linearr_ut
+linearr_ut_asan
+linearr_ut_ubsan
 *.o
 *.d
 .build-flags
@@ -12,3 +14,5 @@ java/doc/
 *.class
 __pycache__/
 *.pyc
+model.csv
+r.csv

@@ -1,0 +1,43 @@
+# example/longley.csv: NIST StRD "Longley".
+#
+# US macroeconomic series for the sixteen years 1947-1962: total derived
+# employment against the GNP implicit price deflator, GNP, the number
+# unemployed, the size of the armed forces, the non-institutional population
+# over 14, and the year. J. W. Longley, "An Appraisal of Least Squares Programs
+# for the Electronic Computer from the Point of View of the User", Journal of
+# the American Statistical Association 62(319), 1967.
+#
+# Longley published it as a test. The regression programs of 1967 returned as
+# few as two correct digits on these sixteen rows, and it has been the standard
+# hard case since. The certified coefficients, to fifteen digits:
+#
+#     intercept     -3482258.63459582
+#     deflator            15.0618722713733
+#     gnp                 -0.0358191792925910
+#     unemployed          -2.02022980381683
+#     armed_forces        -1.03322686717359
+#     population          -0.0511041056535807
+#     year              1829.15146461355
+#     residual SD        304.854073561965
+#     R^2                  0.995479004577296
+#
+# Both solvers here reproduce all seven to eleven digits. The certified values
+# and the data are from the NIST Statistical Reference Datasets, a US Government
+# work and not under copyright.
+group,employment,deflator,gnp,unemployed,armed_forces,population,year
+A,60323,83,234289,2356,1590,107608,1947
+A,61122,88.5,259426,2325,1456,108632,1948
+A,60171,88.2,258054,3682,1616,109773,1949
+A,61187,89.5,284599,3351,1650,110929,1950
+A,63221,96.2,328975,2099,3099,112075,1951
+A,63639,98.1,346999,1932,3594,113270,1952
+A,64989,99,365385,1870,3547,115094,1953
+A,63761,100,363112,3578,3350,116219,1954
+A,66019,101.2,397469,2904,3048,117388,1955
+A,67857,104.6,419180,2822,2857,118734,1956
+A,68169,108.4,442769,2936,2798,120445,1957
+A,66513,110.8,444546,4681,2637,121950,1958
+A,68655,112.6,482704,3813,2552,123366,1959
+A,69564,114.2,502601,3931,2514,125368,1960
+A,69331,115.7,518173,4806,2572,127852,1961
+A,70551,116.9,554894,4007,2827,130081,1962

@@ -98,7 +98,8 @@ static void print_terms(void) {
  * line per group" is what the model IS: the old default pooled every row into a
  * single line labelled '*', and getting a real table meant one invocation and
  * one full re-read of the training file per group. */
-static int train_all(const char *path, const char *resid_file) {
+static int train_all(const char *path, const char *only,
+                     const char *resid_file) {
     struct fit_summary sum;
     FILE *resid = NULL;
 
@@ -106,10 +107,20 @@ static int train_all(const char *path, const char *resid_file) {
         resid = fopen(resid_file, "w");
         if (!resid) die("cannot write %s: %s", resid_file, strerror(errno));
     }
-    if (process_train_residuals(path, stdout, resid, &sum) != 0) {
-        if (resid) fclose(resid);
+    if (process_train_residuals(path, only, stdout, resid, &sum) != 0) {
+        if (resid) (void)fclose(resid);
         (void)fprintf(stderr, "cannot fit: %s\n", process_error());
         return -1;
+    }
+    /* A residual file truncated by a full disk is worse than none: it looks
+     * like a model that fits. This was unchecked, so `--residuals /dev/full`
+     * wrote nothing and exited 0. That is the defect fixed for stdout a few
+     * commits earlier, in a comment congratulating itself; the test that caught
+     * it for stdout tested stdout, and the residual file went unexamined. */
+    if (resid) {
+        if (fflush(resid) != 0 || ferror(resid) || fclose(resid) != 0)
+            die("cannot write %s: %s", resid_file, strerror(errno));
+        (void)fprintf(stderr, "residuals: %s\n", resid_file);
     }
     (void)fprintf(stderr, "fit: %ld group%s, %ld row%s", sum.groups, s_(sum.groups),
             sum.rows, s_(sum.rows));
@@ -247,8 +258,6 @@ int main(int argc, char **argv) {
         die("-g names a group to fit, so it needs -t TRAIN.CSV");
     if (resid_file && !train_file)
         die("--residuals writes one row per TRAINING row, so it needs -t");
-    if (resid_file && group)
-        die("--residuals covers every group; use it without -g");
     if (want_terms && train_file)
         die("--terms lists the loaded model; it cannot be combined with -t");
 
@@ -256,8 +265,13 @@ int main(int argc, char **argv) {
         need_model();
         print_terms();
     } else if (train_file) {
-        bad = (group ? train(train_file, group)
-                     : train_all(train_file, resid_file)) != 0;
+        /* -g with --residuals used to be refused, because the single-group
+         * path had never been wired for the second pass. The refusal was the
+         * easier fix and the wrong one: the residuals of ONE group are exactly
+         * what you want when a summary line has told you which group is
+         * wrong. */
+        bad = ((group && !resid_file) ? train(train_file, group)
+                     : train_all(train_file, group, resid_file)) != 0;
     } else if (optind < argc) {
         need_model();
         /* A comma in the first argument means the row form, and then every

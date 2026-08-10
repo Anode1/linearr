@@ -10,7 +10,8 @@
  * the number of terms:
  *
  *   CURVATURE, per term. The correlation between the residual and the part of
- *   x^2 that is NOT explained by 1 and x. The partialling matters and was
+ *   x^2 that is NOT explained by 1 and x, and separately of x^3 on 1, x and
+ *   x^2. Both are computed about each column's own centre. The partialling matters and was
  *   missing in the first version: the residual is already orthogonal to x by
  *   construction, so correlating it against RAW x^2 measures mostly the part of
  *   x^2 that x already accounts for. A reviewer showed the consequence. On the
@@ -41,7 +42,25 @@
  * reported when |t| passes a fixed bound. What they are approximating is
  * standard: the first two are a crude Ramsey RESET, the third a crude
  * Breusch-Pagan, and R's car::residualPlots has reported the per-predictor
- * version with a p-value for years. Nothing here is new; it runs without R. */
+ * version with a p-value for years. Nothing here is new; it runs without R.
+ *
+ * WHERE IT IS WRONG. The t statistic assumes the rows are independent. When
+ * they are not, it is too large, and the checks will describe correlated noise
+ * as a shape. Measured over 100 correctly specified fits of 300 rows each:
+ *
+ *      independent noise              0 of 100 produced a warning
+ *      AR(1), rho = 0.85             20 of 100 produced a warning
+ *
+ * Twenty per cent is the cost of reading a time series row by row and calling
+ * the rows independent. There is no fix inside a one-pass residual check; a
+ * Durbin-Watson statistic would name the cause but not repair the t. So: on
+ * data with an order to it -- a series in time, a sequence down a well, repeat
+ * measurements on the same subject -- treat a curvature warning as a reason to
+ * look at the residual file, not as a conclusion. On unordered rows it means
+ * what it says. The suggestion the warning prints, to add a square, is the
+ * right move for a real curve and the wrong one for autocorrelation, and this
+ * check cannot tell you which you have. Plotting the residual file against row
+ * order takes a minute and does. */
 #ifndef DIAG_H
 #define DIAG_H
 
@@ -69,14 +88,27 @@
  * point unit. example/routes.csv fits exactly, to 1e-7 of the answer. */
 #define DIAG_MIN_SHARE 1e-6
 
-/* Per term: sums of x, x^2, x^3, x^4, r*x, r*x^2. Then the same six for the
- * fitted value, then n, sum r, sum r^2, and three for |r| against y-hat. */
-/* x, x^2, x^3, x^4, r*x, r*x^2, then x^6 and r*x^3 for the cube probe. An
- * even probe cannot see an odd departure: a symmetric cubic leaves residuals
- * that are odd in x, and x^2 is orthogonal to them. RESET uses both the square
- * and the cube for this reason. */
-#define DIAG_PER_TERM 8
-#define DIAG_SHARED   9
+/* One probe block, eleven doubles: the shift, the count, then sums of u, u^2,
+ * u^3, u^4, u^5, u^6, r*u, r*u^2, r*u^3, where u is the value less the shift.
+ *
+ * Powers of the SHIFTED value because the first version accumulated raw power
+ * sums and recovered variances by subtraction, which is the naive-variance
+ * formula regress.c refuses to use. A reviewer measured the square probe going
+ * silent at a column offset of 1e5 and, worse, inflating at 1e4 into a
+ * departure that was not there. The offsets the header names as the motivation
+ * for the probe (years, timestamps, prices, Kelvin) all live at 1e4 to 1e9.
+ *
+ * Up to u^6 because the cube is partialled on 1, u and u^2, which needs the
+ * sixth moment. The cube is there because an even probe cannot see an odd
+ * departure: a symmetric cubic leaves residuals that are odd in u, and u^2 is
+ * orthogonal to them. RESET uses both powers for the same reason.
+ *
+ * Keep this equal to the number of slots probe_add() writes. It was 10 against
+ * eleven slots for one build, and every term's block then wrote its last sum
+ * over the next term's shift; the probes went quiet rather than wrong, which is
+ * the failure this file exists to complain about. */
+#define DIAG_PER_TERM 11
+#define DIAG_SHARED   7
 
 struct diag {
     int     nvars;

@@ -23,36 +23,39 @@ Three situations are worth knowing about, because in each of them the fit
 succeeds and the result is not what it appears to be. The program reports all
 three.
 
-**One: the data cannot tell two columns apart.** If `icu` and `vent` are 1 on
-exactly the same rows (nobody ever had one without the other), the data can
-say the pair adds 8 days. It cannot say how to split that 8 between them. Every
-split fits equally well, so there is no answer to find:
+**One: the data cannot tell two columns apart.** If `night` and `headlights`
+are 1 on exactly the same rows, because no journey had one without the other,
+the data can say the pair adds 8 minutes. It cannot say how to divide those 8
+between them. Every division fits equally well, so there is nothing to
+determine:
 
     $ ./linearr -t example/together.csv
-    fit: 1 group, 5 rows, 1 term-slot pinned to 0, least df=3
-    group,intercept,icu,vent
+    fit: 1 group, 5 rows, 1 term-slot pinned to 0, least df=3, worst resid SD=4.397
+    group,intercept,night,headlights
     A,6,8,0
-    # pinned A: collinear vent
+    # pinned A: collinear headlights
 
 All 8 is assigned to the first column and the second is set to 0, with a note
 recording that this happened. Without the note the 0 would be indistinguishable
-from an estimate that ventilation has no effect. A column that never varies at
-all, an intervention nobody in the group received, is the same case: the data
-carries no information about it.
+from an estimate that headlights make no difference. A column that never varies at all is a
+different verdict, and the program prints it as `constant` rather than
+`collinear`: with a collinear pair there is an effect that cannot be attributed,
+and with a constant column there is nothing to attribute.
 
 **Two: no degrees of freedom left.** Three rows and three unknowns will fit perfectly,
 the way two points always define a line exactly. It would fit perfectly on any
 numbers whatsoever, so a perfect fit tells you nothing:
 
     $ ./linearr -t example/three-rows.csv
-    fit: 1 group, 3 rows, least df=0, worst cond=1.33
-    warning: at least one group has no residual degrees of freedom; its line
-    passes through every row by construction. Fit those groups on more rows.
-    group,intercept,a,b
+    fit: 1 group, 3 rows, least df=0, worst cond=1.33 (normal equations)
+    warning: at least one group has no residual degrees of freedom; its line passes through every row by construction. Fit those groups on more rows.
+    group,intercept,km,stops
     A,1,3,6
 
-*Degrees of freedom* is rows minus unknowns, and it is the amount of
-disagreement the fit had to accommodate. At zero there is none, so the quality
+*Degrees of freedom* is rows minus the parameters the data could actually
+identify, and it is the amount of disagreement the fit had to accommodate. Not
+rows minus unknowns: the first example above has 5 rows and 3 unknowns and
+reports `df=3`, because one of its terms was pinned and never estimated. At zero there is none, so the quality
 of the fit is not evidence of anything. Six rows against three unknowns leaves
 three rows' worth, and it is that residual disagreement which makes a small
 error informative.
@@ -63,9 +66,8 @@ squaring roughly halves the significant digits available. With two columns that
 differ in the sixth decimal, asked for `1 + 2*x1 + 3*x2`:
 
     $ ./linearr -t example/nearly-the-same.csv
-    fit: 1 group, 40 rows, least df=37, worst resid SD=0, worst cond=5.34e+10
-    warning: at least one group is ill-conditioned (cond=5.34e+10); the trailing
-    digits of its coefficients are noise.
+    fit: 1 group, 40 rows, least df=37, worst resid SD=0, worst cond=5.34e+10 (normal equations)
+    warning: at least one group is ill-conditioned (cond=5.34e+10); the trailing digits of its coefficients are noise. Try --qr, which does not square the condition number.
     group,intercept,x1,x2
     A,1.00000000001,2.00002262993,2.99997737008
 
@@ -95,15 +97,22 @@ dataset. Fitting all four at once is what groups are for:
     III,3.00245454545,0.499727272727
     IV,3.00172727273,0.499909090909
 
-The same line four times, and each set separately gives `R2=0.666`,
-`resid SD=1.24`, `df=9`. That is Anscombe's point, and it is also the argument
-for reading the residuals: everything printed above is identical, and only one
-of these four is a straight line with scatter around it.
+The same line four times, to two decimals, which is as exactly as Anscombe
+constructed them; this program prints twelve significant digits, so the small
+differences are visible here and would not be in most tools. Each set on its own
+(`-g I` and so on) gives `R2=0.666`, `resid SD=1.24`, `df=9`. That is Anscombe's
+point, and it is the argument for reading residuals: the summaries agree and
+only one of the four is a straight line with scatter around it.
 
     $ ./linearr -t example/anscombe.csv --residuals r.csv
-    warning: in group II the residuals still depend on x after the line is
-    subtracted (t=-2219.2). A straight line is probably the wrong shape in that
-    term; consider adding its square as a column.
+    residuals: r.csv
+    fit: 4 groups, 44 rows, least df=9, worst resid SD=1.237
+    warning: in group II the residuals still depend on x after the line is subtracted (t=-2219.2). A straight line is probably the wrong shape in that term; consider adding its square as a column.
+    group,intercept,x
+    I,3.00009090909,0.500090909091
+    II,3.00090909091,0.5
+    III,3.00245454545,0.499727272727
+    IV,3.00172727273,0.499909090909
 
 Set II is an exact parabola, and it is named. **Sets III and IV are not
 reported, and should not be taken as passing.** III is a perfect line with one
@@ -112,6 +121,48 @@ point far to the right, which alone decides the slope. Neither is a wrong shape:
 both are single points with more influence than the other ten together, and this
 program has no measure of leverage or influence to find them with. It says so
 here rather than leaving the silence to be read as approval.
+
+### What the residuals of set II actually look like
+
+The warning is a number. The residuals are the evidence, and set II is the case
+every course uses to show what a line cannot do. Fit that set alone and keep
+them:
+
+    $ ./linearr -t example/anscombe.csv -g II --residuals r.csv
+    residuals: r.csv
+    fit: 1 group, 11 rows, least df=9, worst resid SD=1.237
+    warning: in group II the residuals still depend on x after the line is subtracted (t=-2219.2). A straight line is probably the wrong shape in that term; consider adding its square as a column.
+
+The file has no x column, but with one term the prediction is a straight
+increasing function of x, so sorting on it puts the rows in x order:
+
+    $ sort -t, -k3 -g r.csv
+    group,observed,predicted,residual
+    II,3.1,5.00090909091,-1.90090909091
+    II,4.74,5.50090909091,-0.760909090909
+    II,6.13,6.00090909091,0.129090909091
+    II,7.26,6.50090909091,0.759090909091
+    II,8.14,7.00090909091,1.13909090909
+    II,8.77,7.50090909091,1.26909090909
+    II,9.14,8.00090909091,1.13909090909
+    II,9.26,8.50090909091,0.759090909091
+    II,9.13,9.00090909091,0.129090909091
+    II,8.74,9.50090909091,-0.760909090909
+    II,8.1,10.0009090909,-1.90090909091
+
+The last column is an arch: negative at both ends, positive through the middle,
+symmetric about the sixth row to every digit printed. That is a parabola with
+its line taken away, and it is the shape a residual plot is read for. The eleven
+numbers say it without a plot.
+
+Note the sum of that column is zero and its mean is zero, as least squares
+guarantees; the residual SD is 1.237 whichever of the four sets you fit. No
+summary of these numbers can see the arch. Only their order can, and order is
+what a single figure throws away.
+
+The remedy is the one the warning names. Add a column holding x squared to the
+training file and fit again, and the arch goes; the header names the terms, so
+nothing else changes.
 
 So the quartet exercises all three parts at once: groups fit in one pass, a
 summary that cannot tell the four apart, and a residual check that separates the
@@ -129,7 +180,7 @@ this is plain least squares.
 of route. The terms are the same everywhere; what each term is worth is not:
 
     $ ./linearr -t example/routes.csv
-    fit: 3 groups, 18 rows, least df=3, worst resid SD=3.832e-07, worst cond=1.02
+    fit: 3 groups, 18 rows, least df=3, worst resid SD=3.832e-07, worst cond=1.02 (normal equations)
     group,intercept,km,stops
     city,5,3,2
     suburb,4,2,1.5
@@ -140,13 +191,14 @@ minutes in the city and five on a highway route. Pooling the same eighteen rows
 into one line gives an average of the three that describes none of them:
 
     $ ./linearr -t example/routes.csv -g '*'
-    fit: 18 rows, R2=0.8159, resid SD=7.693, df=15, cond=1.02
+    fit: 18 rows, R2=0.8159, resid SD=7.693, df=15, cond=1.02 (normal equations)
     group,intercept,km,stops
     *,5.66666666667,2,2.83333333333
 
-R2 of 0.82 still looks acceptable. The residual SD is what shows the cost:
-predictions from the pooled line are typically 7.7 minutes out, against
-essentially zero for the per-group fits above.
+R2 of 0.82 still looks acceptable. The residual SD is what shows the cost: the pooled
+line misses the rows it was fitted to by about 7.7 minutes, against essentially
+zero for the per-group fits above. On rows it has not seen it would do no
+better.
 
 Every file puts the group first and the terms last, in the same order. Only the
 middle differs:
@@ -169,25 +221,33 @@ The coefficients describe the model; the residuals show where it does not fit,
 which no single summary number can. Fitting a parabola with a straight line
 produces summary statistics that give no sign of the problem:
 
-    $ ./linearr -t curve.csv --residuals r.csv
-    fit: 1 group, 9 rows, least df=7, worst resid SD=6.633
+    $ ./linearr -t example/curve.csv --residuals r.csv
+    residuals: r.csv
+    fit: 1 group, 13 rows, least df=11, worst resid SD=13.49
+    warning: in group A the residuals still depend on x after the line is subtracted (t=9999.0). A straight line is probably the wrong shape in that term; consider adding its square as a column.
+    group,intercept,x
+    A,24,0
 
     $ cat r.csv
     group,observed,predicted,residual
-    A,26,16.6666666667,9.33333333333
-    A,19,16.6666666667,2.33333333333
-    A,14,16.6666666667,-2.66666666667
-    A,11,16.6666666667,-5.66666666667
-    A,10,16.6666666667,-6.66666666667
-    A,11,16.6666666667,-5.66666666667
-    A,14,16.6666666667,-2.66666666667
-    A,19,16.6666666667,2.33333333333
-    A,26,16.6666666667,9.33333333333
+    A,46,24,22
+    A,35,24,11
+    A,26,24,2
+    A,19,24,-5
+    A,14,24,-10
+    A,11,24,-13
+    A,10,24,-14
+    A,11,24,-13
+    A,14,24,-10
+    A,19,24,-5
+    A,26,24,2
+    A,35,24,11
+    A,46,24,22
 
 The residuals are positive at both ends and negative in the middle. That is a
 systematic pattern rather than scatter, and it indicates the model has the wrong
-shape. R2, the residual SD and the conditioning figure all average over the
-residuals, so none of them can show it.
+shape. R2 and the residual SD are each one figure for the whole sample, so neither can
+show it, and `cond=` never looks at the response at all.
 
 It costs a second pass over the training file rather than a copy of it in
 memory: the fit forgets each row as it reads it, so the rows have to be read
@@ -211,11 +271,10 @@ and the answer is `1 + 2*x1 + 3*x2`:
 
 Five correct digits against ten. Both report `cond=`, and neither figure is a
 condition number in the textbook sense: each is a ratio of pivots, on
-differently scaled matrices, meant as an order-of-magnitude alarm. They are not
-comparable to each other, which is why the summary names the solver. The square
-root relationship holds for well-scaled designs and not otherwise: on the
-example above the two are 5.34e10 and 2e6, and the square root of the first is
-2.3e5.
+differently scaled matrices, meant as an order-of-magnitude alarm. They are not comparable
+to each other, which is why the summary names the solver, and no fixed
+relationship holds between them: on the example above they are 5.34e+10 and
+2.78e+06.
 
 `--qr` is not a strictly better solver. It does not centre the data, and the
 first version of it deleted a well-identified column for being measured in a
@@ -228,30 +287,96 @@ version of this section implied.
 The algorithm is Gentleman's 1974 row-wise updating QR, which R's `biglm` has
 used for two decades. Nothing about the method is new here.
 
+## Checked against answers somebody else certified
+
+Every test a project writes for itself checks the code against arithmetic the
+same project wrote. If the solver and the expected value came from the same
+understanding, they are wrong together and the suite stays green.
+
+So the suite also fits datasets published with their answers. These are from the
+NIST Statistical Reference Datasets, computed to fifteen digits, a US Government
+work and not under copyright. Statisticians know them.
+
+**Longley**, 1967: sixteen years of US macroeconomic series, employment against
+six predictors. Longley published it because the regression programs of the day
+returned as few as two correct digits on it, and it has been the standard hard
+case since.
+
+    $ ./linearr -t example/longley.csv
+    fit: 1 group, 16 rows, least df=9, worst resid SD=304.9, worst cond=934 (normal equations)
+    group,intercept,deflator,gnp,unemployed,armed_forces,population,year
+    A,-3482258.6346,15.0618722714,-0.0358191792926,-2.02022980382,-1.03322686717,-0.0511041056535,1829.15146461
+
+The certified intercept is -3482258.63459582 and the certified coefficient on
+year is 1829.15146461355. Every one of the seven agrees to eleven digits, which
+is as many as the output prints. The plain solver manages Longley because it
+accumulates centered co-moments rather than raw cross-products; on the raw ones
+this set is the textbook catastrophe.
+
+**Wampler1** is the case that separates the two solvers. It is y = 1 + x + x2 +
+x3 + x4 + x5 for x from 0 to 20, in whole numbers, with the powers supplied as
+columns. Every certified coefficient is 1 and the certified residual is exactly
+0, so anything other than that is the solver's own error with nothing in the
+data to hide behind.
+
+    $ ./linearr -t example/wampler1.csv
+    fit: 1 group, 21 rows, least df=15, worst resid SD=0.02282, worst cond=9.96e+04 (normal equations)
+    group,intercept,x,x2,x3,x4,x5
+    A,0.999999995576,0.999999996707,1.0000000034,0.999999999361,1.00000000004,0.999999999999
+
+    $ ./linearr -t example/wampler1.csv --qr
+    fit: 1 group, 21 rows, least df=15, worst resid SD=6.663e-11, worst cond=698 (QR)
+    group,intercept,x,x2,x3,x4,x5
+    A,1.00000000044,0.999999999992,1.00000000001,0.999999999997,1,1
+
+The true residual SD is zero. The normal equations report 0.0228 and QR reports
+7e-11. Neither is lying about its own arithmetic: x5 times x5 reaches 1e16 and a
+double has no places left to keep the difference. QR never forms that product.
+This is the whole argument for `--qr`, on data a reader can check.
+
+Both solvers are held to these numbers by `make check`, and the example files
+are held to them separately, so neither the code nor the data can drift alone.
+
 ## When a straight line is the wrong shape
 
-Every number in the fit summary is an average over the residuals, so none of
-them can see structure IN the residuals, and that is where a wrong shape is
-written. With `--residuals` the pass that writes them also checks two things.
+Every number in the fit summary is one figure for the whole sample, so none of
+them can see structure WITHIN it, and that is where a wrong shape is written.
+(`cond=` does not even look at the response: it is a property of the columns
+alone.) With `--residuals` the pass that writes them also checks two things.
 
     $ ./linearr -t example/curve.csv --residuals r.csv
+    residuals: r.csv
     fit: 1 group, 13 rows, least df=11, worst resid SD=13.49
-    warning: the residuals correlate with x squared (r=1.00). A straight line is
-    probably the wrong shape in that term; look at the residual file, and
-    consider adding its square as a column.
+    warning: in group A the residuals still depend on x after the line is subtracted (t=9999.0). A straight line is probably the wrong shape in that term; consider adding its square as a column.
+    group,intercept,x
+    A,24,0
 
-That file is a parabola. The fit succeeds, and the warning names the term to
-look at rather than only reporting that something is wrong. The second check is
-the size of the error against the size of the prediction: when it grows, the
-residual SD is not a typical error at either end of the range.
+That file is a parabola. The fit succeeds, and the check names the term to look
+at rather than only reporting that something is wrong. The sign is the direction
+of the curve, and 9999 is a cap meaning the relation is exact rather than merely
+strong.
 
-Neither is a hypothesis test. Both are correlations against a threshold that is
-the larger of 0.4 and 3/sqrt(n), which is roughly what unstructured residuals
-produce by chance at that sample size, and neither reports anything when the
-residuals are already negligible against the response's own spread. Both guards
-came from a false positive: `example/routes.csv` is exactly linear, its
-residuals are rounding error at 1e-7, and correlating rounding error with
-anything over 18 rows found r = -0.44.
+There are three checks, not one. The first probes each term for a curve, trying
+both its square and its cube, since a cubic bend is invisible to a square. The
+second probes the fitted value itself, which is how an interaction between two
+terms shows up when no single term looks bent. The third compares the size of
+the error with the size of the prediction: when the error grows, the residual SD
+is not a typical error at either end of the range.
+
+None is a hypothesis test, and none reports a p-value. Each is a correlation
+turned into a t statistic, reported when |t| passes 3.5, and nothing is reported
+below ten rows or when the residuals are already negligible against the
+response's own spread. That last guard exists because `example/routes.csv` fits
+exactly, to 1e-7, and correlating rounding error against anything measures the
+floating point unit.
+
+**What to do about a warning.** The program cannot add a column for you. When it
+says a term is curved, add its square to your training file with whatever wrote
+the file, name it `x2` or similar, and fit again; the header names the terms, so
+nothing else has to change. When it says the error grows with the prediction,
+the usual answers are to model the logarithm of the response or to weight the
+rows, and this program does neither, which is the point at which R or Python is
+the right tool.
 
 ## Where this is the right tool, and where it is not
 
@@ -278,7 +403,8 @@ elastic net), categorical encoding, missing-value handling, cross-validation,
 weighted least squares, or inference: standard errors, confidence intervals,
 prediction intervals, p-values. None of that is here. The residual standard
 deviation is reported, as `resid SD=` in the fit summary: the typical distance
-between a prediction and the observed value, in the response's own units. R2 is
+between the fit and the rows it was fitted to, in the response's own units. It
+is an in-sample figure and a floor, not an estimate of the error on a new row. R2 is
 a ratio and does not give it. The worked example involves a modelling choice
 that should be stated: length of stay is a skewed,
 non-negative, count-like response, and unweighted OLS on raw days is not the
@@ -433,7 +559,14 @@ Fit a model from your own data and score against it, with no configuration file
 anywhere. A training row is `group,value,<one column per term>`, and the header
 names the terms:
 
-    $ cat mine.csv
+    $ cat example/simple-train.csv
+    # example/simple-train.csv: nothing medical about it, minutes on the road as a
+    # function of distance and stops, two terms instead of twenty-four. The point of
+    # this file is that the program never had to change to fit it: the header names
+    # the terms, so this IS the whole schema.
+    #
+    #   MINUTES = 5 + 2.5*km + 1.5*stops
+    #
     group,minutes,km,stops
     A,5.0,0,0
     A,30.0,10,0
@@ -442,16 +575,22 @@ names the terms:
     A,19.0,5,1
     A,58.0,20,2
     A,18.5,3,4
+    B,12.0,0,0
+    B,22.0,4,0
+    B,18.0,0,4
+    B,28.0,4,4
+    B,20.0,2,2
+    B,34.0,7,3
 
-    $ ./linearr -t mine.csv > model.csv
-    fit: 1 group, 7 rows, least df=4, worst cond=1
+    $ ./linearr -t example/simple-train.csv > model.csv
+    fit: 2 groups, 13 rows, least df=3, worst resid SD=0, worst cond=1.03 (normal equations)
 
     $ cat model.csv
     group,intercept,km,stops
     A,5,2.5,1.5
 
     $ ./linearr -c model.csv --no-trim A km=10 stops=3
-    A prediction=34.5000 trim=34.5
+    A prediction=34.5000
 
 Those three columns were the whole schema; it ships as
 `example/simple-train.csv` if you want to run it as it stands.
@@ -481,8 +620,7 @@ read from stdin, so a file of cases round trips through a pipeline:
     $ ./linearr "001,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0"
     001 prediction=19.9611 trim=46.5
 
-    $ printf '001,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0\n' > cases.csv
-    $ ./linearr < cases.csv
+    $ ./linearr < example/cases.csv
     001 prediction=19.9611 trim=46.5
 
 At two terms the row form is fine. At two hundred it is unusable, which is why

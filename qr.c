@@ -14,7 +14,8 @@
 
 size_t qr_storage(int nvars) {
     if (nvars < 0) return 0;
-    return ((size_t)nvars + 1) * ((size_t)nvars + 2);
+    /* R, then the two column-range vectors that used to sit inside struct qr. */
+    return ((size_t)nvars + 1) * ((size_t)nvars + 2) + 2 * ((size_t)nvars + 1);
 }
 
 int qr_init(struct qr *q, int nvars, double *storage) {
@@ -28,10 +29,9 @@ int qr_init(struct qr *q, int nvars, double *storage) {
     q->my    = 0.0;
     q->cyy   = 0.0;
     q->rss   = 0.0;
-    q->r     = storage;
-    {   int i;
-        for (i = 0; i <= nvars; i++) { q->colmin[i] = 0.0; q->colmax[i] = 0.0; }
-    }
+    q->r      = storage;
+    q->colmin = storage + ((size_t)nvars + 1) * ((size_t)nvars + 2);
+    q->colmax = q->colmin + nvars + 1;
     return 0;
 }
 

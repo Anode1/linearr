@@ -410,11 +410,58 @@ check "the residuals are the observed minus the predicted" \
 case "$(awk -F, 'NR==2{print ($4>0 && $4<100) ? "sane" : "WILD " $4}' "$tmp/r.csv")" in
     sane) ok ;; *) no "residuals are of a plausible size" ;;
 esac
-# --residuals needs -t, and covers every group
+# --residuals needs -t
 set +e
 "$bin" --residuals "$tmp/x.csv" 001 icu_indicator=1 >/dev/null 2>&1; rc=$?
 set -e
 check "--residuals without -t is an error" "$rc" "1"
+
+# --residuals WITH -g. This used to be refused, on the grounds that the residual
+# pass covered every group; the real reason was that the single-group path had
+# never been wired for a second pass. One group's residuals are exactly what is
+# wanted once the summary has named the group that is wrong.
+"$bin" -t example/anscombe.csv -g II --residuals "$tmp/a2.csv" >/dev/null 2>&1
+check "-g with --residuals writes only that group" \
+    "$(awk -F, 'NR>1 && $1!="II"' "$tmp/a2.csv" | wc -l | tr -d ' ')" "0"
+check "-g with --residuals writes all of it" \
+    "$(awk 'END{print NR-1}' "$tmp/a2.csv")" "11"
+set +e
+"$bin" -t example/anscombe.csv -g nosuch --residuals "$tmp/a3.csv" >/dev/null 2>&1; rc=$?
+set -e
+check "-g naming no group is an error" "$rc" "1"
+
+# --- the certified sets ----------------------------------------------------
+# example/longley.csv and example/wampler1.csv carry answers somebody else
+# computed to fifteen digits. tests.c checks the solvers against the same
+# numbers compiled in; these check that the FILES still hold the data those
+# numbers belong to, which is the part a unit test cannot see.
+check "Longley: the certified coefficients, to eleven digits" \
+    "$("$bin" -t example/longley.csv 2>/dev/null | tail -1)" \
+    "A,-3482258.6346,15.0618722714,-0.0358191792926,-2.02022980382,-1.03322686717,-0.0511041056535,1829.15146461"
+check "Longley: and the certified residual SD" \
+    "$("$bin" -t example/longley.csv 2>&1 >/dev/null | sed -n 's/.*resid SD=\([0-9.]*\).*/\1/p')" \
+    "304.9"
+check "Wampler1: QR recovers the exact quintic" \
+    "$("$bin" -t example/wampler1.csv --qr 2>/dev/null | tail -1 | cut -d, -f6,7)" \
+    "1,1"
+# The certified residual is zero. The normal equations report 0.0228 and QR
+# reports 7e-11, and the gap is the whole argument for the module.
+check "Wampler1: the normal equations report a residual that is not there" \
+    "$("$bin" -t example/wampler1.csv 2>&1 >/dev/null | sed -n 's/.*resid SD=\([0-9.e-]*\).*/\1/p')" \
+    "0.02282"
+check "Wampler1: QR does not" \
+    "$("$bin" -t example/wampler1.csv --qr 2>&1 >/dev/null | sed -n 's/.*resid SD=\([0-9.e-]*\).*/\1/p')" \
+    "6.663e-11"
+
+# Anscombe II is the canonical curve that a line cannot fit. The check must see
+# it, and must NOT see anything in set I, which is the same summary statistics
+# over data that is genuinely straight.
+check "Anscombe II: the curvature check fires" \
+    "$("$bin" -t example/anscombe.csv -g II --residuals /dev/null 2>&1 >/dev/null | grep -c 'wrong shape')" \
+    "1"
+check "Anscombe I: and stays quiet on the straight set" \
+    "$("$bin" -t example/anscombe.csv -g I --residuals /dev/null 2>&1 >/dev/null | grep -c 'warning')" \
+    "0"
 
 # --- groups: the same terms, different coefficients ------------------------
 check "a per-group fit recovers each route's own line" \

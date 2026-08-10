@@ -47,11 +47,14 @@ struct qr {
     double  my, cyy;    /* running mean and centered sum of squares of y */
     double  rss;        /* residual of the ROTATION; only the model's when
                            nothing was dropped                            */
-    double  colmin[REGRESS_MAX_TERMS + 1];  /* each column's own range, so   */
-    double  colmax[REGRESS_MAX_TERMS + 1];  /* the rank test can be relative
-                                               to it and a column with no
-                                               spread can be told from one
-                                               that is merely collinear      */
+    /* Each column's own range, so the rank test can be relative to it and a
+     * column with no spread can be told from one that is merely collinear.
+     * These point into the caller's storage rather than sitting inline: inline
+     * they made struct qr 4 KB, and since one of these lives in every group's
+     * accumulator, a two-term model paid four kilobytes a group for two
+     * columns' worth of information. */
+    double *colmin;
+    double *colmax;
 };
 
 size_t qr_storage(int nvars);
@@ -69,10 +72,22 @@ int qr_add(struct qr *q, const double *x, double y);
  * two solvers can be called through the same shape.
  *
  * fit->condition here is an estimate of cond(X), not of cond(X'X): the largest
- * accepted diagonal of R over the smallest. Expect it to be about the square
- * root of the figure regress.c reports for the same data. That is the whole
- * point of the module, so the two numbers are not comparable and the summary
- * says which solver produced it.
+ * accepted diagonal of R over the smallest.
+ *
+ * Do NOT read it as the square root of the figure regress.c reports. This
+ * header said so for a while and the certified sets say otherwise: on Longley
+ * regress.c reports 934 and this reports 1.17e4, the larger of the two. There
+ * is no contradiction, because they are conditioning figures for different
+ * matrices. regress.c centres its co-moments, so its number describes the
+ * columns about their own means, with the intercept already accounted for.
+ * This module does not centre, so its number still carries the intercept's
+ * near-collinearity with any column that lives far from zero, which on Longley
+ * is a year near 1950 and a population near 1.2e8. The accuracy of the two
+ * fits does not follow the ordering of the two numbers; see the Wampler1
+ * figures in tests.c, where this solver is right and the other is not.
+ *
+ * So: compare a cond= against other runs of the SAME solver, not across the
+ * two. The summary line says which produced it for that reason.
  *
  * Returns 0, or -1 if nothing was added or the result is not finite. */
 int qr_solve(const struct qr *q, double *beta, double *scratch,
