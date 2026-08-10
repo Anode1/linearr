@@ -965,7 +965,7 @@ The problem itself has not changed in the interval: a table of coefficients, a
 stream of rows to apply them to, and often a machine on which installing a
 scientific stack is inconvenient or not permitted.
 
-The author's work in industry was largely this: taking models written by
+One type of the author's work in industry was this: taking models written by
 scientists in SAS, R and Matlab and turning them into C, or into plain Java
 without frameworks, so that they could run where the original could not. The
 view behind that work, and behind this program, is that computation belongs as
@@ -973,15 +973,9 @@ close to the processor and to the memory it touches as the problem allows;
 distance from it costs time, energy and hardware that a straight line does not
 need.
 
-The second view is about shape rather than language: that data of any size
-should be processed as a stream. Every one of the author's projects is written
-that way, this one included. A stream has one property that matters more than
-speed, which is that the size of the input stops being a design question. There
-is no point at which the file no longer fits, no partitioning step, no
-out-of-memory failure at the end of a long run, and no difference in the code
-between the small case and the large one. The cost of it is real and is stated
-below: one pass, one core, and anything needing a second look at the data needs
-a second pass.
+The second view is about shape rather than language: data of any size should be
+read as a stream, so that its size stops being a design question, at the cost of
+one pass and one core and a second pass for anything needing a second look.
 
 That is a claim about implementation, not about tools. **This does not replace
 Python, R, SAS or Matlab, and is not trying to.** Those are where a model should
