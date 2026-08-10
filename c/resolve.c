@@ -40,7 +40,7 @@ static char *realpath(const char *path, char *out) {
 #endif
 
 /* Readable AND a regular file. Without the second half, naming a FIFO as
- * coef.file or as -t's argument made the program block forever on open with no
+ * -c's or -t's argument made the program block forever on open with no
  * output and no diagnostic, indistinguishable from a hang. Directories,
  * /dev/zero and unreadable files were already handled; the FIFO was the one
  * input that could take the process away and not give it back. */

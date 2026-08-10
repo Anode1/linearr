@@ -1,4 +1,4 @@
-# conf/coefficients.csv: the fitted model, one line per group.
+# example/coefficients.csv: the fitted model, one line per group.
 # Columns: GROUP,Intercept,<one column per term, in the model's order>.
 # Add a term by adding a column here and in the training file; nothing in
 # the program has to change.

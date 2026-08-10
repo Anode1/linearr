@@ -50,6 +50,8 @@ jobs:
         run: make readme
       - name: the Java twin still behaves like the C
         run: make java
+      - name: the fit still agrees with R's lm()
+        run: make r
       - name: strict warnings
         run: make pedantic
       - name: AddressSanitizer

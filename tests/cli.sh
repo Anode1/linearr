@@ -23,39 +23,47 @@ check(){ if [ "$2" = "$3" ]; then ok; else no "$1: expected [$3], got [$2]"; fi;
 CASE1='001,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0'
 EXPECT1='001 prediction=19.9611 trim=46.5'
 
+# The model these tests score against, named every time. There is no implicit
+# default any more: scoring used to search a system.properties file and then a
+# table shipped beside the binary, so a bare run answered from a demo model the
+# reader had never seen. Absolute, because several tests run from $tmp.
+DEMO_COEF=$root/example/coefficients.csv
+DEMO_TRIM=$root/example/trim_additions.csv
+score() { "$bin" -c "$DEMO_COEF" --trim "$DEMO_TRIM" "$@"; }
+
 cd "$root"
 
 # an argument is scored. The status is captured from the program: written as
 # check "$?" on the line after, it was the status of the CHECK before it, which
 # is 0 whenever check itself runs, so the assertion held no matter what the
 # program returned.
-out=$("$bin" "$CASE1"); rc=$?
+out=$(score "$CASE1"); rc=$?
 check "argument"      "$out" "$EXPECT1"
 check "argument exit" "$rc" "0"
 
 # a pipe is a filter
-check "pipe" "$(printf '%s\n%s\n' "$CASE1" "$CASE1" | "$bin" | wc -l | tr -d ' ')" "2"
-check "redirect" "$(printf '%s\n' "$CASE1" > "$tmp/c.csv"; "$bin" < "$tmp/c.csv")" "$EXPECT1"
+check "pipe" "$(printf '%s\n%s\n' "$CASE1" "$CASE1" | score | wc -l | tr -d ' ')" "2"
+check "redirect" "$(printf '%s\n' "$CASE1" > "$tmp/c.csv"; score < "$tmp/c.csv")" "$EXPECT1"
 
 # Comments and blank lines are skipped, not scored and not complained about.
 check "pipe skips comments" \
-    "$(printf '# a note\n\n%s\n' "$CASE1" | "$bin" | wc -l | tr -d ' ')" "1"
+    "$(printf '# a note\n\n%s\n' "$CASE1" | score | wc -l | tr -d ' ')" "1"
 
 # an empty pipe is an ordinary outcome, not an error
-out=$(printf '' | "$bin" 2>&1); rc=$?
+out=$(printf '' | score 2>&1); rc=$?
 check "empty pipe output" "$out" ""
 check "empty pipe exit"   "$rc"  "0"
 
 # a bad row is reported, and the exit code says so
 set +e
-out=$(printf '001,1,2\n' | "$bin" 2>&1); rc=$?
+out=$(printf '001,1,2\n' | score 2>&1); rc=$?
 set -e
 check "bad row exit" "$rc" "1"
 case "$out" in *"cannot score"*) ok ;; *) no "bad row message: got [$out]" ;; esac
 
 # A bad row must not throw away the good ones around it.
 check "bad row does not stop the batch" \
-    "$(printf '%s\n001,1,2\n%s\n' "$CASE1" "$CASE1" 2>/dev/null | "$bin" 2>/dev/null | wc -l | tr -d ' ')" "2"
+    "$(printf '%s\n001,1,2\n%s\n' "$CASE1" "$CASE1" 2>/dev/null | score 2>/dev/null | wc -l | tr -d ' ')" "2"
 
 # -h
 check "-h exit" "$("$bin" -h >/dev/null 2>&1; echo $?)" "0"
@@ -88,18 +96,18 @@ else
 fi
 
 # naming the terms instead of counting commas
-check "named form" "$("$bin" 001 Cardioversion=1 icu_indicator=1)" "$EXPECT1"
+check "named form" "$(score 001 Cardioversion=1 icu_indicator=1)" "$EXPECT1"
 # The two ways of writing one case must agree, or having two is a liability.
 check "named form agrees with the row form" \
-    "$("$bin" 001 Cardioversion=1 icu_indicator=1)" "$("$bin" "$CASE1")"
+    "$(score 001 Cardioversion=1 icu_indicator=1)" "$(score "$CASE1")"
 check "named form is case-insensitive" \
-    "$("$bin" 001 CARDIOVERSION=1 icu_indicator=1)" "$EXPECT1"
+    "$(score 001 CARDIOVERSION=1 icu_indicator=1)" "$EXPECT1"
 
 # --terms: the answer to "what am I supposed to type?"
-check "--terms exit" "$("$bin" --terms >/dev/null 2>&1; echo $?)" "0"
-case "$("$bin" --terms)" in *"24 terms and 12 groups"*) ok ;;
+check "--terms exit" "$(score --terms >/dev/null 2>&1; echo $?)" "0"
+case "$(score --terms)" in *"24 terms and 12 groups"*) ok ;;
     *) no "--terms reports the size of the model" ;; esac
-case "$("$bin" --terms)" in *icu_indicator*) ok ;;
+case "$(score --terms)" in *icu_indicator*) ok ;;
     *) no "--terms lists the term names" ;; esac
 
 # errors name the thing that was wrong
@@ -110,14 +118,14 @@ for probe in "001 nosuchterm=1|nosuchterm" \
              "999 icu_indicator=1|no group" \
              "001 icu_indicator=yes|not a finite number"; do
     args=${probe%|*}; want=${probe#*|}
-    out=$("$bin" $args 2>&1)
+    out=$(score $args 2>&1)
     case "$out" in *"$want"*) ok ;; *) no "error names '$want': got [$out]" ;; esac
 done
 set -e
 
 # it runs from somewhere else, like an installed program
 # This is the defect that made the tool usable only inside its own source tree.
-check "runs from another directory" "$(cd "$tmp" && "$bin" 001 Cardioversion=1 icu_indicator=1)" "$EXPECT1"
+check "runs from another directory" "$(cd "$tmp" && score 001 Cardioversion=1 icu_indicator=1)" "$EXPECT1"
 # Coefficients are written at full precision, so compare the VALUES. The old
 # %.4f made this a string match, and made any coefficient below 5e-5 a zero.
 coefs() { tail -1 | cut -d, -f2- | tr ',' '\n' | awk '{printf "%.9f\n", $1}' | paste -sd' ' -; }
@@ -126,15 +134,32 @@ check "-t finds its example from another directory" \
     "5.000000000 2.500000000 1.500000000"
 
 # a missing table is one fatal message, not one complaint per row
-printf 'coef.file = definitely-not-here.csv\n' > "$tmp/system.properties"
 set +e
-out=$(cd "$tmp" && printf '%s\n%s\n%s\n' "$CASE1" "$CASE1" "$CASE1" | "$bin" 2>&1); rc=$?
+out=$(cd "$tmp" && printf '%s\n%s\n%s\n' "$CASE1" "$CASE1" "$CASE1" \
+      | "$bin" -c definitely-not-here.csv 2>&1); rc=$?
 set -e
 check "missing table exits nonzero" "$rc" "1"
 check "missing table is reported once, not per row" \
     "$(printf '%s' "$out" | grep -c 'definitely-not-here')" "1"
 case "$out" in *"looked in"*) ok ;; *) no "missing table says where it looked: got [$out]" ;; esac
-rm -f "$tmp/system.properties"
+
+# NO table at all is its own message, and it says what to do. There used to be a
+# search here -- a system.properties file, then a table shipped beside the
+# binary -- so a bare run scored against a demo model the reader had never seen,
+# and the same command in two directories could answer with two different
+# models without saying which.
+set +e
+out=$(cd "$tmp" && "$bin" 'A,10,3' 2>&1); rc=$?   # deliberately NO -c
+set -e
+check "no -c at all exits nonzero" "$rc" "1"
+case "$out" in
+    *"-c FILE"*) ok ;;
+    *) no "no -c names the option: got [$out]" ;;
+esac
+case "$out" in
+    *"-t TRAIN.CSV"*) ok ;;
+    *) no "no -c says how to make one: got [$out]" ;;
+esac
 
 # fit, then score against what was fitted
 "$bin" -t example/simple-train.csv -g A 2>/dev/null > "$tmp/coef.csv"
@@ -145,26 +170,33 @@ check "fit writes the row"  "$(coefs < "$tmp/coef.csv")" "5.000000000 2.50000000
 # was written as 0.0000, so a fit reporting R2=1.0000 published a constant model.
 printf 'group,value,bytes\nA,3.0,0\nA,3.15,100000\nA,3.30,200000\nA,3.45,300000\n' > "$tmp/tiny.csv"
 "$bin" -t "$tmp/tiny.csv" -g A 2>/dev/null > "$tmp/tiny_coef.csv"
-printf 'coef.file = %s/tiny_coef.csv\ntrim.file =\n' "$tmp" > "$tmp/system.properties"
 check "a tiny coefficient survives the round trip" \
-    "$(cd "$tmp" && "$bin" A bytes=1000000)" "A prediction=4.5000"
-rm -f "$tmp/system.properties"
+    "$(cd "$tmp" && "$bin" -c tiny_coef.csv A bytes=1000000)" "A prediction=4.5000"
 
 # The fit summary goes to stderr, so stdout stays a clean coefficient file.
 case "$("$bin" -t example/simple-train.csv -g A 2>&1 >/dev/null)" in
     *"R2="*) ok ;; *) no "fit summary on stderr" ;;
 esac
 
-printf 'coef.file = %s\ntrim.file =\n' "$tmp/coef.csv" > "$tmp/system.properties"
 check "score against the fitted table" \
-    "$(cd "$tmp" && "$bin" 'A,10,3')" "A prediction=34.5000"
+    "$(cd "$tmp" && "$bin" -c coef.csv 'A,10,3')" "A prediction=34.5000"
 
-# an unreadable table named in the config is an error, not a shrug
-printf 'coef.file = %s/nope.csv\n' "$tmp" > "$tmp/system.properties"
+# an unreadable table named with -c is an error, not a shrug
 set +e
-(cd "$tmp" && "$bin" 'A,10,3' >/dev/null 2>&1); rc=$?
+(cd "$tmp" && "$bin" -c nope.csv 'A,10,3' >/dev/null 2>&1); rc=$?
 set -e
 check "missing coefficient file exits nonzero" "$rc" "1"
+
+# --scale and --trim-scale, which were predict.scale and trim.scale in the
+# properties file. Out of range is refused rather than quietly defaulted.
+check "--scale sets the decimals" \
+    "$(cd "$tmp" && "$bin" -c coef.csv --scale 1 'A,10,3')" "A prediction=34.5"
+check "--scale 0 is whole numbers" \
+    "$(cd "$tmp" && "$bin" -c coef.csv --scale 0 'A,10,3')" "A prediction=35"
+set +e
+(cd "$tmp" && "$bin" -c coef.csv --scale 12 'A,10,3' >/dev/null 2>&1); rc=$?
+set -e
+check "--scale outside 0..9 is refused" "$rc" "1"
 
 # the build's own claims
 # Twice now this Makefile has said it did something and not done it: the default
@@ -174,8 +206,9 @@ check "missing coefficient file exits nonzero" "$rc" "1"
 # place. Both were silent successes. They are assertions now.
 if command -v make >/dev/null 2>&1; then
     src=$tmp/src; mkdir -p "$src"
-    cp "$root"/*.c "$root"/*.h "$root"/Makefile "$src"/
-    cp -r "$root/conf" "$root/example" "$src"/ 2>/dev/null || true
+    mkdir -p "$src/c"; cp "$root"/c/*.c "$root"/c/*.h "$src/c"/
+    cp "$root"/Makefile "$src"/
+    cp -r "$root/example" "$src"/ 2>/dev/null || true
     mkdir -p "$src/tests"; cp "$root/tests/cli.sh" "$src/tests/" 2>/dev/null || true
 
     (cd "$src" && env -u MAKEFLAGS -u MAKELEVEL sh -c 'make clean >/dev/null 2>&1; make >/dev/null 2>&1')
@@ -186,9 +219,7 @@ if command -v make >/dev/null 2>&1; then
     # it and this passes for the wrong reason.
     awk 'BEGIN{ printf "group,intercept"; for(i=1;i<=100;i++) printf ",t%d", i; printf "\n";
                 printf "G"; for(i=0;i<=100;i++) printf ",1"; printf "\n" }' > "$src/c100.csv"
-    printf 'coef.file = c100.csv\ntrim.file =\n' > "$src/system.properties"
-
-    (cd "$src" && ./linearr --terms >/dev/null 2>&1) \
+    (cd "$src" && ./linearr -c c100.csv --terms >/dev/null 2>&1) \
         && ok || no "the default build accepts a 100-term table"
 
     (cd "$src" && env -u MAKEFLAGS -u MAKELEVEL \
@@ -247,7 +278,7 @@ r1='001'+',1'*24; r1=r1+' '*(70000-len(r1)); r2='002'+',2'*24
 sys.stdout.write(r1+r2+chr(10))" > "$tmp/split.txt" 2>/dev/null || true
 if [ -s "$tmp/split.txt" ]; then
     set +e
-    out=$("$bin" < "$tmp/split.txt" 2>/dev/null); rc=$?
+    out=$(score < "$tmp/split.txt" 2>/dev/null); rc=$?
     set -e
     check "an over-long stdin line yields no prediction at all" "$out" ""
     check "and it is an error" "$rc" "1"
@@ -272,7 +303,7 @@ set +e
 set -e
 check "a nan in training is refused" "$rc" "1"
 set +e
-out=$("$bin" 001 icu_indicator=nan 2>&1); rc=$?
+out=$(score 001 icu_indicator=nan 2>&1); rc=$?
 set -e
 check "a nan on the command line is refused" "$rc" "1"
 
@@ -289,7 +320,7 @@ fi
 
 # Options that used to be accepted and silently dropped.
 set +e
-"$bin" -g 001 </dev/null >/dev/null 2>&1; rc=$?
+score -g 001 </dev/null >/dev/null 2>&1; rc=$?
 set -e
 check "-g without -t is an error" "$rc" "1"
 
@@ -336,40 +367,39 @@ set -e
 check "a headerless coefficient file is refused" "$rc" "1"
 case "$out" in *header*) ok ;; *) no "headerless message names the header: got [$out]" ;; esac
 
-# a config value that cannot be honoured is an error, not a silent default
-printf 'coef.file = %s/dup2.csv\ntrim.file =\npredict.scale = 99\n' "$tmp" > "$tmp/system.properties"
+# a rounding that cannot be honoured is an error, not a silent default. The
+# properties file used to accept predict.scale = 99 and quietly give four
+# decimals, so the configuration said one thing and the program did another.
 printf 'group,intercept,a\nX,10,1\n' > "$tmp/dup2.csv"
 set +e
-(cd "$tmp" && "$bin" X a=1 >/dev/null 2>&1); rc=$?
+(cd "$tmp" && "$bin" -c dup2.csv --scale 99 X a=1 >/dev/null 2>&1); rc=$?
 set -e
-check "an out-of-range predict.scale is refused" "$rc" "1"
-rm -f "$tmp/system.properties"
+check "an out-of-range --scale is refused" "$rc" "1"
 
 # the two case forms must agree about whitespace
 check "the named form tolerates a trailing space, as the row form does" \
-    "$("$bin" 001 'icu_indicator=1 ' 2>&1)" "$("$bin" '001,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0 ' 2>&1)"
+    "$(score 001 'icu_indicator=1 ' 2>&1)" "$(score '001,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0 ' 2>&1)"
 
-# --- the three ways to have no trim table, and the one that is not a way ------
-# system.properties said "comment this out and the trim point is just the
-# prediction". It is not: an absent key means the built-in default, so the table
-# loads and the trim is applied. The file now says so; this makes sure it stays
-# true whichever way the behaviour changes.
-mkdir -p "$tmp/tf/conf"
-printf 'group,intercept,a\nX,10,1\n'      > "$tmp/tf/conf/coefficients.csv"
-printf 'GROUP,trim_addition\nX,500\n'     > "$tmp/tf/conf/trim_additions.csv"
+# --- the trim table: named, or not there ------------------------------------
+# There used to be three ways to have no trim table and they did not agree. A
+# properties file said "comment this out and the trim point is just the
+# prediction", and that was false: an absent key meant the BUILT-IN default, so
+# the table loaded and the trim was applied. With the properties file gone there
+# are two states and they are the two a reader would guess.
+mkdir -p "$tmp/tf"
+printf 'group,intercept,a\nX,10,1\n'  > "$tmp/tf/c.csv"
+printf 'GROUP,trim_addition\nX,500\n' > "$tmp/tf/t.csv"
 
-printf 'coef.file = conf/coefficients.csv\n# trim.file = conf/trim_additions.csv\n' \
-    > "$tmp/tf/system.properties"
-check "a commented-out trim.file still loads the default table" \
-    "$(cd "$tmp/tf" && "$bin" X a=0)" "X prediction=10.0000 trim=510.0"
-
-printf 'coef.file = conf/coefficients.csv\ntrim.file =\n' > "$tmp/tf/system.properties"
-check "an EMPTY trim.file is how you turn it off" \
-    "$(cd "$tmp/tf" && "$bin" X a=0)" "X prediction=10.0000"
-
-printf 'coef.file = conf/coefficients.csv\n' > "$tmp/tf/system.properties"
-check "--no-trim turns it off too" \
-    "$(cd "$tmp/tf" && "$bin" --no-trim X a=0)" "X prediction=10.0000"
+check "--trim names the table, and it is applied" \
+    "$(cd "$tmp/tf" && "$bin" -c c.csv --trim t.csv X a=0)" "X prediction=10.0000 trim=510.0"
+check "no --trim means the trim point is the prediction" \
+    "$(cd "$tmp/tf" && "$bin" -c c.csv X a=0)" "X prediction=10.0000"
+check "--no-trim says the same thing explicitly" \
+    "$(cd "$tmp/tf" && "$bin" -c c.csv --no-trim X a=0)" "X prediction=10.0000"
+set +e
+(cd "$tmp/tf" && "$bin" -c c.csv --trim nope.csv X a=0 >/dev/null 2>&1); rc=$?
+set -e
+check "a --trim table that is not there is an error" "$rc" "1"
 
 # --- the README's teaching section must keep saying what the program says -----
 # Three transcripts explain what least squares does when it cannot answer. They
@@ -416,7 +446,7 @@ case "$(awk -F, 'NR==2{print ($4>0 && $4<100) ? "sane" : "WILD " $4}' "$tmp/r.cs
 esac
 # --residuals needs -t
 set +e
-"$bin" --residuals "$tmp/x.csv" 001 icu_indicator=1 >/dev/null 2>&1; rc=$?
+score --residuals "$tmp/x.csv" 001 icu_indicator=1 >/dev/null 2>&1; rc=$?
 set -e
 check "--residuals without -t is an error" "$rc" "1"
 

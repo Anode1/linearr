@@ -5,7 +5,7 @@
 # library the project adds for you is -lm, which the fit and the rounding need.
 # Drop in a .c (here or one directory down) and it compiles, no editing
 # this file.
-#   make | release | debug | pedantic | check | ut | cliut | readme | java
+#   make | release | debug | pedantic | check | ut | cliut | readme | java | r
 #   ut-asan | ut-ubsan
 #   | hooks | clean
 SHELL = /bin/sh
@@ -80,7 +80,7 @@ endif
 %.o: %.c
 	$(CC) $(PROJ) $(CPPFLAGS) $(CFLAGS) -MMD -c $< -o $@
 
-.PHONY: all release debug pedantic check ut cliut readme java ut-asan ut-ubsan hooks \
+.PHONY: all release debug pedantic check ut cliut readme java r ut-asan ut-ubsan hooks \
         install uninstall clean modeclean
 
 PREFIX ?= /usr/local
@@ -108,7 +108,7 @@ $(BIN): $(OBJS)
 	$(CC) $(PROJ) $(CFLAGS) $(LDFLAGS) -o $(BIN) $(OBJS) $(LDLIBS) $(LIBM)
 
 # ut: all sources with -DUNIT_TEST: main.c's main() compiles out, tests.c's in.
-# Run from the project root: the tests read conf/ and example/ by relative path.
+# Run from the project root: the tests read example/ by relative path.
 $(TESTBIN): $(SOURCES.c) $(HEADERS.h) .build-flags
 	$(CC) $(PROJ) -g -DUNIT_TEST $(CPPFLAGS) $(SOURCES.c) -o $(TESTBIN) $(LDLIBS) $(LIBM)
 ut: $(TESTBIN)
@@ -136,8 +136,15 @@ readme: $(BIN)
 java: $(BIN)
 	@sh scripts/java-check.sh
 
-# check: all four gates. Run it before a commit.
-check: ut cliut readme java
+# r: fit every example with R's lm() as well, and compare. lm() solves by QR
+# with column pivoting, a different method from the default here, so agreement
+# is evidence rather than a tautology. The README claimed this for a long time
+# with nothing running it. Skips itself where there is no R.
+r: $(BIN)
+	@sh scripts/r-check.sh
+
+# check: all five gates. Run it before a commit.
+check: ut cliut readme java r
 
 # ut-asan / ut-ubsan: the same tests under AddressSanitizer and under
 # UndefinedBehaviorSanitizer. A leak, an overflow, or UB aborts with a file:line
@@ -168,12 +175,11 @@ hooks:
 #   make install PREFIX=$$HOME/.local  -> ~/.local
 #   make install DESTDIR=/tmp/stage   -> staged, for a package
 install: $(BIN)
-	mkdir -p $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/$(BIN)/conf
+	mkdir -p $(DESTDIR)$(PREFIX)/bin $(DESTDIR)$(PREFIX)/share/$(BIN)/example
 	cp $(BIN) $(DESTDIR)$(PREFIX)/bin/$(BIN)
-	cp conf/*.csv $(DESTDIR)$(PREFIX)/share/$(BIN)/conf/
-	cp system.properties $(DESTDIR)$(PREFIX)/share/$(BIN)/ 2>/dev/null || true
+	cp example/*.csv $(DESTDIR)$(PREFIX)/share/$(BIN)/example/
 	@echo "installed $(BIN) to $(DESTDIR)$(PREFIX)/bin"
-	@echo "example tables in $(DESTDIR)$(PREFIX)/share/$(BIN)/conf (use -c for your own)"
+	@echo "example tables in $(DESTDIR)$(PREFIX)/share/$(BIN)/example (use -c for your own)"
 
 uninstall:
 	-rm -f $(DESTDIR)$(PREFIX)/bin/$(BIN)

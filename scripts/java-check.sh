@@ -43,6 +43,13 @@ for f in example/*.csv; do
     # and the scoring examples have neither.
     head=$(grep -v '^#' "$f" | head -1)
     case "$head" in group,*) ;; *) continue ;; esac
+    # A coefficient table also begins with "group,". It is a model, not training
+    # data, and fitting it produces nonsense in both implementations rather than
+    # a disagreement worth reading.
+    case "$head" in group,intercept,*) continue ;; esac
+    # And a training file needs a group, a value and at least one term, so
+    # anything narrower is not one. The trim table is two columns.
+    [ "$(printf '%s' "$head" | tr ',' '\n' | wc -l)" -ge 3 ] || continue
     # The Java fits every group in one pass and takes no options, so compare it
     # against the C's default. Both streams, since the summary is on stderr.
     ./linearr -t "$f"                     >"$tmp/c.out"  2>"$tmp/c.err"  || true

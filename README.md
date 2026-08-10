@@ -1,10 +1,14 @@
 # linearr: least squares in C, as simple as the method actually is
 
-### It reports the three ways the fit can mislead you, and the memory does not grow with the file
+### It reports the three ways the fit can mislead you, and the memory does not grow with the number of rows
 
-Reads a CSV and returns the coefficients; reads a case and returns a prediction.
-It requires a C compiler and `make`, and nothing else. The training file is read
-one row at a time, so its size does not affect how much memory the fit uses.
+Ordinary least squares (OLS) as a command-line program. Reads a CSV and returns
+the coefficients; reads a case and returns a prediction.
+It requires a C compiler and `make`, and nothing else: no LAPACK, no BLAS, no
+GSL, no third-party header of any kind. The training file is read one row at a
+time and each row is forgotten, so the number of rows does not affect how much
+memory the fit uses. The number of GROUPS does, and
+[`--footprint`](#scale) says by how much.
 
     make
     ./linearr -t mydata.csv > model.csv       # fit every group in one pass
@@ -12,9 +16,11 @@ one row at a time, so its size does not affect how much memory the fit uses.
 
 ## All of least squares, in three short pieces
 
-**What it does.** You have rows: some measurements, and a number you care about.
-It finds the straight line through them that misses by as little as possible,
-squared, so that a miss of 2 counts four times a miss of 1. The coefficients it
+**What it does.** Ordinary least squares (OLS), which is linear regression
+fitted by minimising the sum of squared residuals. You have rows: some
+measurements, and a number you care about. It finds the straight line through
+them that misses by as little as possible, squared, so that a miss of 2 counts
+four times a miss of 1. The coefficients it
 returns are how much each measurement moves the answer. That is the whole
 method; it dates from Legendre and Gauss around 1805 and remains a reasonable
 choice wherever the relationship is close to linear.
@@ -727,8 +733,8 @@ the redirect above is the whole workflow.
 
 Ask what a model expects:
 
-    $ ./linearr --terms -c conf/coefficients.csv
-    24 terms and 12 groups in conf/coefficients.csv
+    $ ./linearr --terms -c example/coefficients.csv
+    24 terms and 12 groups in example/coefficients.csv
         1  Cardioversion
         2  Cell_saver
       ...
@@ -737,55 +743,64 @@ Ask what a model expects:
 
 Score by naming the terms that are not zero; everything else is 0:
 
-    $ ./linearr 001 Cardioversion=1 icu_indicator=1
+    $ ./linearr -c example/coefficients.csv --trim example/trim_additions.csv 001 Cardioversion=1 icu_indicator=1
     001 prediction=19.9611 trim=46.5
 
 The same case as a row, every term in the table's column order. This is the form
 read from stdin, so a file of cases round trips through a pipeline:
 
-    $ ./linearr "001,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0"
+    $ ./linearr -c example/coefficients.csv --trim example/trim_additions.csv "001,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0"
     001 prediction=19.9611 trim=46.5
 
-    $ ./linearr < example/cases.csv
+    $ ./linearr -c example/coefficients.csv --trim example/trim_additions.csv < example/cases.csv
     001 prediction=19.9611 trim=46.5
 
 At two terms the row form is fine. At two hundred it is unusable, which is why
 the named form exists and is what the rest of this README uses.
 
-Files (`-c`, `--trim`, `coef.file`, `trim.file`, and `-t`'s argument) are
-looked for in the current directory first, then beside the program, so an
-installed `linearr` works from anywhere and your own table still wins where you
-have one.
+Files named with `-c`, `--trim` and `-t` are looked for in the current
+directory first, then beside the program, so an installed `linearr` finds the
+example data from anywhere and your own file still wins where you have one.
+
+**`-c` is required for scoring.** There is no default table and no search. Until
+recently there was: a `system.properties` file, and failing that a model shipped
+beside the binary, so a bare `linearr 001 x=1` answered from a table the reader
+had never seen, and the same command in two directories could give two different
+answers with nothing saying which. A model is the whole of what an answer means.
+It is not something to find by convention.
 
 When something is wrong, the message says what:
 
-    $ ./linearr 001 nosuchterm=1
-    cannot score group '001': no term 'nosuchterm' in conf/coefficients.csv; run --terms to list them
+    $ ./linearr -c example/coefficients.csv --trim example/trim_additions.csv 001 nosuchterm=1
+    cannot score group '001': no term 'nosuchterm' in example/coefficients.csv; run --terms to list them
 
 `./linearr -h` prints the options; `-d` traces to stderr.
 
-## Configuration
+## Options instead of a configuration file
 
-`system.properties`: `key = value`, `#` comments. Every key has a built-in
-default, so the file may be absent.
+There is no configuration file. Everything is an option, which is one place to
+look rather than two, and no file that has to be found before it can be read:
 
-| key | default | meaning |
+| option | default | meaning |
 | --- | --- | --- |
-| `coef.file` | `conf/coefficients.csv` | the fitted model: `group,intercept,<one column per term>`. `-c` overrides it |
-| `trim.file` | `conf/trim_additions.csv` | `group,trim_addition`. Set it empty, or pass `--no-trim`, for none |
-| `predict.scale` | 4 | digits the prediction is rounded to |
-| `trim.scale` | 1 | digits the trim point is rounded to |
+| `-c FILE` | *(required to score)* | the fitted model: `group,intercept,<one column per term>` |
+| `--trim FILE` | *(none)* | `group,trim_addition`. Without it the trim point is the prediction |
+| `--no-trim` | | says the same thing explicitly |
+| `--scale N` | 4 | decimal places the prediction is rounded to, 0 to 9 |
+| `--trim-scale N` | 1 | decimal places the trim point is rounded to, 0 to 9 |
 
-With no trim table the trim point simply equals the prediction; it is not a
-separate quantity that failed to load. A trim file *named* in the config and
-unreadable is an error; the built-in default merely being absent is not.
+This replaced a `system.properties` file with four keys, all of which duplicated
+an option, in a directory called `conf` that held no configuration and two data
+files. Two of the keys behaved differently from what the file itself documented:
+commenting out `trim.file` was said to turn the trim off and did not (an absent
+key meant the built-in default, so the table loaded), and `predict.scale = 99`
+was accepted and quietly gave four decimals. `--scale 99` is an error.
 
 **Coefficients are written to 12 significant digits**, so an exact 5 prints as
 `5`. That is far below the residual standard deviation of any fit that produced
 them, and it is significant digits rather than decimal places: four decimals
-would write every coefficient below 5e-5 as `0.0000`. `predict.scale` governs the prediction, not the
-model: rounding coefficients to four decimals would write any effect below 5e-5
-as zero and publish a different model from the one that was fitted.
+would write every coefficient below 5e-5 as `0.0000`. `--scale` governs the
+prediction, not the model.
 
 Rounding is half away from zero, not `printf`'s half to even, and it is part of
 the answer rather than presentation: the trim point is built on the *rounded*
@@ -794,11 +809,11 @@ use.
 
 ## The example data is synthetic
 
-`conf/coefficients.csv`, `conf/trim_additions.csv` and both files under
+`example/coefficients.csv`, `example/trim_additions.csv` and the other files under
 `example/` are **made up**, generated so that fitting `example/train.csv`
-returns exactly the coefficients in `conf/coefficients.csv`, which is what makes
+returns exactly the coefficients in `example/coefficients.csv`, which is what makes
 the fitter testable against a known answer. They are fitted to nothing and mean
-nothing. Point `coef.file` at your own table, or produce one with `-t`, before
+nothing. Point `-c` at your own table, or produce one with `-t`, before
 any number here is worth reading. No real data is distributed with this project.
 
 ## Origin
@@ -846,10 +861,23 @@ That is a claim about implementation, not about tools. **This does not replace
 Python, R, SAS or Matlab, and is not trying to.** Those are where a model should
 be explored, chosen, tested and argued about, and they have decades of
 statistics behind them that this has not. What this offers is a small, checkable
-implementation of one method, useful in three places: as something to test an R
-implementation against, since it agrees with `lm()` to the printed digit; on
-embedded and small ARM targets where no interpreter is going to be installed;
-and in cloud batch work, where the memory a process holds is what it costs.
+implementation of one method, useful in three places: as something to check an
+implementation against, since it reproduces the NIST certified values to eleven
+digits (see [Checked against answers somebody else
+certified](#checked-against-answers-somebody-else-certified)); on embedded and
+small ARM targets where no interpreter is going to be installed; and in cloud
+batch work, where the memory a process holds is what it costs.
+
+An earlier version of this paragraph said it agreed with R's `lm()` to the
+printed digit. Nothing here tested that, no gate could fail if it stopped being
+true, and a reviewer repeated it back as a property of the test suite. The NIST
+sets are the claim that is actually checked, on every run of `make check`. If
+you have R, the comparison takes three lines and you should not take this file's
+word for it:
+
+    d <- read.csv("example/longley.csv", comment.char = "#")
+    print(coef(lm(employment ~ deflator + gnp + unemployed +
+                  armed_forces + population + year, data = d)), digits = 12)
 
 Both architectures the CI builds on are covered on every push: `x86_64` on
 Linux and `arm64` on macOS, each running the full suite under AddressSanitizer
@@ -930,7 +958,7 @@ accumulator per group, which is memory in the groups, not in the rows.
 
 ### The original term set
 
-The 24 terms in `conf/coefficients.csv` are the production model's, and they are
+The 24 terms in `example/coefficients.csv` are the production model's, and they are
 a subset of it. The original carried **35**, over 579 groups (the scale check
 above runs at a round 580). The eleven left out are recorded here, in the order
 the original used them, so that a future hospital length-of-stay implementation
@@ -964,32 +992,40 @@ example data is synthetic* above. Anyone reimplementing this fits their own.
 ## Layout
 
 ```
-main.c            CLI front end: options, one case or a stream, print the result
-process.c/.h      THE slot: score a case (process), fit from a CSV (process_train)
-los.c/.h          the model: the schema, the coefficient tables, predict + trim
-regress.c/.h      ordinary least squares by accumulated normal equations
-qr.c/.h           the same fit by Givens rotations, without squaring (--qr)
-diag.c/.h         reads the residuals: curvature, and error that grows
-csv.c/.h          bounded CSV: read a line, split it in place
-resolve.c/.h      find a data file: the current directory, then beside the binary
-common.c/.h       safe primitives: die(), debug(), xmalloc(), xstrdup()
-utils.c/.h        bounded string helpers (rtrim/ltrim)
-params.c/.h       config: load system.properties, params_get("key")
-hash.c/.h         generic string -> void* hash table (backs params and the groups)
-constants.h       buffer sizes (the TERM ceiling lives in regress.h / los.h)
-tests.c           in-place unit tests (make ut)
-tests/cli.sh      black-box tests: the binary through a shell and a pty (make cliut)
-conf/             the example model (synthetic)
-example/          anscombe.csv (the textbook quartet), routes.csv (why groups
-                  exist), and the files the teaching sections run
-scripts/scale.sh  measures the memory claim at 200 terms and 500 groups
-scripts/bench.sh  the same job in Java, Python, awk and R, answers checked first
+c/                the C sources and headers; nothing else lives here
+  main.c          CLI front end: options, one case or a stream, print the result
+  process.c/.h    THE slot: score a case (process), fit from a CSV (process_train)
+  los.c/.h        the model: the schema, the coefficient tables, predict + trim
+  regress.c/.h    ordinary least squares by accumulated normal equations
+  qr.c/.h         the same fit by Givens rotations, without squaring (--qr)
+  diag.c/.h       reads the residuals: curvature, and error that grows
+  canon.c/.h      NIST reference datasets and their certified values
+  csv.c/.h        bounded CSV: read a line, split it in place
+  resolve.c/.h    find a data file: the current directory, then beside the binary
+  common.c/.h     safe primitives: die(), debug(), xmalloc(), xstrdup()
+  utils.c/.h      bounded string helpers (rtrim/ltrim)
+  hash.c/.h       generic string -> void* hash table (backs the groups)
+  constants.h     buffer sizes (the TERM ceiling lives in regress.h / los.h)
+  tests.c         in-place unit tests (make ut)
 java/             the second implementation; Regress.java mirrors regress.c
+example/          all the data: anscombe.csv (the textbook quartet), the NIST
+                  sets, routes.csv (why groups exist), the example model, and
+                  the files the teaching sections run
 bench/            the other languages' versions, and the coefficient comparator
-scripts/bench.sh  the same fit in C, Java and Python, checked against each other
+tests/cli.sh      black-box tests: the binary through a shell and a pty (make cliut)
+scripts/scale.sh  measures the memory claim, and fits every group to check it
+scripts/bench.sh  the same fit in C, Java, Python, awk and R, answers checked first
+scripts/java-check.sh  fits every example with both implementations and diffs
+scripts/r-check.sh     the same against R's lm(), which uses a different method
+scripts/readme-check.py runs every transcript in this file and diffs it
 scripts/hooks/    pre-push: the sanitizers, before anything reaches the remote
 Makefile          the build
 ```
+
+Code under `c/` and `java/`, data at the top level. There is no `conf/`: it held
+no configuration, only two data files, and the settings it implied are options
+now.
+
 
 ## Style
 

@@ -3,7 +3,7 @@
  *
  * A tool that only works from its own source directory is not installed, it is
  * merely built. `linearr` used to fail from anywhere else, because it opened
- * "conf/coefficients.csv" relative to the current directory and nowhere else.
+ * "example/coefficients.csv" relative to the current directory and nowhere else.
  *
  * So a name is looked for in three places, in this order:
  *   1. relative to the current directory: your files win, always;

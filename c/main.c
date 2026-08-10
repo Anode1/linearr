@@ -9,7 +9,6 @@
 #include "regress.h"
 #include "los.h"
 #include "process.h"
-#include "params.h"
 #include "constants.h"
 
 #include <stdio.h>
@@ -40,14 +39,18 @@ static void usage(FILE *out, const char *prog) {
         "         goes to stdout, the fit summary to stderr\n"
         "  -g G   fit only group G, or '*' to pool every row into one line.\n"
         "         Without -g, every group in the file is fitted, one line each\n"
-        "  -c F   read the coefficient table from F instead of system.properties\n"
+        "  -c F   the coefficient table to score against. Required for scoring:\n"
+        "         fit one with -t first, or name one you have\n"
         "  --qr   solve by QR instead of normal equations: slower per row, and\n"
         "         it does not square the condition number. Use it when the fit\n"
         "         reports a large cond=\n"
         "  --residuals F   with -t, also write one row per training row to F:\n"
         "         GROUP,observed,predicted,residual. Where the model is wrong,\n"
         "         which no summary number can show you\n"
-        "  --trim F / --no-trim   the trim table, or none\n"
+        "  --trim F   the trim table. Without it the trim point is the\n"
+        "         prediction itself\n"
+        "  --scale N / --trim-scale N   decimal places in the prediction and\n"
+        "         in the trim point, 0 to 9. Default 4 and 1\n"
         "  --terms  what the loaded coefficient file expects, in order\n"
         "  --footprint TERMS [GROUPS]   how much memory a run of that shape\n"
         "         holds, for fitting and for scoring. Neither figure depends\n"
@@ -56,7 +59,7 @@ static void usage(FILE *out, const char *prog) {
         "  --version  which build this is\n"
         "  -h     this help\n"
         "\n"
-        "Files (coef.file, trim.file, and -t's argument) are looked for in the\n"
+        "Files named with -c, --trim and -t are looked for in the\n"
         "current directory first, then beside the program.\n",
         prog, prog, prog, prog, prog);
 }
@@ -263,6 +266,8 @@ int main(int argc, char **argv) {
     static struct option longopts[] = {
         { "terms",   no_argument,       NULL, 'T' },
         { "footprint", required_argument, NULL, 'F' },
+        { "scale",      required_argument, NULL, 'S' },
+        { "trim-scale", required_argument, NULL, 'Z' },
         { "version", no_argument,       NULL, 'V' },
         { "coef",    required_argument, NULL, 'c' },
         { "trim",    required_argument, NULL, 'R' },
@@ -289,6 +294,12 @@ int main(int argc, char **argv) {
             case 'g': group = optarg; break;
             case 'T': want_terms = 1; break;
             case 'F': footprint_terms = atoi(optarg); break;
+            case 'S': if (process_set_scale(atoi(optarg)) != 0)
+                          die("--scale takes 0 to 9 decimal places");
+                      break;
+            case 'Z': if (process_set_trim_scale(atoi(optarg)) != 0)
+                          die("--trim-scale takes 0 to 9 decimal places");
+                      break;
             case 'c': process_use_coef(optarg); break;
             case 'R': process_use_trim(optarg); break;
             case 'N': process_use_trim(NULL); break;
@@ -303,8 +314,6 @@ int main(int argc, char **argv) {
 
     /* Absent or unreadable, the defaults in process.c apply; that is not an
      * error, so the program runs from anywhere with the tables beside it. */
-    if (params_load("system.properties") != 0)
-        debug("no system.properties; using built-in defaults");
 
     /* Silently ignoring an option is how a user comes to believe something
      * happened. Each of these used to be accepted and dropped. */
@@ -399,7 +408,6 @@ int main(int argc, char **argv) {
     }
 
     process_free();
-    params_free();
 
     /* Every printf above was unchecked, so `linearr -t train.csv > model.csv` on
      * a full disk or over quota wrote nothing, said nothing, and exited 0,

@@ -141,7 +141,14 @@ public class Linearr {
                     from = to + 1;
                 }
                 p = hdr.size() - 2;
-                if (p < 1) { System.err.println("no terms in the header"); System.exit(1); }
+                if (p < 1) {
+                    /* The C's words. A header this narrow is the commonest way
+                     * to hand over a file that is not training data at all, and
+                     * the two implementations used to describe it differently. */
+                    System.err.println("cannot fit: " + args[0] + " needs a header of "
+                        + "group, the observed value, and at least one term");
+                    System.exit(1);
+                }
                 response = (String) hdr.elementAt(1);
                 names = new String[p];
                 for (int j = 0; j < p; j++) names[j] = (String) hdr.elementAt(j + 2);

@@ -25,7 +25,7 @@ int process_init(char *err, size_t errsz);
 /* Override the configured table paths, for -c/--coef and --trim/--no-trim.
  * Call before process_init. process_use_trim(NULL) means deliberately none.
  * These exist because the only way to score against a model you had just
- * fitted was to create a conf/ directory and redirect into a hardcoded
+ * fitted was to create a directory and redirect into a hardcoded
  * relative path: a dead end a first-time user hit within five minutes. */
 void process_use_coef(const char *path);
 void process_use_trim(const char *path);
@@ -90,13 +90,19 @@ struct fit_info {
  * header names the terms. group selects the rows; "*" pools every row in the
  * file under that name. Writes a complete two-line coefficient file into out:
  * the header, a newline, then the fitted row, so
- *   linearr -t train.csv -g 001 > conf/coefficients.csv
+ *   linearr -t train.csv -g 001 > model.csv
  * produces a table the scorer can read straight back. info may be NULL.
  * Returns 0, or -1 (see process_error). A group with few rows still fits: see
  * info.df before believing the result. */
 /* Bytes held for ONE group while -t fits every group in one pass. The fitter,
  * the coefficients and the residual-check block, plus the record around them.
  * Multiply by the number of groups; nothing here depends on the row count. */
+/* Decimal places in the printed prediction, and in the trim point. 0..9;
+ * returns -1 and changes nothing outside that. These were keys in a properties
+ * file, which is a second way of saying what an option already says. */
+int process_set_scale(int decimals);
+int process_set_trim_scale(int decimals);
+
 size_t process_group_bytes(int nvars);
 
 /* Bytes held for one group of a LOADED coefficient table, which is the scoring

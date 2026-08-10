@@ -142,13 +142,12 @@ echo
 printf "generating a %s-group table and cases ... " "$GROUPS"
 gen_table "$tmp/coef.csv"
 gen_cases "$tmp/cases.csv" "$BIG"
-printf 'coef.file = %s\ntrim.file =\n' "$tmp/coef.csv" > "$tmp/system.properties"
 echo "done"
 
 echo "SCORE: $BIG cases against $GROUPS groups:"
 cd "$tmp"
 printf "  %-12s %s\n" "cases" "seconds  peak RSS (KB)"
-printf "  %-12s %s\n" "$BIG" "$(run sh -c "'$bin' < '$tmp/cases.csv' > /dev/null")"
+printf "  %-12s %s\n" "$BIG" "$(run sh -c "'$bin' -c '$tmp/coef.csv' --no-trim < '$tmp/cases.csv' > /dev/null")"
 echo
 # Asked of the program rather than recomputed here. This line used to say
 # "$GROUPS groups x ($TERMS + 1) doubles", which counted the coefficients and

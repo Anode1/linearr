@@ -2,13 +2,12 @@
 /* tests.c: in-place unit tests, run by `make ut` (which builds every source
  * with -DUNIT_TEST; this file is empty otherwise, and main.c's main() is then
  * compiled out). Add a CHECK when you add a feature. Idempotent, and run from
- * the project root: conf/ and example/ are read by relative path. */
+ * the project root: example/ is read by relative path. */
 #ifdef UNIT_TEST
 
 #include "common.h"
 #include "utils.h"
 #include "hash.h"
-#include "params.h"
 #include "csv.h"
 #include "regress.h"
 #include "qr.h"
@@ -62,8 +61,8 @@ static int coef_row(const char *row, double *v, int max) {
     return n;
 }
 
-#define COEF "conf/coefficients.csv"
-#define TRIM "conf/trim_additions.csv"
+#define COEF "example/coefficients.csv"
+#define TRIM "example/trim_additions.csv"
 
 /* The pair, as the scorer loads them. They are two calls because the trim
  * table is optional; see test_los_trims. */
@@ -104,13 +103,18 @@ static void test_hash(void) {
     hash_delete(h);
 }
 
-static void test_params(void) {
-    CHECK(params_load("system.properties") == 0, "params load");
-    CHECK(streq(params_get("coef.file"), COEF),
-          "params dotted key");
-    CHECK(params_get("nope") == NULL, "params miss");
-    CHECK(params_load("no-such-file") == -1, "params open error");
-    params_free();
+/* The two roundings, which were keys in a properties file and are options now.
+ * The properties path accepted a value outside 0..9 by falling back to the
+ * default without a word; the option refuses it. */
+static void test_scales(void) {
+    CHECK(process_set_scale(0) == 0 && process_set_scale(9) == 0,
+          "scale: 0 and 9 are accepted");
+    CHECK(process_set_scale(-1) == -1 && process_set_scale(10) == -1,
+          "scale: outside 0..9 is refused, not silently defaulted");
+    CHECK(process_set_trim_scale(3) == 0 && process_set_trim_scale(99) == -1,
+          "trim scale: the same");
+    (void)process_set_scale(4);              /* leave the defaults as found */
+    (void)process_set_trim_scale(1);
 }
 
 static void test_csv(void) {
@@ -429,6 +433,13 @@ static void test_named_case(void) {
     char out[MAX_OUTPUT], row[MAX_INPUT];
     char *a[2];
     int on[2];
+
+    /* Named, because there is no longer anything to fall back to. Scoring used
+     * to find a table by searching: a properties file, then one shipped beside
+     * the binary. These tests passed on that search, which meant they were also
+     * testing the search rather than the scoring. */
+    process_use_coef(COEF);
+    process_use_trim(TRIM);
 
     a[0] = (char *)"Cardioversion=1";
     a[1] = (char *)"icu_indicator=1";
@@ -1419,7 +1430,7 @@ int main(int argc, char **argv) {
     if (argc > 0 && argv[0] && argv[0][0]) t_argv0 = argv[0];
     test_utils();
     test_hash();
-    test_params();
+    test_scales();
     test_csv();
     test_regress();
     test_wide_fit();

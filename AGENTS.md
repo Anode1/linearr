@@ -30,7 +30,7 @@ Do not change behaviour without changing these first.
     make hooks    # install the pre-push hook (runs both sanitizers)
     make clean
 
-Run the tests from the project root: they read `conf/` and `example/` by
+Run the tests from the project root: they read `example/` by
 relative path.
 
 Before tagging, run `make ut-asan` and `make ut-ubsan`. You do not have to
@@ -52,7 +52,7 @@ refactor:
   simpler" throws this away, and it is the reason the program exists. `sh
   scripts/scale.sh` is the check: fit the same model over 10x the rows and peak
   RSS must not move. Three things allocate, all bounded by the model or the
-  config: the coefficient table (`los.c`), the config table (`params.c`), and
+  config: the coefficient table (`los.c`), and
   one accumulator per group during a fit-everything pass (`process.c`). Adding a
   fourth needs an argument. Note also that the fitter's matrices are STATIC, not
   automatic: as locals they needed 1.18 MB of contiguous stack and killed the
@@ -179,7 +179,7 @@ Red -> green -> refactor. Every change keeps the whole suite green.
 
 ## The numbers in the tests are load-bearing
 
-`example/train.csv` was generated from `conf/coefficients.csv`, so the fit must
+`example/train.csv` was generated from `example/coefficients.csv`, so the fit must
 return those coefficients to the last printed digit; `example/simple-train.csv`
 is `5 + 2.5*km + 1.5*stops` and must come back as exactly that. When one of
 those assertions fails, the fitter is wrong; do not adjust the expectation to
@@ -188,6 +188,6 @@ values with it and say so in the commit.
 
 ## The data is synthetic, and stays that way
 
-Everything in `conf/` and `example/` is generated. No real data belongs in this
+Everything in `example/` is generated. No real data belongs in this
 repository: not as a fixture, not as an example, not "temporarily". A user
-supplies their own tables through `coef.file` and `trim.file`.
+supplies their own tables through `-c` and `--trim`.

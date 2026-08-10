@@ -600,7 +600,7 @@ static int append_str(char *out, size_t outsz, size_t *used, const char *s) {
  *
  * Twelve digits prints 5 as 5, 2.5 as 2.5, and 1.5e-06 as 1.5e-06, and the
  * value read back differs from the fitted double by at most one part in 1e12.
- * predict.scale governs the PREDICTION, where the rounding is part of the
+ * --scale governs the PREDICTION, where the rounding is part of the
  * published answer; it has no business here. */
 static int append_num(char *out, size_t outsz, size_t *used, double v) {
     int w = snprintf(out + *used, outsz - *used, ",%.12g", v);

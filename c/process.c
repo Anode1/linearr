@@ -14,7 +14,6 @@
 #include "regress.h"
 #include "qr.h"
 #include "diag.h"
-#include "params.h"
 #include "resolve.h"
 #include "hash.h"
 #include "common.h"
@@ -43,8 +42,6 @@ typedef char name_fits_in_field[(LOS_NAME_MAX + 1 <= CSV_FIELD_MAX) ? 1 : -1];
 typedef char header_fits_in_line[
     ((LOS_MAX_VARS + 2) * (LOS_NAME_MAX + 1) + GROUP_MAX < CSV_LINE_MAX) ? 1 : -1];
 
-#define DEFAULT_COEF_FILE "conf/coefficients.csv"
-#define DEFAULT_TRIM_FILE "conf/trim_additions.csv"
 #define DEFAULT_PREDICT_SCALE 4
 #define DEFAULT_TRIM_SCALE 1
 
@@ -173,22 +170,27 @@ static int fail(const char *fmt, ...) {
 
 const char *process_error(void) { return err_buf; }
 
-static const char *param_or(const char *key, const char *fallback) {
-    const char *v = params_get(key);
-    return (v && v[0]) ? v : fallback;
+/* The two roundings, set by --scale and --trim-scale. They were keys in a
+ * system.properties file, which is a second way of saying what an option
+ * already says, in a file that has to be found before it can be read, in a
+ * directory called conf that held no configuration and two data files. Options
+ * are the whole interface now.
+ *
+ * A scale outside 0..9 is rejected by the option parser rather than falling
+ * back to the default, which the properties file used to do without a word. */
+static int predict_scale = DEFAULT_PREDICT_SCALE;
+static int trim_scale    = DEFAULT_TRIM_SCALE;
+
+int process_set_scale(int decimals) {
+    if (decimals < 0 || decimals > 9) return -1;
+    predict_scale = decimals;
+    return 0;
 }
 
-/* A scale outside 0..9 used to fall back to the default without a word, so
- * `predict.scale = 99` quietly produced four decimals and the config lied about
- * what the program was doing. A setting that cannot be honoured is an error. */
-static int param_int(const char *key, int fallback, int *bad) {
-    const char *v = params_get(key);
-    char *end;
-    long n;
-    if (!v || v[0] == '\0') return fallback;
-    n = strtol(v, &end, 10);
-    if (*end != '\0' || n < 0 || n > 9) { if (bad) *bad = 1; return fallback; }
-    return (int)n;
+int process_set_trim_scale(int decimals) {
+    if (decimals < 0 || decimals > 9) return -1;
+    trim_scale = decimals;
+    return 0;
 }
 
 static int ensure_tables(void) {
@@ -206,44 +208,33 @@ static int ensure_tables(void) {
     if (tables_loaded && los_nvars() > 0) return 0;
     tables_loaded = 0;
 
-    want = coef_override ? coef_override : param_or("coef.file", DEFAULT_COEF_FILE);
+    /* Named, or nothing. There used to be a search: a properties file, then a
+     * table shipped beside the binary, so a bare run scored against a demo
+     * model the reader had never seen, and the same command in two directories
+     * could answer with two different models without saying so. A model is the
+     * whole of what the answer means; it is not something to find by
+     * convention. */
+    if (!coef_override)
+        return fail("no coefficient table. Name one with -c FILE, or fit one "
+                    "first: linearr -t TRAIN.CSV > model.csv");
+    want = coef_override;
     if (resolve_file(want, path, sizeof path) != 0)
-        return fail("cannot find the coefficient table %s; point coef.file "
-                    "in system.properties at yours, or fit one with -t", path);
+        return fail("cannot find the coefficient table %s", path);
     if (los_load(path) != 0) return fail("%s", los_error());
     (void)snprintf(coef_path, sizeof coef_path, "%s", path);
 
-    /* The trim table is optional in three distinguishable ways, and they are
-     * not the same thing: named in the config and unreadable is a failure the
-     * user asked for and must hear about; set to empty means deliberately none;
-     * absent from the config means the built-in path, which is only a default
-     * and may simply not be there. Treating all three as fatal made a
-     * coefficient table produced by -t impossible to score against. */
-    trim = trim_override_set ? trim_override : params_get("trim.file");
-    if (trim_override_set && !trim) {
-        debug("process: --no-trim; the trim point is the prediction");
-    } else if (trim && trim[0] == '\0') {
-        debug("process: trim.file is empty; the trim point is the prediction");
-    } else {
-        const char *tw = trim ? trim : DEFAULT_TRIM_FILE;
-        if (resolve_file(tw, path, sizeof path) != 0 || los_load_trims(path) != 0) {
-            if (trim) {                       /* asked for by name: their call */
-                los_free();
-                return fail("%s (pass --no-trim, or set trim.file empty, if "
-                            "there is none)", los_error());
-            }
-            debug("process: no %s; the trim point is the prediction", DEFAULT_TRIM_FILE);
-        }
-    }
-
-    {   int bad = 0;
-        (void)param_int("predict.scale", DEFAULT_PREDICT_SCALE, &bad);
-        (void)param_int("trim.scale", DEFAULT_TRIM_SCALE, &bad);
-        if (bad) {
-            los_free();
-            return fail("predict.scale and trim.scale must be whole numbers "
-                        "from 0 to 9");
-        }
+    /* The trim table is optional, and now in only two ways rather than three:
+     * named with --trim and unreadable is a failure the user asked for and must
+     * hear about; not named at all means there is none, and the trim point is
+     * the prediction. The third way was "named in system.properties", which is
+     * gone with the file. */
+    trim = trim_override_set ? trim_override : NULL;
+    if (!trim || trim[0] == '\0') {
+        debug("process: no --trim; the trim point is the prediction");
+    } else if (resolve_file(trim, path, sizeof path) != 0 ||
+               los_load_trims(path) != 0) {
+        los_free();
+        return fail("%s (leave --trim off if there is none)", los_error());
     }
 
     tables_loaded = 1;
@@ -275,8 +266,8 @@ static int score_case(const struct los_case *c, char *out, size_t outsz) {
         return fail("no group '%s' in %s (%ld groups there)",
                     c->group, coef_path, los_ngroups());
 
-    pscale = param_int("predict.scale", DEFAULT_PREDICT_SCALE, NULL);
-    tscale = param_int("trim.scale", DEFAULT_TRIM_SCALE, NULL);
+    pscale = predict_scale;
+    tscale = trim_scale;
 
     /* The trim point is built on the ROUNDED prediction, not the raw one: the
      * published figure is what the next step is entitled to use. */
