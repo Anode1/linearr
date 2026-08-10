@@ -46,11 +46,19 @@ jobs:
         run: make ut
       - name: CLI black-box tests
         run: make cliut
+      # One platform only. A transcript records the digits ONE machine printed,
+      # and on the numerically sensitive examples those digits are the
+      # platform's: nearly-the-same.csv gives 2.00002262993 on x86-64 with gcc
+      # and 2.00015811817 on arm64 with clang, both correct. scale.sh also uses
+      # GNU `time -f`, which macOS does not have. Gating the transcripts twice
+      # asserts something they never claimed.
       - name: README transcripts still match what the program prints
+        if: matrix.os == 'ubuntu-latest'
         run: make readme
       - name: the Java twin still behaves like the C
         run: make java
       - name: the fit still agrees with R's lm()
+        if: matrix.os == 'ubuntu-latest'
         run: make r
       - name: strict warnings
         run: make pedantic
