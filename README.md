@@ -1,4 +1,6 @@
-# linearr: ordinary least squares in C
+# linearr: least squares in C, as simple as the method actually is
+
+### It reports the three ways the fit can mislead you, and the memory does not grow with the file
 
 Reads a CSV and returns the coefficients; reads a case and returns a prediction.
 It requires a C compiler and `make`, and nothing else. The training file is read
