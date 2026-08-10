@@ -5,8 +5,7 @@
 Ordinary least squares (OLS) as a command-line program. Reads a CSV and returns
 the coefficients; reads a case and returns a prediction.
 It requires a C compiler and `make`, and nothing else: no LAPACK, no BLAS, no
-GSL, no third-party header of any kind. Changing it rather than using it:
-[`doc/INTERNALS.md`](doc/INTERNALS.md). The training file is read one row at a
+GSL, no third-party header of any kind. The training file is read one row at a
 time and each row is forgotten, so the number of rows does not affect how much
 memory the fit uses. The number of GROUPS does, and
 [`--footprint`](#scale) says by how much.
@@ -15,84 +14,20 @@ memory the fit uses. The number of GROUPS does, and
     ./linearr -t mydata.csv > model.csv       # fit every group in one pass
     ./linearr -c model.csv A x=3              # score a case against it
 
-## All of least squares, in three short pieces
+## What least squares is
 
 **What it does.** Ordinary least squares (OLS), which is linear regression
 fitted by minimising the sum of squared residuals. You have rows: some
 measurements, and a number you care about. It finds the straight line through
-them that misses by as little as possible, squared, so that a miss of 2 counts
-four times a miss of 1. The coefficients it
-returns are how much each measurement moves the answer. That is the whole
-method; it dates from Legendre and Gauss around 1805 and remains a reasonable
-choice wherever the relationship is close to linear.
+them that leaves the smallest total error, counting each miss squared. The
+coefficients are how much each measurement moves the answer. The method is
+Legendre and Gauss, around 1805, and it still fits wherever the relationship is
+close to linear.
 
-In three situations the fit succeeds and the result is not what it appears to
-be. The program reports all three.
-
-**One: the data cannot tell two columns apart.** If `night` and `headlights`
-are 1 on exactly the same rows, because no journey had one without the other,
-the data can say the pair adds 8 minutes. It cannot say how to divide those 8
-between them. Every division fits equally well, so there is nothing to
-determine:
-
-    $ ./linearr -t example/together.csv
-    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 5 rows, R2=0.5697, resid SD=4.397, 1 term unidentified and set to 0, df=3
-    # response: minutes
-    group,intercept,night,headlights
-    A,6,8,0
-    # pinned A: collinear headlights
-
-All 8 is assigned to the first column and the second is set to 0, with a note
-recording that this happened. Without the note the 0 would be indistinguishable
-from an estimate that headlights make no difference. A column that never varies at all is a
-different verdict, and the program prints it as `constant` rather than
-`collinear`: with a collinear pair there is an effect that cannot be attributed,
-and with a constant column there is nothing to attribute.
-
-**Two: no degrees of freedom left.** Three rows and three unknowns will fit perfectly,
-the way two points always define a line exactly. It would fit perfectly on any
-numbers whatsoever, so a perfect fit tells you nothing:
-
-    $ ./linearr -t example/three-rows.csv
-    reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 3 rows, R2=1.0000, df=0, cond=1.33 (normal equations)
-    warning: at least one group has no residual degrees of freedom; its line passes through every row by construction. Fit those groups on more rows.
-    # response: minutes
-    group,intercept,km,stops
-    A,1,3,6
-
-*Degrees of freedom* is rows minus the parameters the data could actually
-identify, and it is the amount of disagreement the fit had to accommodate. Not
-rows minus unknowns: the first example above has 5 rows and 3 unknowns and
-reports `df=3`, because one of its terms was pinned and never estimated. At zero there is none, so the quality
-of the fit is not evidence of anything. Six rows against three unknowns leaves
-three rows' worth, and it is that residual disagreement which makes a small
-error informative.
-
-**Three: the arithmetic squares the data before solving.** Keeping the sums of
-products rather than the rows is what bounds the memory, and it costs precision:
-squaring roughly halves the significant digits available. With two columns that
-differ in the sixth decimal, asked for `1 + 2*x1 + 3*x2`:
-
-    $ ./linearr -t example/nearly-the-same.csv
-    reading: column 1 is the group, 'value' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 40 rows, R2=1.0000, resid SD<3.109e-08, df=37, cond=5.34e+10 (normal equations)
-    warning: at least one group is ill-conditioned (cond=5.34e+10); the trailing digits of its coefficients are noise. Try --qr, which does not square the condition number.
-    # response: value
-    group,intercept,x1,x2
-    A,1.00000000001,2.00002262993,2.99997737008
-
-It returns 2.00002262993 and 2.99997737008 where the true values are 2 and 3,
-a loss of about five significant digits, and it reports the fact. Those trailing
-digits are not reproducible across platforms either: the same source on macOS
-returns 2.00015811817, because the two maths libraries round differently and
-this design amplifies the difference. That is what an ill-conditioned fit is. A method that does not
-form the cross-products first, such as QR or SVD, would separate the two
-columns. R2 does not detect this: an ill-conditioned fit still describes its own
-training sample closely, so its in-sample error stays small while its
-predictions do not. The `cond=` figure is the diagnostic, and a warning is
-printed above 1e8.
+In three situations the fit succeeds and the answer is not what it looks like:
+the data cannot tell two columns apart, no residual freedom is left, or the
+arithmetic has run out of digits. The program reports all three.
+[`doc/NUMERICS.md`](doc/NUMERICS.md) works through each with the example data.
 
 ## The textbook case: Anscombe's quartet
 
@@ -191,7 +126,7 @@ demonstrated in its own section below:
   1e-6 or better on every example, and to 1e-11 on most of them. Both run in
   `make check`, and `lm()` solves by a different method, so the agreement is
   evidence and not a tautology.
-  [Checked against answers somebody else certified](#checked-against-answers-somebody-else-certified)
+  [Checked against answers somebody else certified](doc/NUMERICS.md#checked-against-answers-somebody-else-certified)
 - **It reads the residuals.** R2 and a residual SD are averages over the
   residuals and cannot see structure in them. This names the term whose square
   explains what is left, tests the fitted value for a missing interaction, and
@@ -237,7 +172,7 @@ names the terms:
 
     $ ./linearr -t example/simple-train.csv > model.csv
     reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 2 groups, 13 rows, worst R2=1.0000, worst resid SD<4.007e-07, least df=3, worst cond=1.03 (normal equations)
+    fit: 2 groups, 13 rows, worst R2=1.0000, worst resid SD<5.17e-07, least df=3, worst cond=1.03 (normal equations)
 
     $ cat model.csv
     # response: minutes
@@ -264,7 +199,7 @@ purpose, predicting stops from minutes and distance:
 
     $ ./linearr -t example/simple-train.csv -y stops
     reading: column 1 is the group, 'stops' is the value being predicted, and the other 2 columns are terms
-    fit: 2 groups, 13 rows, worst R2=1.0000, worst resid SD<4.015e-08, least df=3, worst cond=57.6 (normal equations)
+    fit: 2 groups, 13 rows, worst R2=1.0000, worst resid SD<5.346e-08, least df=3, worst cond=57.6 (normal equations)
     # response: stops
     group,intercept,minutes,km
     A,-3.33333333333,0.666666666667,-1.66666666667
@@ -338,7 +273,7 @@ of route. The terms are the same everywhere; what each term is worth is not:
 
     $ ./linearr -t example/routes.csv
     reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 3 groups, 18 rows, worst R2=1.0000, worst resid SD<5.368e-07, least df=3, worst cond=1.02 (normal equations)
+    fit: 3 groups, 18 rows, worst R2=1.0000, worst resid SD<6.994e-07, least df=3, worst cond=1.02 (normal equations)
     # response: minutes
     group,intercept,km,stops
     city,5,3,2
@@ -384,7 +319,7 @@ what it took, which it does, first, on every fit:
 
     $ ./linearr -t example/simple-train.csv
     reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 2 groups, 13 rows, worst R2=1.0000, worst resid SD<4.007e-07, least df=3, worst cond=1.03 (normal equations)
+    fit: 2 groups, 13 rows, worst R2=1.0000, worst resid SD<5.17e-07, least df=3, worst cond=1.03 (normal equations)
     # response: minutes
     group,intercept,km,stops
     A,5,2.5,1.5
@@ -442,10 +377,10 @@ The common thread: this reads files a program wrote for it, not files a
 spreadsheet exported. One pass of `tr`, `awk` or `csvkit` puts a real CSV into
 this shape, and doing it there keeps the decisions where you can see them.
 
-## Options instead of a configuration file
+## Options
 
-There is no configuration file. Everything is an option, which is one place to
-look rather than two, and no file that has to be found before it can be read:
+Every setting is an option. There is no configuration file to find, write or
+keep in step with the command line:
 
 | option | default | meaning |
 | --- | --- | --- |
@@ -594,16 +529,16 @@ from. `--stats` writes the table:
 
     $ ./linearr -t example/routes.csv --stats -
     reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
-    fit: 3 groups, 18 rows, worst R2=1.0000, worst resid SD<5.368e-07, least df=3, worst cond=1.02 (normal equations)
+    fit: 3 groups, 18 rows, worst R2=1.0000, worst resid SD<6.994e-07, least df=3, worst cond=1.02 (normal equations)
     # response: minutes
     group,intercept,km,stops
     city,5,3,2
     group,rows,df,r2,resid_sd,cond,pinned
-    city,6,3,1.000000,<5.36796492495e-07,1.02103,0
+    city,6,3,1.000000,<6.99383906911e-07,1.02103,0
     suburb,4,2,1.5
-    suburb,6,3,1.000000,<3.66558788568e-07,1.02103,0
+    suburb,6,3,1.000000,<4.73703684717e-07,1.02103,0
     highway,8,1,5
-    highway,6,3,1.000000,<3.19594302617e-07,1.02103,0
+    highway,6,3,1.000000,<3.82817762454e-07,1.02103,0
 
 R gets this from `broom::glance` over a `split`; here it is one flag and one
 pass.
@@ -671,132 +606,30 @@ accumulates `X'X`, which squares the condition number of the design, so a badly
 scaled or near-collinear problem loses roughly twice the digits it needs to. For
 indicator columns and modestly scaled data that is usually not the limiting
 factor, and `cond=` says when it is. `--qr` solves the same fit without squaring
-anything and remains streaming; see [Two solvers](#two-solvers-and-how-accurate-each-one-is).
+anything and remains streaming; see [Two solvers](#two-solvers).
 
-## Two solvers, and how accurate each one is
+## Two solvers
 
-The fit accumulates `X'X` and solves it. That is what bounds the memory, and it
-squares the condition number of the design, so a near-collinear or badly scaled
-problem loses about twice the digits it needs to. `--qr` rotates each row into a
-triangular factor instead, with Givens rotations, one row at a time. It squares
-nothing. It is still streaming. Its factor is `p^2 + 7p + 6` doubles against the
-normal equations' `p^2 + 2p`, so the accumulator is larger by `5p + 6`: at 24
-terms, 750 doubles against 624. Counting what a caller actually has to
-allocate reverses that, because the elimination needs a `p^2 + p` workspace
-that the rotation does not: 750 against 1224 at 24 terms.
-
+The default accumulates `X'X`, which bounds the memory and squares the
+condition number of the design. `--qr` rotates each row into a triangular
+factor instead, one row at a time, and squares nothing. It is still streaming.
 On `example/nearly-the-same.csv`, where two columns differ in the sixth decimal
 and the answer is `1 + 2*x1 + 3*x2`:
 
     normal equations   A,1.00000000001,2.00002262993,2.99997737008
     --qr               A,1,1.99999999974,3.00000000026
 
-Five correct digits against ten. Both report `cond=`, and neither figure is a
-condition number in the textbook sense: each is a ratio of pivots, on
-differently scaled matrices, meant as an order-of-magnitude alarm. They are not comparable
-to each other, which is why the summary names the solver, and no fixed
-relationship holds between them: on the example above they are 5.34e+10 and
-2.78e+06.
+Five correct digits against ten. The fit summary reports `cond=`; when it is
+large, `--qr` is the one to use.
 
-`--qr` is not a strictly better solver. It does not centre the data, and two
-consequences follow. Its rank test needs a looser tolerance and still cannot
-separate a dependent column from an independent one once the columns sit near
-1e9, where `cond=` reports the trouble but the rank test does not cut. And its
-`cond=` is not comparable with the default's, because one describes columns
-about their means and the other does not. The cost in time, measured at 300k
-rows by 20 terms, is about 7 percent.
+**Both are checked against answers computed by somebody else.** The NIST
+reference values for Norris and Longley come back to eleven digits, and R's
+`lm()` agrees to 1e-11 on most examples and 1e-6 on all of them. `lm()` solves
+by a different method, so the agreement is evidence rather than the same
+arithmetic checked twice. `make check` runs both comparisons.
 
-The algorithm is Gentleman's 1974 row-wise updating QR, which R's `biglm` has
-used for two decades. Nothing about the method is new here.
-
-### Checked against answers somebody else certified
-
-Every test a project writes for itself checks the code against arithmetic the
-same project wrote. If the solver and the expected value came from the same
-understanding, they are wrong together and the suite stays green.
-
-So the suite also fits the NIST Statistical Reference Datasets, whose certified
-values are computed to fifteen digits.
-
-**Norris**, the easy one, here because a suite that only tests hard cases does
-not notice when something ordinary breaks:
-
-    $ ./linearr -t example/norris.csv
-    reading: column 1 is the group, 'y' is the value being predicted, and the other 1 column is a term. Use -y NAME if that is the wrong column
-    fit: 36 rows, R2=1.0000, resid SD=0.8848, df=34
-    # response: y
-    group,intercept,x
-    A,-0.262323073774,1.00211681802
-
-The certified values are -0.262323073774029 and 1.00211681802045. Twelve digits
-agree, which is every digit printed.
-
-**Longley**, the standard hard case:
-
-    $ ./linearr -t example/longley.csv
-    reading: column 1 is the group, 'employment' is the value being predicted, and the other 6 columns are terms. Use -y NAME if that is the wrong column
-    fit: 16 rows, R2=0.9955, resid SD=304.9, df=9, cond=934 (normal equations)
-    # response: employment
-    group,intercept,deflator,gnp,unemployed,armed_forces,population,year
-    A,-3482258.6346,15.0618722714,-0.0358191792926,-2.02022980382,-1.03322686717,-0.0511041056535,1829.15146461
-
-The certified intercept is -3482258.63459582 and the coefficient on year
-1829.15146461355. All seven agree to eleven digits, which is as many as the
-output prints. The plain solver manages it because it accumulates centered
-co-moments rather than raw cross-products.
-
-**Wampler1** separates the two solvers. Every certified coefficient is 1 and the
-certified residual is exactly 0, so anything else is the solver's own error with
-nothing in the data to hide behind.
-
-    $ ./linearr -t example/wampler1.csv
-    reading: column 1 is the group, 'y' is the value being predicted, and the other 5 columns are terms. Use -y NAME if that is the wrong column
-    fit: 21 rows, R2=1.0000, resid SD=0.02282, df=15, cond=9.96e+04 (normal equations)
-    # response: y
-    group,intercept,x,x2,x3,x4,x5
-    A,0.999999995576,0.999999996707,1.0000000034,0.999999999361,1.00000000004,0.999999999999
-
-    $ ./linearr -t example/wampler1.csv --qr
-    reading: column 1 is the group, 'y' is the value being predicted, and the other 5 columns are terms. Use -y NAME if that is the wrong column
-    fit: 21 rows, R2=1.0000, resid SD=6.663e-11, df=15, cond=234 (QR)
-    # response: y
-    group,intercept,x,x2,x3,x4,x5
-    A,1.00000000044,0.999999999992,1.00000000001,0.999999999997,1,1
-
-The true residual SD is zero. The normal equations report 0.0228 and QR
-7e-11: x5 times x5 reaches 1e16 and a double has no places left for the
-difference, and QR never forms that product. That is the case for `--qr`, on
-data a reader can check.
-
-Both solvers are held to these numbers by `make check`, and the example files
-are held to them separately, so neither the code nor the data can drift alone.
-
-R is the second reference, and an independent one: `lm()` solves by QR with
-column pivoting, which is neither of the methods here, so agreement is evidence
-rather than the same arithmetic checked twice.
-
-    $ sh scripts/r-check.sh
-    file                         --qr vs lm() default vs lm()
-    example/anscombe.csv         1.51e-12     1.51e-12
-    example/curve.csv            1.32e-08     1.05e-07
-    example/longley.csv          4.97e-12     3.48e-12
-    example/nearly-the-same.csv  1.30e-11     1.13e-05
-    example/norris.csv           4.53e-13     4.53e-13
-    example/routes.csv           3.20e-15     3.20e-15
-    example/simple-train.csv     1.18e-15     1.18e-15
-    example/three-rows.csv       6.66e-16     6.66e-16
-    example/together.csv         4.44e-16     4.44e-16
-    example/train.csv            4.25e-15     4.25e-15
-    example/wampler1.csv         3.35e-10     4.53e-09
-    R: 11 agreed with lm() to 1e-6 under --qr, 0 differed, 5 not a training file
-
-The two columns differ by six orders of magnitude on `nearly-the-same.csv`,
-which is the file that exists to show what forming `X'X` costs. `make r` runs
-this and skips itself where R is not installed.
-
-Only the `--qr` column is a gate. The default column is printed and not tested,
-because squaring the condition number is what that solver does and a threshold
-on it would be a threshold on the documented behaviour.
+Where each solver loses digits, what the certified figures are term by term,
+and what a long run costs in accuracy: [`doc/NUMERICS.md`](doc/NUMERICS.md).
 
 ## Scale
 
@@ -807,91 +640,6 @@ adding a column to a file, and the same binary fits a 24-term model and a
 accumulated into centered cross-products one at a time and then forgotten, and
 nothing on the row path allocates.
 
-The default build takes **256 terms** and any number of groups. That ceiling is
-what decides the fitter's footprint, and you set it at build time:
-
-    make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32'
-
-| ceiling | one group holds | note |
-| --- | --- | --- |
-| 32 terms | 13.1 KB | |
-| 64 | 41.9 KB | |
-| 128 | 147 KB | |
-| 256 (default) | 550 KB | |
-| 510 | 2.1 MB | the maximum; needs a rebuild to measure, and above it raise `CSV_MAX_FIELDS` too |
-
-Those are `./linearr --footprint N 1`, which is the figure the program
-allocates rather than one written down beside it. An earlier version of this
-table was about twice each of them, because it counted the fitter's matrix
-twice.
-
-Three things that table does **not** cover:
-
-- The fitter's matrices live in **static storage, not on the stack**, so the
-  ceiling costs no stack at all and cannot overflow one.
-- The **stack** requirement is about **190 KB**, and it is the line buffers in
-  `constants.h`, which are derived from the ceiling rather than fixed. Measured
-  at the default: it runs under `ulimit -s 192` and fails under 160. Setting the
-  ceiling is all a small target needs, and it pays twice: a
-  `-DLOS_MAX_VARS=32 -DREGRESS_MAX_VARS=32` build runs under `ulimit -s 64`.
-- Fitting **every** group in one pass holds one accumulator per group. That is
-  the fitter, the coefficients and the residual-check block, and `linearr
-  --footprint TERMS GROUPS` prints it: 8.4 MB for 580 groups of 35 terms, which
-  `scripts/scale.sh` then measures at 8.5 MB. It is still never a function of
-  how many rows you feed it.
-
-`scripts/scale.sh` exists to falsify the memory claim rather than repeat it: it
-fits the same model over row counts an order of magnitude apart and prints peak
-RSS for each. If those numbers tracked the data, the claim would be wrong and
-this section would have to change. Run at the shape the original production
-model had (35 terms, 580 groups), output verbatim:
-
-    $ sh scripts/scale.sh 35 580 10000 100000
-    linearr scale check: 35 terms, 580 groups
-
-    generating training data (10000 and 100000 rows) ... done (816K, 8.0M)
-    FIT: the same 35-term model, 10000 rows then 100000:
-      rows         seconds  peak RSS (KB)
-      10000        0.01 2432
-      100000       0.12 2432
-      ^ RSS should be flat: 10x the data, the same memory.
-
-    generating 100000 rows spread over 580 groups ... done
-    FIT ALL: the same rows, one line per group:
-      groups       seconds  peak RSS (KB)
-      1            0.12 2432
-      580          0.14 11136
-      ^ this one is NOT flat, and should not be: the difference is the
-        per-group figure below, times 580.
-
-    generating a 580-group table and cases ... done
-    SCORE: 100000 cases against 580 groups:
-      cases        seconds  peak RSS (KB)
-      100000       0.07 3584
-
-    Memory grows with the GROUPS and not with the rows. What that costs here:
-      35 terms, 580 groups
-
-      fitting, -t, one accumulator per group
-        per group   15232 bytes
-        in total    8.4 MB
-
-      scoring, a loaded coefficient table
-        per group   2064 bytes
-        in total    1.1 MB
-
-      The scoring figure does not move with the term count: the
-      coefficient array is sized at this build's ceiling of 256, so a
-      small model pays for a large one. The fitting figure does move.
-
-      Neither depends on the number of ROWS:
-      the same figures cover a thousand rows and a trillion.
-
-Ten times the data, the same memory: that is the first pair of rows. The second
-pair is the part a memory claim usually omits. Fitting 580 groups instead of one
-costs 8.5 MB more, and the per-group figure printed underneath predicts 8.4 MB,
-so the script measures the claim rather than restating it. Time scales with the
-number of rows, memory with the number of groups.
 
 **2,000,000 rows by 8 terms, a 46 MB file, fitted in 0.42 s using 2.4 MB**, and
 the same through a pipe rather than a file. Nothing lands on disk.
@@ -934,6 +682,9 @@ that may not. On 200 rows of an exact quadratic fitted with a line, with x near
 misses by 0.37. `--qr` carries the residual through the rotation and does not
 pay this at all.
 
+What a long run costs in accuracy, measured against the same accumulation
+carried in long double, is in [`doc/NUMERICS.md`](doc/NUMERICS.md).
+
 **A long run says where it has got to.** After the first minute, and once a
 minute after that, a line goes to stderr:
 
@@ -943,164 +694,28 @@ Nothing that finishes inside a minute prints one, so an ordinary fit is as
 quiet as it was. `--residuals` reads the file a second time and reports that
 pass separately, since it is a second run over the same rows.
 
-**What a long run costs in accuracy.** The cross-products accumulate over the
-whole stream, so their last digits decay even though the means are updated
-stably. Measured against the same accumulation carried in long double:
-
-| rows | worst relative error in a co-moment |
-| --- | --- |
-| 100 thousand | 1.2e-13 |
-| 1 million | 2.5e-13 |
-| 10 million | 6.4e-13 |
-| 100 million | 3.0e-12 |
-
-The growth is close to the square root of the row count, so a hundred trillion
-rows costs about 4e-9. Three things that table does not say, all of which
-change the answer:
-
-- **It was measured on columns centred near the origin.** The same measurement
-  at 10 million rows with a column offset of 1e6 gives 3.4e-8, five orders of
-  magnitude worse, because `x - mean(x)` is itself a cancelling subtraction.
-- **It grows faster than the term count.** At 10 million rows: 1.5e-13 at two
-  terms, 6.1e-13 at four, 2.3e-12 at eight, 1.8e-11 at sixteen. That is about
-  116x for 8x the terms, between p^2 and p^2.5.
-- **A co-moment's error is not the fit's error.** The coefficients come from
-  solving with that matrix, so the perturbation is amplified by its condition
-  number, and for normal equations that is cond(X)^2. At the conditioning
-  `nearly-the-same.csv` reports, 5.34e10, a 4e-9 co-moment error is not nine
-  digits of anything.
-
-So read it as a floor on one mechanism, on well-scaled centred data, not as
-what a long run costs in general.
 
 ## The same job in other languages
 
-Read the file, fit a line per group, write the table. `scripts/bench.sh` checks
-each one's coefficients against linearr's before timing it; an unchecked speed
-number may be timing a different answer. All agree to the printed digit: one
-answer, different prices.
+The same fit written the way each language does it when allowed to stream: read
+a line, update a fixed accumulator, forget the row. Every implementation's
+coefficients are checked against linearr's before any time is printed.
 
-    $ sh scripts/bench.sh 8 50 500000        # 8 terms, 50 groups, 500k rows
-
-    implementation   shape        time     peak RSS   check
-    linearr (C)      streaming    0.11s    2560 KB    agrees to 0
-    Java             streaming    0.36s    106896 KB  agrees to 0
-    Python           streaming    2.76s    10240 KB   agrees to 0
-    awk              streaming    11.75s   5760 KB    agrees to 0
-    Python           frame        3.30s    315904 KB  agrees to 0
-    R                frame        1.32s    128780 KB  agrees to 1e-12
-
-An implementation that is not installed, or that fails, prints why and the
-others still run.
-
-All but the last read the file one row at a time, which each of these languages
-permits. Writing the C as a stream and the Python with pandas would compare two
-styles rather than two languages, so the materialising row is also Python: the
-same language, machine and algorithm, with one variable changed. Over a tenfold
-increase in rows the streaming figures are unchanged and that row rises from
-41 MB to 316 MB.
-
-The JVM's number is mostly the JVM. Capping its heap separates the runtime's
-appetite from what the algorithm needs: 500,000 rows fit in a 16 MB heap at
-the same speed:
-
-    -Xmx16m   0.33s  64388 KB
-    -Xmx64m   0.34s  95028 KB
-
-`bench/fit.R` is the ecosystem case, and it says so in its own header: `read.csv`
-materialises the frame because that is R's idiom, so its memory figure is the
-cost of the idiom rather than a statement about the language. A streaming R
-using `readLines` and a manual accumulator would sit with the others.
-
-### The Java baseline
-
-`java/` is not a strawman written to lose. It fits the same model in the style
-this project's C came from: a `BufferedReader` and a `readLine` loop,
-`Hashtable`, `Vector`, `StringBuffer`, and one reused record rather than one
-object per row. `Regress.java` follows `regress.c` closely enough to be read
-beside it, with the same centered accumulation, the same equilibrated rank test
-and the intercept recovered from the means.
-
-    cd java && ant jar          # or: javac -d classes *.java
-    java -cp classes Linearr ../example/train.csv
-
-`make java` fits every example with both and diffs the output, so "the two
-produce identical coefficient files" is a gate rather than a claim. Reusing the
-record instead of allocating one per row is why its memory is flat in the rows:
-`String.split()` in that loop would allocate an array and a string per field,
-five million short-lived objects over 500,000 rows, and the heap grown to hold
-them gets read as "Java needs 400 MB for this".
-
-### Ten times the rows
-
-The same command at 5,000,000 rows, to separate what scales with the data from
-what does not:
-
-    $ sh scripts/bench.sh 8 50 5000000
-
-    implementation   shape        time     peak RSS   check
-    linearr (C)      streaming    1.31s    2432 KB    agrees to 0
-    Java             streaming    1.98s    421088 KB  agrees to 0
-    Python           streaming    28.30s   10368 KB   agrees to 0
-    awk              streaming    120.06s  5632 KB    agrees to 0
-    Python           frame        35.36s   3068800 KB agrees to 0
-    R                frame        12.11s   959236 KB  agrees to 1.7e-11
-
-Time is linear in the rows for all six. Memory is not:
-
-| implementation | time, 500k to 5M | peak RSS, 500k to 5M |
+| implementation | time | peak RSS |
 | --- | --- | --- |
-| linearr (C) | 0.11s to 1.31s | 2.5 MB to 2.4 MB |
-| Python, streaming | 2.76s to 28.30s | 10.0 MB to 10.1 MB |
-| awk | 11.75s to 120.06s | 5.6 MB to 5.5 MB |
-| Java, streaming | 0.36s to 1.98s | 104 MB to 411 MB |
-| R, frame | 1.32s to 12.11s | 126 MB to 937 MB |
-| Python, frame | 3.30s to 35.36s | 308 MB to 2.9 GB |
+| linearr (C) | 0.11s | 2.5 MB |
+| Java | 0.36s | 104 MB |
+| R, `read.csv` + `lm()` | 1.32s | 126 MB |
+| Python, streaming | 2.76s | 10 MB |
+| awk | 11.75s | 5.6 MB |
 
-The three streaming rows are flat to within measurement noise over a tenfold
-increase. The two frame rows grow with the file: R holds about 196 bytes per
-row and the materialising Python about 629. The Java row grows because the JVM takes
-more heap when a machine has it, not because the algorithm needs it; capped at
-`-Xmx16m` the same 5,000,000 rows fit in 65 MB and finish in 1.83s.
+500,000 rows, 8 terms, 50 groups, on one laptop core. Ten times the rows leaves
+the streaming figures flat and multiplies the materialising ones, which is
+where the difference stops being about speed: at a billion rows R needs about
+200 GB and linearr holds 2.4 MB.
 
-Extrapolating the memory, on a machine with 64 GB to give:
-
-| implementation | rows before it runs out of memory |
-| --- | --- |
-| linearr, Python streaming, awk | no limit from memory; time is the only cost |
-| R, `read.csv` + `lm()` | about 340 million |
-| Python, materialised in memory | about 105 million |
-
-Those two are the shape of the comparison. The streaming implementations
-get slower; the frame ones stop. At a billion rows R would need about 200 GB and
-the materialising Python about 600 GB, while linearr holds 2.4 MB and takes
-about four minutes.
-
-**That row is not pandas.** `bench/fit-frame.py` is hand-written Python holding
-the file as a list of tuples, and it is the control for STYLE: same language,
-same machine, same algorithm as `bench/fit.py`, with one variable changed.
-Real pandas is faster and lighter than it and is not measured here. A reviewer
-did measure it and reported roughly 3.5s and 1.0 GB where this row says 34.6s
-and 3.1 GB, which would move the ceiling from 105 to about 320 million rows.
-Read the row as what materialising costs in principle, not as a figure for
-pandas.
-
-The ceiling is not a criticism of R or of a data frame, which materialise
-because that is what an exploratory session wants: the whole dataset addressable
-while you decide what to ask. When the question is settled and the file is the
-size of a disk, the trade goes the other way.
-
-Every timing in this section, and in the extrapolation above, was measured on
-one machine: an 11th-generation Intel Core i7-1165G7 at 2.80 GHz, 8 threads,
-62 GB, Ubuntu 24.04, gcc 13.3, using one core. A different machine will give
-different figures, and a server core will beat a laptop one. Read the ratios
-between the rows, which hold, rather than the seconds, which do not. `sh
-scripts/bench.sh` and `sh scripts/scale.sh` produce your own.
-
-**These timings are not gated.** Every other transcript in this file is run and
-diffed by `make readme`; this one cannot be, because a wall-clock figure differs
-between machines and between runs. Read the ratios, not the digits, and run
-`sh scripts/bench.sh` yourself if the ratios matter to you.
+Full tables, the ten-million-row measurements, the extrapolation to 10 trillion
+and the machine they were taken on: [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md).
 
 ## Origin
 
@@ -1144,7 +759,7 @@ statistics behind them that this has not. What this offers is a small, checkable
 implementation of one method, useful in three places: as something to check an
 implementation against, since it reproduces the NIST certified values to eleven
 digits (see [Checked against answers somebody else
-certified](#checked-against-answers-somebody-else-certified)); on embedded and
+certified](doc/NUMERICS.md#checked-against-answers-somebody-else-certified)); on embedded and
 small ARM targets where no interpreter is going to be installed; and in cloud
 batch work, where the memory a process holds is what it costs.
 
@@ -1237,14 +852,20 @@ Bugs and findings: open an issue with the exact command, the input that
 reproduces it, and what you expected. A reproduction that fits in a shell
 snippet is worth more than a description.
 
-## Changing it
+## The rest of it
 
-[`doc/INTERNALS.md`](doc/INTERNALS.md) has the layout of the source, the style
-rules new code has to match, every `make` target and what each gate exists to
-catch, and the Windows notes. It was split out of this file so that a reader
-deciding whether to use the program is not reading the rules for changing it;
-nothing was dropped in the move. [`AGENTS.md`](AGENTS.md) and
-[`CONTRIBUTING.md`](CONTRIBUTING.md) are the shorter versions.
+This file is what you need to decide whether the program is any use to you.
+The detail sits beside it, and nothing was dropped in the move:
+
+| document | what is in it |
+| --- | --- |
+| [`doc/NUMERICS.md`](doc/NUMERICS.md) | what each solver does, where each loses digits, the certified figures term by term, and what a long run costs in accuracy |
+| [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md) | the full language comparison, the ten-million-row measurements, the extrapolation, and the machine they came from |
+| [`doc/INTERNALS.md`](doc/INTERNALS.md) | the source layout, the style rules, every `make` target and what each gate catches, the build ceilings and stack figures, Windows, and how to cut a release |
+| [`CHANGELOG.md`](CHANGELOG.md) | what shipped in each version |
+
+Every transcript in all of them is run and diffed by `make readme`, so a stale
+number in a linked document fails the build exactly as one here does.
 
 ## See also
 

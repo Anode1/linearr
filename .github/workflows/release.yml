@@ -38,6 +38,14 @@ jobs:
           - { os: ubuntu-24.04-arm,  name: linux-arm64 }
           - { os: macos-latest,      name: macos-arm64 }
           - { os: windows-latest,    name: windows-x86_64 }
+    # CC for the whole job, not on one make line. GNU make's built-in CC has
+    # origin `default`, so the Makefile's `CC ?= cc` never assigns and the
+    # MSYS2 job would look for cc.exe. Passing it to `make` only, as this did,
+    # made FLAGS_NOW differ between `make` and `make ut`, and the flags stamp
+    # deletes the binary when they differ: `make ut` removed ./linearr and the
+    # smoke test after it died with "No such file or directory".
+    env:
+      CC: gcc
     defaults:
       run:
         shell: ${{ matrix.os == 'windows-latest' && 'msys2 {0}' || 'bash' }}
@@ -54,12 +62,9 @@ jobs:
           update: true
           install: >-
             mingw-w64-ucrt-x86_64-gcc make zip
-            # CC=gcc above, because GNU make's built-in CC has origin
-            # `default`, so the Makefile's `CC ?= cc` never assigns and the
-            # job would look for cc.exe.
 
       - name: build
-        run: make CC=gcc
+        run: make
 
       - name: unit tests
         run: make ut

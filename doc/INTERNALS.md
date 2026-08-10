@@ -169,3 +169,91 @@ version.
 The scaffolder is borrowed from the kul project. Commit subjects are not
 release notes and the generated entry needs editing, but generating it first
 means the entry records what happened rather than what somebody remembered.
+
+## Build ceilings, stack and footprint
+
+The default build takes **256 terms** and any number of groups. That ceiling is
+what decides the fitter's footprint, and you set it at build time:
+
+    make CPPFLAGS='-DREGRESS_MAX_VARS=32 -DLOS_MAX_VARS=32'
+
+| ceiling | one group holds | note |
+| --- | --- | --- |
+| 32 terms | 13.1 KB | |
+| 64 | 41.9 KB | |
+| 128 | 147 KB | |
+| 256 (default) | 550 KB | |
+| 510 | 2.1 MB | the maximum; needs a rebuild to measure, and above it raise `CSV_MAX_FIELDS` too |
+
+Those are `./linearr --footprint N 1`, which is the figure the program
+allocates rather than one written down beside it. An earlier version of this
+table was about twice each of them, because it counted the fitter's matrix
+twice.
+
+Three things that table does **not** cover:
+
+- The fitter's matrices live in **static storage, not on the stack**, so the
+  ceiling costs no stack at all and cannot overflow one.
+- The **stack** requirement is about **190 KB**, and it is the line buffers in
+  `constants.h`, which are derived from the ceiling rather than fixed. Measured
+  at the default: it runs under `ulimit -s 192` and fails under 160. Setting the
+  ceiling is all a small target needs, and it pays twice: a
+  `-DLOS_MAX_VARS=32 -DREGRESS_MAX_VARS=32` build runs under `ulimit -s 64`.
+- Fitting **every** group in one pass holds one accumulator per group. That is
+  the fitter, the coefficients and the residual-check block, and `linearr
+  --footprint TERMS GROUPS` prints it: 8.4 MB for 580 groups of 35 terms, which
+  `scripts/scale.sh` then measures at 8.5 MB. It is still never a function of
+  how many rows you feed it.
+
+`scripts/scale.sh` exists to falsify the memory claim rather than repeat it: it
+fits the same model over row counts an order of magnitude apart and prints peak
+RSS for each. If those numbers tracked the data, the claim would be wrong and
+this section would have to change. Run at the shape the original production
+model had (35 terms, 580 groups), output verbatim:
+
+    $ sh scripts/scale.sh 35 580 10000 100000
+    linearr scale check: 35 terms, 580 groups
+
+    generating training data (10000 and 100000 rows) ... done (816K, 8.0M)
+    FIT: the same 35-term model, 10000 rows then 100000:
+      rows         seconds  peak RSS (KB)
+      10000        0.01 2432
+      100000       0.12 2432
+      ^ RSS should be flat: 10x the data, the same memory.
+
+    generating 100000 rows spread over 580 groups ... done
+    FIT ALL: the same rows, one line per group:
+      groups       seconds  peak RSS (KB)
+      1            0.12 2432
+      580          0.14 11136
+      ^ this one is NOT flat, and should not be: the difference is the
+        per-group figure below, times 580.
+
+    generating a 580-group table and cases ... done
+    SCORE: 100000 cases against 580 groups:
+      cases        seconds  peak RSS (KB)
+      100000       0.07 3584
+
+    Memory grows with the GROUPS and not with the rows. What that costs here:
+      35 terms, 580 groups
+
+      fitting, -t, one accumulator per group
+        per group   15232 bytes
+        in total    8.4 MB
+
+      scoring, a loaded coefficient table
+        per group   2064 bytes
+        in total    1.1 MB
+
+      The scoring figure does not move with the term count: the
+      coefficient array is sized at this build's ceiling of 256, so a
+      small model pays for a large one. The fitting figure does move.
+
+      Neither depends on the number of ROWS:
+      the same figures cover a thousand rows and a trillion.
+
+Ten times the data, the same memory: that is the first pair of rows. The second
+pair is the part a memory claim usually omits. Fitting 580 groups instead of one
+costs 8.5 MB more, and the per-group figure printed underneath predicts 8.4 MB,
+so the script measures the claim rather than restating it. Time scales with the
+number of rows, memory with the number of groups.

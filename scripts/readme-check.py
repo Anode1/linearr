@@ -89,9 +89,16 @@ def compare(expected, actual):
     return True, None
 
 
-def main(path):
-    text = open(os.path.join(ROOT, path)).read()
+def main(*paths):
     checked = failed = 0
+    for path in paths:
+        checked, failed = check_one(path, checked, failed)
+    print("readme: %d transcripts checked, %d stale" % (checked, failed))
+    return 1 if failed else 0
+
+
+def check_one(path, checked, failed):
+    text = open(os.path.join(ROOT, path)).read()
     for cmd, expected, lineno in blocks(text):
         if not expected:
             continue                             # a command shown without output
@@ -118,13 +125,29 @@ def main(path):
             print("  TIMEOUT  %s:%d  %s" % (path, lineno, cmd))
             failed += 1
             continue
+        # A gate that skips itself where a tool is missing prints that it
+        # skipped, and its transcript documents what it prints when the tool
+        # IS there. Comparing the two on a machine without R or a JDK fails
+        # for the wrong reason, which is how the README came to hold a block
+        # that could only pass where R was installed.
+        if any("skipped" in a and ("no Rscript" in a or "no JDK" in a
+                                   or "not installed" in a) for a in actual):
+            print("  SKIPPED  %s:%d  $ %s\n      %s"
+                  % (path, lineno, cmd, actual[0]))
+            continue
         ok, why = compare(expected, actual)
         if not ok:
             failed += 1
             print("  STALE  %s:%d  $ %s\n      %s" % (path, lineno, cmd, why))
-    print("readme: %d transcripts checked, %d stale" % (checked, failed))
-    return 1 if failed else 0
+    return checked, failed
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1] if len(sys.argv) > 1 else "README.md"))
+    # Every document, not only the README: moving a transcript into doc/ must
+    # not quietly move it out of the gate.
+    args = sys.argv[1:]
+    if not args:
+        args = ["README.md"] + sorted(
+            os.path.join("doc", f) for f in os.listdir(os.path.join(ROOT, "doc"))
+            if f.endswith(".md"))
+    sys.exit(main(*args))
