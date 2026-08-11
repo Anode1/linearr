@@ -284,11 +284,12 @@ and the machine they were taken on: [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md).
 
 ## Origin
 
-The author, trained in physics and computer science, built a least-squares
-length-of-stay predictor for industry in 2011. It went into production and was
-maintained by other people. This is a C implementation of the same arithmetic,
-written from scratch, generalised so the terms come from your file, and
-carrying none of the original data.
+The author, trained in physics and computer science and a professional software
+developer, has built several statistical tools for scientists in industry. One
+of them was a least-squares length-of-stay predictor, in 2011: it went into
+production and was maintained by other people. This is a C implementation of
+the same arithmetic, written from scratch, generalised so the terms come from
+your file, and carrying none of the original data.
 
 Two views behind it: computation belongs as close to the processor as the
 problem allows, and data of any size should be read as a stream, so its size
