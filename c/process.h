@@ -147,6 +147,12 @@ struct fit_summary {
     long long rows;     /* training rows used                             */
     long long min_df;   /* the least residual freedom any group had       */
     double min_r2;      /* the worst group's R2, or -1 if none was defined  */
+    /* How many groups had no R2 to report, and why. Without these the worst-of
+       aggregation simply skipped such a group, so a file with one flat-response
+       group printed a clean `worst R2=1.0000` and said nothing about the group
+       that had none: the summary was silent about the thing a summary is for. */
+    long long groups_flat_y;   /* the response never varied                  */
+    long long groups_r2_lost;  /* the arithmetic could not report one        */
     double max_sigma;   /* the worst group's residual standard deviation   */
     int    sigma_is_bound;  /* max_sigma is an upper bound, not a value    */
     double max_condition;  /* the worst-conditioned group                 */

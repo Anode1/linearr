@@ -129,8 +129,16 @@ struct regress_fit {
      * of `=`. A bound is never false; the number it replaced could be. */
     int    sigma_is_bound;
     long long df;       /* residual degrees of freedom: n - (identified + 1) */
-    double r2;          /* -1 when it is not defined (a response that never
-                           varies) or not computable to useful precision     */
+    /* R2, or one of the two sentinels below. They used to be the same value,
+       so the one warning had to offer a reader both causes and let them guess
+       which had happened, and they are not the same event: one is a property of
+       the data and expected, the other is this solver running out of digits. */
+    double r2;
+#define REGRESS_R2_FLAT_Y (-1.0) /* the response never varies: R2 is 0/0, and
+                                    undefined rather than zero               */
+#define REGRESS_R2_LOST   (-2.0) /* cyy - b'cxy came out meaningfully below
+                                    zero: the subtraction has no digits left,
+                                    which is a fit to rescale, not a bad fit */
     unsigned char term[REGRESS_MAX_VARS];  /* enum regress_term, per slope */
     double rss;         /* residual sum of squares                           */
     double sigma;       /* residual standard deviation, sqrt(rss/df): the

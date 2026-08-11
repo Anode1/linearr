@@ -840,6 +840,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
         sum->groups = 0; sum->rows = 0; sum->min_df = 0;
         sum->max_condition = 1.0; sum->pinned = 0; sum->max_sigma = -1.0; sum->sigma_is_bound = 0;
         sum->min_r2 = -1.0;
+        sum->groups_flat_y = 0; sum->groups_r2_lost = 0;
         sum->curved_term = -1; sum->curved_t = 0.0; sum->curved_pow = 0;
         sum->fitted_t = 0.0; sum->spread_t = 0.0; sum->worst_group[0] = '\0';
     }
@@ -1001,6 +1002,8 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
              * residual SD, and --stats says which group it came from. */
             if (f.r2 >= 0.0 && (sum->min_r2 < 0.0 || f.r2 < sum->min_r2))
                 sum->min_r2 = f.r2;
+            else if (f.r2 == REGRESS_R2_FLAT_Y) sum->groups_flat_y++;
+            else if (f.r2 == REGRESS_R2_LOST)   sum->groups_r2_lost++;
             if (f.sigma > sum->max_sigma) {
                 sum->max_sigma = f.sigma;
                 sum->sigma_is_bound = f.sigma_is_bound;

@@ -806,6 +806,25 @@ printf 'group,y,a\r\nA,1,1\r\nA,2,2\r\nA,3,4\r\n' > "$tmp/crlf.csv"
 check "CRLF line endings are read, not refused" \
     "$("$bin" -t "$tmp/crlf.csv" >/dev/null 2>&1; echo $?)" "0"
 
+# A group whose response never varies has no R2: it is 0/0, undefined rather
+# than zero. The value was there all along and only ONE path printed a warning
+# about it -- the single-group one -- so whether a reader was told depended on
+# which flag they had passed, and the worst-of aggregation skipped such a group
+# entirely: a file with one flat group printed a clean `worst R2` and said
+# nothing. The message also used to offer two causes joined by "or" and let the
+# reader guess which had happened.
+printf 'group,y,x\nA,5,1\nA,5,2\nA,5,3\nA,5,4\n' > "$tmp/flat.csv"
+for opt in "" "-g A" "--stats /dev/null" "--residuals $tmp/flatr.csv"; do
+    out=$("$bin" -t "$tmp/flat.csv" $opt 2>&1 >/dev/null)
+    case "$out" in *"no R2"*"does not vary"*) ok ;;
+        *) no "a flat response says so${opt:+ (with $opt)}: got [$out]" ;; esac
+done
+# and it is reported even when another group in the same file has a good R2
+printf 'group,y,x\nA,5,1\nA,5,2\nA,5,3\nB,1,1\nB,2,2\nB,3.1,3\n' > "$tmp/mixed.csv"
+out=$("$bin" -t "$tmp/mixed.csv" 2>&1 >/dev/null)
+case "$out" in *"1 group has no R2"*) ok ;;
+    *) no "a flat group is not hidden by a good one: got [$out]" ;; esac
+
 # --- naming the response ------------------------------------------------------
 # The layout is positional, so a file written in another order fits perfectly
 # well and answers a different question. A reviewer wrote the CSV a pandas user

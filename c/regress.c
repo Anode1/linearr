@@ -293,7 +293,7 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
              * it turned a true R2 of 0 into a printed 1.0000. */
 
             if (sse < -1e-9 * r->cyy) {
-                fit->r2 = -1.0;          /* not computable to useful precision */
+                fit->r2 = REGRESS_R2_LOST;
             } else {
                 if (sse < 0.0) sse = 0.0;
                 /* R2 survives: it is sse RELATIVE to cyy, so an sse that is
@@ -334,7 +334,7 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
                 if (fit->df > 0) fit->sigma = sqrt(sse / (double)fit->df);
             }
         } else {
-            fit->r2 = -1.0;               /* the response never varies */
+            fit->r2 = REGRESS_R2_FLAT_Y;
         }
     }
     return 0;

@@ -253,6 +253,25 @@ static int train_all(const char *path, const char *only,
         (void)fprintf(stderr, "warning: at least one group has no residual degrees of "
                         "freedom; its line passes through every row by "
                         "construction. Fit those groups on more rows.\n");
+    /* A group with no R2 was simply skipped by the worst-of aggregation, so this
+     * path -- which is every fit of more than one group, and every fit at all
+     * with --residuals or --stats -- printed a clean summary and said nothing.
+     * Only the single-group path warned, so whether a reader was told depended
+     * on which flag they had passed. */
+    if (sum.groups_flat_y > 0)
+        (void)fprintf(stderr, "warning: %lld group%s no R2, because the response "
+                        "does not vary there: R2 is 0/0, which is undefined and "
+                        "not zero. The line and its residual SD are still "
+                        "reported.\n", sum.groups_flat_y,
+                        sum.groups_flat_y == 1 ? " has" : "s have");
+    if (sum.groups_r2_lost > 0)
+        (void)fprintf(stderr, "warning: %lld group%s no R2 that this solver can "
+                        "report: the residual came out below zero by more than "
+                        "rounding, so the subtraction has no digits left. "
+                        "Rescale the response%s.\n", sum.groups_r2_lost,
+                        sum.groups_r2_lost == 1 ? " has" : "s have",
+                        strcmp(process_solver(), "QR") == 0 ? ""
+                        : ", or use --qr, which does not form that difference");
     if (sum.curved_term >= 0)
         (void)fprintf(stderr, "warning: in group %s the residuals still depend on "
                       "%s after the line is subtracted (t=%.1f). A straight line "
@@ -313,10 +332,20 @@ static int train(const char *path, const char *group) {
                         "%srescale your columns, or drop a near-duplicate "
                         "one.\n", info.condition,
                         strcmp(process_solver(), "QR") == 0 ? "" : "try --qr, ");
-    if (info.r2 < 0.0)
-        (void)fprintf(stderr, "warning: R2 is not reportable here: the response "
-                        "does not vary, or the fit consumed all of its "
-                        "variance.\n");
+    /* Which of the two, rather than both with an "or": they are different
+     * events with different remedies, and the reader is the one person who
+     * cannot tell them apart from here. */
+    if (info.r2 == REGRESS_R2_FLAT_Y)
+        (void)fprintf(stderr, "warning: no R2 here, because the response does not "
+                        "vary: R2 is 0/0, which is undefined and not zero. The "
+                        "line and its residual SD are still reported.\n");
+    else if (info.r2 < 0.0)
+        (void)fprintf(stderr, "warning: no R2 that this solver can report: the "
+                        "residual came out below zero by more than rounding, so "
+                        "the subtraction has no digits left. Rescale the "
+                        "response%s.\n",
+                        strcmp(process_solver(), "QR") == 0 ? ""
+                        : ", or use --qr, which does not form that difference");
     /* Said plainly, because an R2 of 1 from a saturated fit reads like success
      * and is the easiest way to publish a model that knows nothing. */
     if (info.df <= 0)

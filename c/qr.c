@@ -372,7 +372,7 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
             fit->r2 = 1.0 - fit->rss / q->cyy;
             if (fit->r2 < 0.0) fit->r2 = 0.0;
         } else {
-            fit->r2 = -1.0;
+            fit->r2 = REGRESS_R2_FLAT_Y;
         }
     }
     return 0;
