@@ -229,6 +229,16 @@ static int parse_num(const char *s, double *out) {
 
     if (s[0] == '\0') return -1;
     if (fast_num(s, out) == 0) return 0;
+    /* Hexadecimal, which strtod accepts and this function's own comment lists
+     * among the things it exists to refuse. C99 added 0x10 and the binary
+     * exponent form 0X1p4 to strtod, so a field reading 0x10 loaded quietly as
+     * 16. Nothing writes a CSV that way on purpose: it is a mis-export, or a
+     * hash, or an identifier that landed in a numeric column, and reading it
+     * as a number is how one becomes a coefficient. Decimal exponents (1e3)
+     * stay: those are ordinary in exported data. */
+    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) return -1;
+    if ((s[0] == '-' || s[0] == '+') && s[1] == '0'
+        && (s[2] == 'x' || s[2] == 'X')) return -1;
     errno = 0;
     v = strtod(s, &end);
     if (errno == ERANGE) return -1;             /* 1e400, and denormal underflow */

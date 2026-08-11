@@ -68,6 +68,17 @@ public final class Csv {
             double v = (double) mant / POW10[scale];
             return neg ? -v : v;
         }
+        /* Hexadecimal is refused, as los.c refuses it: Double.parseDouble
+         * accepts the 0x1p4 form, and a CSV field written that way is a
+         * mis-export or an identifier in a numeric column, not the number 16.
+         * The two implementations are diffed against each other by
+         * scripts/java-check.sh, so a difference here is a failing gate. */
+        {   int p = from;
+            if (p < to && (line.charAt(p) == '-' || line.charAt(p) == '+')) p++;
+            if (p + 1 < to && line.charAt(p) == '0'
+                && (line.charAt(p + 1) == 'x' || line.charAt(p + 1) == 'X'))
+                return Double.NaN;
+        }
         try {
             return Double.parseDouble(line.substring(from, to));
         } catch (NumberFormatException e) {

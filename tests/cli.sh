@@ -215,6 +215,21 @@ set +e
 set -e
 check "--scale outside 0..9 is refused" "$rc" "1"
 
+# Hexadecimal is refused, which los.c's own comment always claimed. C99 gave
+# strtod 0x10 and 0X1p4, so such a field loaded quietly as 16: a mis-export or
+# an identifier in a numeric column becoming a coefficient. Decimal exponents
+# stay, being ordinary in exported data.
+for v in 0x10 0X1p4 -0x10; do
+    printf 'group,intercept,a\nG,0,%s\n' "$v" > "$tmp/hex.csv"
+    set +e
+    (cd "$tmp" && "$bin" -c hex.csv G a=1 >/dev/null 2>&1); rc=$?
+    set -e
+    check "a hex field ($v) is refused" "$rc" "1"
+done
+printf 'group,intercept,a\nG,0,1e3\n' > "$tmp/exp.csv"
+check "a decimal exponent still reads" \
+    "$(cd "$tmp" && "$bin" -c exp.csv G a=1)" "G prediction=1000.0000"
+
 # -y and --qr reach the fitter only: scoring takes its schema and its
 # coefficients from the table named by -c, so both had nothing to act on and
 # were accepted and dropped. The three refusals beside them in main.c exist to
