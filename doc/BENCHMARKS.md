@@ -26,7 +26,7 @@ kilobytes of 1024 bytes, and every MB and GB in this file is that same
 
 All but the last read the file one row at a time, which each of these languages
 permits. Writing the C as a stream and the Python with pandas would compare two
-styles rather than two languages, so the materialising row is also Python: the
+styles rather than two languages, so the in-memory row is also Python: the
 same language, machine and algorithm, with one variable changed. Over a tenfold
 increase in rows the streaming figures are unchanged and that row rises from
 308 MB to 2.9 GB.
@@ -39,7 +39,7 @@ the same speed:
     -Xmx64m   0.34s  95028 KB
 
 `bench/fit.R` is the ecosystem case, and it says so in its own header: `read.csv`
-materialises the frame because that is R's idiom, so its memory figure is the
+reads the whole file into a frame because that is R's idiom, so its memory figure is the
 cost of the idiom rather than a statement about the language. A streaming R
 using `readLines` and a manual accumulator would sit with the others.
 
@@ -90,7 +90,7 @@ Time is linear in the rows for all six. Memory is not:
 
 The three streaming rows are flat to within measurement noise over a tenfold
 increase. The two frame rows grow with the file: at 5,000,000 rows R holds
-about 196 bytes per row (959236 KB) and the materialising Python about 629
+about 196 bytes per row (959236 KB) and the in-memory Python about 629
 (3068800 KB), and those two figures are where every memory ceiling below comes
 from. The Java row grows because the JVM takes more heap when a machine has it,
 not because the algorithm needs it; capped at `-Xmx16m` the same 5,000,000 rows
@@ -102,24 +102,24 @@ Extrapolating that memory onto the 62 GB this machine has:
 | --- | --- |
 | linearr, Python streaming, awk | no limit from memory; time is the only cost |
 | R, `read.csv` + `lm()` | about 340 million |
-| Python, materialised in memory | about 105 million |
+| in-memory Python | about 105 million |
 
 Those two are the shape of the comparison. The streaming implementations
 get slower; the frame ones stop. At a billion rows R would need about 180 GB and
-the materialising Python about 590 GB, while linearr holds 2.4 MB and takes
+the in-memory Python about 590 GB, while linearr holds 2.4 MB and takes
 about three and a half minutes.
 
-**That row is not pandas.** `bench/fit-frame.py` is hand-written Python holding
+**The in-memory Python figures do not describe pandas.** `bench/fit-frame.py` is hand-written Python holding
 the file as a list of tuples, and it is the control for STYLE: same language,
 same machine, same algorithm as `bench/fit.py`, with one variable changed.
 Real pandas is faster and lighter than it and is not measured here. A reviewer
 did measure it and reported roughly 3.5s and 1.0 GB where this row says 35.36s
 and 2.9 GB, which would move the ceiling from 105 to about 300 million rows.
-Read the row as what materialising costs in principle, not as a figure for
-pandas.
+Read the row as what holding the whole file in memory costs in principle, not
+as a figure for pandas.
 
-The ceiling is not a criticism of R or of a data frame, which materialise
-because that is what an exploratory session wants: the whole dataset addressable
+The ceiling is not a criticism of R or of a data frame, which read everything
+in first because that is what an exploratory session wants: the whole dataset addressable
 while you decide what to ask. When the question is settled and the file is the
 size of a disk, the trade goes the other way.
 

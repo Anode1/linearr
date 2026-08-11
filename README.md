@@ -278,7 +278,7 @@ coefficients are checked against linearr's before any time is printed.
 | awk | 11.75s | 5.6 MB |
 
 500,000 rows, 8 terms, 50 groups, on one laptop core. Ten times the rows leaves
-the streaming figures flat and multiplies the materialising ones, which is
+the streaming figures flat and multiplies the in-memory ones, which is
 where the difference stops being about speed: at a billion rows R needs about
 180 GB and linearr holds 2.4 MB.
 

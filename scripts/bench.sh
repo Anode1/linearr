@@ -10,7 +10,7 @@
 # 2011 Processor.java, which streams and accumulates no records, so the Java
 # number is not a strawman written to lose.
 #
-# fit.R is the deliberate exception: read.csv materialises the frame because
+# fit.R is the deliberate exception: read.csv reads the whole file into a frame because
 # that is R's idiom. Its memory figure is the cost of the idiom, and the table
 # labels it so nobody reads it as a statement about R the language.
 #
@@ -118,7 +118,7 @@ run "Python"       "frame"      python3 "$bench/fit-frame.py" "$train"
 run "R"            "frame"      Rscript "$bench/fit.R" "$train"
 echo
 echo "  streaming = a read-a-line loop, memory fixed by the model."
-echo "  frame     = the language's idiom materialises the file first; the memory"
+echo "  frame     = the language's idiom reads the whole file in first; the memory"
 echo "              figure is the cost of that idiom, not of the language."
 echo
 

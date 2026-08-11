@@ -2,10 +2,11 @@
 """fit-frame.py: the same fit as fit.py, in the same language, on the same
 machine, differing in ONE thing: it reads the whole file into memory first.
 
-This is the control. Comparing streaming C against a materialising R would
+This is the control. Comparing streaming C against an in-memory R would
 confound the language with the style, and the memory column would be an
 argument rather than a measurement. Holding language, machine and algorithm
-fixed and varying only the style isolates what materialising actually costs.
+fixed and varying only the style isolates what holding the file in memory
+actually costs.
 """
 import sys
 from fit import solve

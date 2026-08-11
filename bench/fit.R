@@ -1,7 +1,7 @@
 # fit.R: the R baseline for scripts/bench.sh, and the one exception in it.
 #
 # Every other implementation streams, because its language lets it. This one
-# does what R does: read.csv materialises the whole file as a data frame, then
+# does what R does: read.csv reads the whole file into memory as a data frame, then
 # lm() fits per group. That is not a strawman, it is the idiom, and it is why
 # R's memory column is large while the others are flat.
 #
