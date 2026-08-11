@@ -54,8 +54,8 @@ demonstrated in its own section below:
   Norris and Longley to eleven digits, and Wampler1's exact quintic to nine
   under the default solver and ten under `--qr`. It agrees with R's `lm()` to
   1e-6 or better on every example, and to 1e-11 on most of them. Both run in
-  `make check`, and `lm()` solves by a different method, so the agreement is
-  evidence and not a tautology.
+  `make check`, and `lm()` solves by a different method, so the agreement can
+  just be checked.
   [Checked against answers somebody else certified](doc/NUMERICS.md#checked-against-answers-somebody-else-certified)
 - **It reads the residuals.** R2 and a residual SD are averages over the
   residuals and cannot see structure in them. This names the term whose square
