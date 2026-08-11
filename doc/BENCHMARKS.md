@@ -175,12 +175,12 @@ streaming columns only get slower. `bench/fit.R` is also the slow variant: it
 rescans the whole frame per group and rebuilds the formula in the loop, so a
 `scan()` plus `.lm.fit()` version is roughly twice as fast at 580 groups.
 
-**When the residual SD is a bound, it says so.** The default solver recovers
-the residual as `Cyy - b'Cxy`, a subtraction of two nearly equal numbers, and
-below a floor of about `|mean(y)| * eps * sqrt(n * Cyy)` the difference has no
-digits left. Where that happens the figure is printed as `resid SD<0.0005`
-rather than `=`: an upper bound that contains the truth, instead of a value
-that may not. On 200 rows of an exact quadratic fitted with a line, with x near
+**Where the residual SD is only a bound, the summary prints `<` instead of
+`=`.** The default solver recovers the residual as `Cyy - b'Cxy`, a
+subtraction of two nearly equal numbers, and below a floor of about
+`|mean(y)| * eps * sqrt(n * Cyy)` the difference has no digits left. Where
+that happens the figure comes out as `resid SD<0.0005`: an upper bound that
+contains the truth, instead of a value that may not. On 200 rows of an exact quadratic fitted with a line, with x near
 1e5, it used to print `resid SD=0`, a claim of a perfect fit on data the line
 misses by 0.37. `--qr` carries the residual through the rotation and does not
 pay this at all.
