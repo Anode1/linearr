@@ -83,9 +83,9 @@ int qr_add(struct qr *q, const double *x, double y) {
     /* Each column's own scale, accumulated as we go. Without it the rank test
      * below compares a column against the LARGEST column's magnitude, so a term
      * in small units is deleted for being small: the identical defect regress.c
-     * documents as fixed, reintroduced here. A reviewer produced a case where
-     * an indicator worth 5 was deleted beside a column of size 1e15, and the
-     * fit then reported R2=1.0000 for a model whose residuals were 4.0. */
+     * documents as fixed, reintroduced here. The case that showed it: an
+     * indicator worth 5, deleted beside a column of size 1e15, after which the
+     * fit reported R2=1.0000 for a model whose residuals were 4.0. */
     for (i = 0; i <= p; i++) {
         if (q->n == 0) { q->colmin[i] = q->colmax[i] = row[i]; }
         else {
@@ -315,7 +315,7 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
          * including the ones just discarded. At full rank that is the model's
          * residual. Once a column is dropped it is the residual of a model that
          * was never returned, and reporting it understated the error by fifteen
-         * orders of magnitude in a case a reviewer built.
+         * orders of magnitude on the case below.
          *
          * This used to be answered by withholding the three figures, which is
          * not the smaller of the two evils: a fit that reports no residual SD

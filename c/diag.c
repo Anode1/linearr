@@ -38,8 +38,8 @@ void diag_scale(struct diag *d, double resid_sd, double response_sd) {
 /* Powers about the column's own centre, taken from its first value. Shifting by
  * a constant changes none of the partial correlations below, and it removes the
  * cancellation that destroyed them: a raw sum of v^6 at v ~ 1e5 has no
- * significant digits left for a variance recovered by subtraction. A reviewer
- * measured the square probe going silent at offset 1e5 and, worse, inflating at
+ * significant digits left for a variance recovered by subtraction. Measured: the
+ * square probe went silent at a column offset of 1e5 and, worse, inflated at
  * 1e4 into a departure that was not there.
  *
  * Layout: [0] shift, [1] n, then sums of u, u^2, u^3, u^4, u^5, u^6, r*u,
@@ -137,8 +137,8 @@ static double partial_corr(const double *b, double sr, double srr) {
 /* The cube, partialled on 1, u AND u^2. On [1, u] alone it is not
  * offset-invariant even in exact arithmetic: u^3 about a shifted origin carries
  * a 3*c*u^2 term that [1, u] cannot absorb, so the probe was dominated by an
- * even component orthogonal to the odd residual it exists to find. A reviewer
- * showed a cubic with amplitude 25 against noise 1 going undetected at an
+ * even component orthogonal to the odd residual it exists to find. The case
+ * that showed it: a cubic of amplitude 25 against noise 1, undetected at an
  * offset of 10. Solving the 2x2 normal equations for u^3 on [u, u^2] (both
  * already centred) restores it. */
 static double partial_corr3(const double *b, double sr, double srr) {

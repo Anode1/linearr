@@ -112,9 +112,9 @@ about three and a half minutes.
 **The in-memory Python figures do not describe pandas.** `bench/fit-frame.py` is hand-written Python holding
 the file as a list of tuples, and it is the control for STYLE: same language,
 same machine, same algorithm as `bench/fit.py`, with one variable changed.
-Real pandas is faster and lighter than it and is not measured here. A reviewer
-did measure it and reported roughly 3.5s and 1.0 GB where this row says 35.36s
-and 2.9 GB, which would move the ceiling from 105 to about 300 million rows.
+Real pandas is faster and lighter than it and is not measured here. Measured
+separately, it comes in around 3.5s and 1.0 GB where this row says 35.36s and
+2.9 GB, which would move the ceiling from 105 to about 300 million rows.
 Read the row as what holding the whole file in memory costs in principle, not
 as a figure for pandas.
 

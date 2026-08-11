@@ -497,9 +497,9 @@ void los_free(void) {
  * sentence for all of them: "expected a group, a value, and N terms". An empty
  * field, a row one column short, the word NA, a category name, a quoted number
  * and a semicolon-separated row all produced that, on a file with millions of
- * rows and no indication of which column was at fault. A reviewer read it as
- * the program crashing. It does not crash; it refused, and it refused without
- * saying what it wanted. */
+ * rows and no indication of which column was at fault. It reads as the program
+ * crashing, and it is not: it refused, and refused without saying what it
+ * wanted. */
 static char parse_why[512];
 
 const char *los_parse_error(void) {

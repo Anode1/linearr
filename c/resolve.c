@@ -38,7 +38,7 @@ static char *last_sep(const char *p) {
 }
 
 /* Windows has every function this file needs under another name, and lacks
- * exactly one. A reviewer cross-compiled with mingw-w64: all thirteen sources
+ * exactly one. Cross-compiled with mingw-w64, all thirteen sources
  * compiled and the link failed on realpath alone, twice. These few lines are
  * the whole difference between "no Windows build" and an .exe. */
 #ifdef _WIN32

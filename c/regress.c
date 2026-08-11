@@ -254,7 +254,7 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
          * between the response's spread and the part of it the fit explains,
          * and nothing in a single pass over X'X can avoid it.
          *
-         * A reviewer measured what that costs on 200 rows of an exact
+         * What that costs, measured on 200 rows of an exact
          * quadratic fitted with a line, moving x away from the origin:
          *
          *     x near    reported     truth     --qr

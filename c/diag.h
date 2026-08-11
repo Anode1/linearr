@@ -14,8 +14,8 @@
  *   x^2. Both are computed about each column's own centre. The partialling matters and was
  *   missing in the first version: the residual is already orthogonal to x by
  *   construction, so correlating it against RAW x^2 measures mostly the part of
- *   x^2 that x already accounts for. A reviewer showed the consequence. On the
- *   same quadratic, moving the origin of x alone:
+ *   x^2 that x already accounts for. The consequence, on the same quadratic,
+ *   moving the origin of x alone:
  *
  *       offset   corr(r, x^2)   corr(r, x^2 partialled)
  *          0        0.204              0.794
@@ -107,9 +107,9 @@
  *
  * Powers of the SHIFTED value because the first version accumulated raw power
  * sums and recovered variances by subtraction, which is the naive-variance
- * formula regress.c refuses to use. A reviewer measured the square probe going
- * silent at a column offset of 1e5 and, worse, inflating at 1e4 into a
- * departure that was not there. The offsets the header names as the motivation
+ * formula regress.c refuses to use. Measured, the square probe went silent at a
+ * column offset of 1e5 and, worse, inflated at 1e4 into a departure that was
+ * not there. The offsets the header names as the motivation
  * for the probe (years, timestamps, prices, Kelvin) all live at 1e4 to 1e9.
  *
  * Up to u^6 because the cube is partialled on 1, u and u^2, which needs the

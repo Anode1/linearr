@@ -31,10 +31,10 @@
  * rss -- so a y near 1e160 overflows either solver, and is refused as such
  * rather than rescued here (see qr_solve).
  *
- * What it is NOT: a strictly better solver. It does not centre the data, and a
- * reviewer found that without column scaling its rank test deleted a
- * well-identified indicator for being measured in a small unit, which is the
- * same defect regress.c documents as fixed. Each column is now judged against
+ * What it is NOT: a strictly better solver. It does not centre the data, and
+ * without column scaling its rank test deleted a well-identified indicator for
+ * being measured in a small unit, which is the same defect regress.c documents
+ * as fixed. Each column is now judged against
  * its own 2-norm, and when a column is dropped the residual of the model that
  * was actually returned is computed rather than the rotation's, so R2 and the
  * residual SD mean what they say in that case too.

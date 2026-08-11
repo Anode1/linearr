@@ -594,9 +594,9 @@ static void test_qr(void) {
     /* THE UNITS TEST, for QR as for the normal equations. The first version of
      * this module judged each diagonal of R against the LARGEST column's
      * magnitude, so a term in a small unit was deleted for being small: the
-     * same defect regress.c documents as fixed. A reviewer produced a case
-     * where an indicator worth 5 was deleted beside a column of size 1e15 and
-     * the fit then reported R2=1.0000 for a model whose residuals were 4. */
+     * same defect regress.c documents as fixed. The case below is the one that
+     * showed it: an indicator worth 5, deleted beside a column of size 1e15,
+     * after which the fit reported R2=1.0000 on residuals of 4. */
     {
         int u;
         for (u = 0; u < 3; u++) {

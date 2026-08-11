@@ -4,9 +4,8 @@
  * Every other test in this project checks the code against arithmetic this
  * project also wrote. That catches a change in behaviour and nothing else: if
  * the solver and the expected value are derived from the same understanding,
- * they are wrong together and the suite stays green. A reviewer put it as the
- * recurring fault here, that the gate is aimed one file to the left of the
- * defect.
+ * they are wrong together and the suite stays green. The recurring fault in this
+ * project is exactly that: a gate aimed one file to the left of the defect.
  *
  * These datasets close that. They come from outside, their answers were
  * computed by somebody else to more digits than a double carries, and they are
