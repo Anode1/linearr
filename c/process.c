@@ -8,6 +8,15 @@
  * answer, not presentation: the published figure is the rounded number. Both
  * scales are configurable, and so is the number of terms; it comes from the
  * file's header, not from this file. */
+/* Before any header, including this module's own: process.h pulls in <stdio.h>,
+ * and glibc resolves <features.h> on the first standard header it sees. Defined
+ * after that, as it was, this macro does nothing at all -- CLOCK_MONOTONIC and
+ * _POSIX_TIMERS stay undefined, the guard in progress_now() is false, and the
+ * timer silently falls back to time(NULL), the wall clock whose NTP and DST
+ * steps the comment there says were fixed. `nm -u linearr` showed no
+ * clock_gettime at all. resolve.c has always had this the right way round. */
+#define _POSIX_C_SOURCE 200809L   /* clock_gettime */
+
 #include "process.h"
 #include "los.h"
 #include "csv.h"
@@ -19,8 +28,10 @@
 #include "common.h"
 #include "constants.h"
 
-#define _POSIX_C_SOURCE 200809L   /* clock_gettime */
 #include <time.h>
+#ifndef _WIN32
+#include <unistd.h>   /* _POSIX_TIMERS, which <time.h> does not define */
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
