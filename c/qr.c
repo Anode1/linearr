@@ -317,7 +317,30 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
          *     RSS = (residual of the rotation) + sum of v^2 over dropped rows
          *
          * which is exact, not an estimate. tests.c checks it against a fit of
-         * the same data with the redundant column removed by hand. */
+         * the same data with the redundant column removed by hand.
+         *
+         * WHERE THAT IS STILL WRONG, stated. Both halves describe the LEAST
+         * SQUARES solution of the kept columns. When a pivot survives the rank
+         * test by a hair, back substitution divides by that near-zero diagonal
+         * and the beta returned is not that solution, while this figure still
+         * reports the residual the solution would have had. It is then BELOW
+         * what any beta can achieve, so it cannot be read as a bound either
+         * way. Thirty rows, x1 exactly 3 + (x0-1e9)/2 with x0 near 1e9:
+         *
+         *     reported by this            rss 57.53   resid SD 1.46
+         *     the residual file, same run rss 61.28   resid SD 1.506
+         *     the true minimum, exact     rss 58.40   resid SD 1.470
+         *     the normal equations        pinned 1    resid SD 1.444
+         *
+         * The normal equations get it right by pinning: C is symmetric, so a
+         * pivot below tolerance also has a near-zero leftover row. The signal
+         * here is cond=, which reads 1.16e+08 on that design and trips the
+         * ill-conditioning warning, and --residuals writes the residuals the
+         * returned line actually leaves. Fixing it needs the rank test to cut
+         * where the solve becomes unreliable rather than where the diagonal
+         * does, which is a threshold nobody has measured; until then this is
+         * one more reason the normal equations are the ones to trust on a
+         * rank-deficient design. */
         fit->rss   = q->rss + drop_rss;
         fit->sigma = (fit->df > 0) ? sqrt(fit->rss / (double)fit->df) : -1.0;
         /* Never a bound here, always a value: this residual comes out of the
