@@ -3,14 +3,10 @@
 The three files this program reads and writes, what a group is, and every input
 it will not accept. The README has the one-paragraph version.
 
-**A group is one fitted line.** Rows sharing a group code are fitted together
-and get their own coefficients; a different code gets different ones. Groups
-exist so that one file and one pass produce one model per subset, instead of
-splitting the file and running the program once per part. With a single group
-this is plain least squares.
-
-`example/routes.csv` is delivery time against distance and stops on three kinds
-of route. The terms are the same everywhere; what each term is worth is not:
+A different group code gets different coefficients, and that is the whole
+mechanism. `example/routes.csv` is delivery time against distance and stops on
+three kinds of route. The terms are the same everywhere; what each term is
+worth is not:
 
     $ ./linearr -t example/routes.csv
     reading: column 1 is the group, 'minutes' is the value being predicted, and the other 2 columns are terms. Use -y NAME if that is the wrong column
@@ -51,9 +47,8 @@ So a training header of `group,minutes,km,stops` says: predict `minutes` from
 reads position, not the word), but the ORDER is fixed, and the goal is the
 second column, not the first.
 
-**Nothing in the data can say which column is the goal**, so a file written in
-another order does not fail. It fits, it reports a good R2, and it answers a
-question you did not ask: with `group,km,minutes,stops` it predicts distance
+**A file written in another column order does not fail.** It fits, it reports a
+good R2, and it answers a question you did not ask: with `group,km,minutes,stops` it predicts distance
 from time and stops, which is arithmetic about the same rows and not the model
 you wanted. There is no way for the program to notice. What it can do is say
 what it took, which it does, first, on every fit:
@@ -176,12 +171,9 @@ names the terms:
 Those three columns were the whole schema; it ships as
 `example/simple-train.csv` if you want to run it as it stands.
 
-`-t` fits **every group in the file**, one line each, in a single pass. Standard
-output is a complete coefficient file and standard error is the commentary, so
-the redirect above is the workflow.
+`-t` fits **every group in the file**, one line each, in a single pass.
 
-**Which column is the value.** Column 2 unless you say otherwise, and nothing
-in the data can say which column you meant. A file written as
+**Which column is the value.** Column 2 unless you say otherwise. A file written as
 `site,dose,age,response` therefore fits `dose` from `age` and `response`, prints
 plausible coefficients and exits 0. Name the column instead, and the `reading:`
 line reports what it took. Asking `simple-train.csv` for the wrong thing on
@@ -238,10 +230,8 @@ Files named with `-c`, `--trim` and `-t` are looked for in the current
 directory first, then beside the program, so an installed `linearr` finds the
 example data from anywhere and your own file still wins where you have one.
 
-**`-c` is required for scoring.** There is no default table and no search for
-one. Which model produced a number is part of the number, so it is named rather
-than found by convention: the same command in two directories cannot quietly
-answer from two different models.
+**`-c` is named, never found by convention**: the same command in two
+directories cannot quietly answer from two different models.
 
 When something is wrong, the message says what:
 
@@ -303,5 +293,5 @@ examples for the checks this program exists to run.
 exist so the [refusal messages](#what-it-will-not-read) can be shown rather than
 described.
 
-No real data is distributed with this project. Point `-c` at your own table, or
-produce one with `-t`, before any number here is worth reading.
+Point `-c` at your own table, or produce one with `-t`, before any number here
+is worth reading.

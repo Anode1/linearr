@@ -159,13 +159,12 @@ What each solver does, where each one loses digits, and what the answers were
 checked against. The short version is in the README; this is the arithmetic
 behind it.
 
-The fit accumulates `X'X` and solves it. That is what bounds the memory, and it
-squares the condition number of the design, so a near-collinear or badly scaled
-problem loses about twice the digits it needs to. `--qr` rotates each row into a
-triangular factor instead, with Givens rotations, one row at a time. It squares
-nothing of the design (the response's spread is still accumulated as squares,
-by both solvers, so a response near 1e160 overflows either one and is refused).
-It is still streaming. Its factor is `p^2 + 7p + 6` doubles against the
+The default solves `X'X`, and that squaring is where the digits go: the loss is
+governed by the squared condition number of the design, roughly twice the
+digits the problem needs. `--qr`'s per-row rotations are Givens rotations, and
+nothing of the design is squared (the response's spread still is, by both
+solvers, so a response near 1e160 overflows either one and is refused).
+Its factor is `p^2 + 7p + 6` doubles against the
 normal equations' `p^2 + 2p`, so the accumulator is larger by `5p + 6`: at 24
 terms, 750 doubles against 624. Counting what a caller actually has to allocate
 keeps that order, because both solves need a workspace -- `p^2 + 3p + 2` for the
@@ -176,17 +175,13 @@ column pivoting gave its solve a workspace; the figures now come from
 `qr_storage()`, `qr_scratch()`, `regress_storage()` and
 `regress_solve_storage()`, which are what the callers allocate.
 
-On `example/nearly-the-same.csv`, where two columns differ in the sixth decimal
-and the answer is `1 + 2*x1 + 3*x2`:
-
-    normal equations   A,1.00000000001,2.00002262993,2.99997737008
-    --qr               A,1,1.99999999974,3.00000000026
-
-Five correct digits against ten. Both report `cond=`, and neither figure is a
+The README shows the two solvers on `example/nearly-the-same.csv`: five
+correct digits from the normal equations against ten from `--qr`. Both report
+`cond=`, and neither figure is a
 condition number in the textbook sense: each is a ratio of pivots, on
 differently scaled matrices, meant as an order-of-magnitude alarm. They are not comparable
 to each other, which is why the summary names the solver, and no fixed
-relationship holds between them: on the example above they are 5.34e+10 and
+relationship holds between them: on that file they are 5.34e+10 and
 2.78e+06.
 
 `--qr` is not a strictly better solver. It does not centre the data, and two
@@ -263,8 +258,7 @@ Both solvers are held to these numbers by `make check`, and the example files
 are held to them separately, so neither the code nor the data can drift alone.
 
 R is the second reference, and an independent one: `lm()` solves by QR with
-column pivoting, which is neither of the methods here, so agreement is evidence
-rather than the same arithmetic checked twice.
+column pivoting, which is neither of the methods here.
 
     $ sh scripts/r-check.sh
     file                         --qr vs lm() default vs lm()

@@ -148,10 +148,8 @@ nothing on the row path allocates.
 **2,000,000 rows by 8 terms, a 46 MB file, fitted in 0.42 s using 2.4 MB**, and
 the same through a pipe rather than a file. Nothing lands on disk.
 
-**The row count is bounded by time, not by memory.** A row is folded into the
-cross-products and dropped, so the tenth row and the ten-billionth cost the same
-space. Measured at 10,000,000 rows: 2.04 s, 2.0 MB, no more than at two
-million. That is 4.9 million rows a second.
+**The row count is bounded by time, not by memory.** Measured at 10,000,000
+rows: 2.04 s, 2.0 MB, no more than at two million. That is 4.9 million rows a second.
 
 The same file fitted by a streaming Python and by R, so the extrapolation has
 something to be compared against: Python reads 215,000 rows a second in 10 MB,

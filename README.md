@@ -128,8 +128,8 @@ refuses with the message each one gives.
 A scale outside 0 to 9 is an error rather than a silent fallback to the
 default.
 
-How the printed numbers are rounded, and why the rounding is part of the answer
-rather than presentation: [`doc/FORMATS.md`](doc/FORMATS.md#rounding).
+How the printed numbers are rounded, and why the rounding is part of the
+answer: [`doc/FORMATS.md`](doc/FORMATS.md#rounding).
 
 ## The example data
 
