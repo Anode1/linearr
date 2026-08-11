@@ -1,5 +1,67 @@
 # Changelog
 
+## 0.5.0
+
+Input that was quietly accepted is now refused, and each refusal says what to
+do instead.
+
+- **Hexadecimal is refused**, which `los.c`'s own comment always claimed. C99
+  gave `strtod` `0x10` and `0x1p4`, so a mis-export or an identifier in a
+  numeric column loaded silently as a number. Refused in every form now: in a
+  CSV field, behind a tab (`strtod` skips whitespace that the first-character
+  check did not), and in the named form, where `a=0x10` scored prediction=32
+  while the same value in a file was refused. Decimal exponents (`1e3`) still
+  read.
+- **An overflowing response is refused by both solvers.** A response near
+  1e160 overflows its sums of squares while every row passes `isfinite`, and
+  the fit came back exit 0 with `resid SD=inf` and `R2=NaN`. The advice
+  deliberately differs from the column case: `--qr` does not square the
+  columns, but both solvers square the response for its residual, so rescaling
+  the column is the only cure.
+- **An overflowing column names itself.** It was refused as "the result is not
+  a finite line", which is true, useless, and blamed the whole fit for one
+  column. The refusal now says what happened, that `--qr` fits the same file
+  because it does not square the columns, and `-d` says which term.
+- **A training row whose group starts with `#` is refused, not skipped.** The
+  coefficient loader has always refused a `#` line with the shape of a data
+  row; the two training readers read it as a comment, so the file fitted MINUS
+  that group, exit 0, nothing on screen. A prose comment still reads as one.
+- **A stdin row holding a NUL byte no longer swallows the row after it.** The
+  drain for over-long lines assumed the newline was still unread, which is
+  true only when the buffer filled; for a NUL-bearing row the newline was
+  already consumed, so the drain ate the entire next row, which was never
+  scored. The refusal also names the NUL instead of calling the line too long.
+- **`-y` and `--qr` are refused when scoring** rather than accepted and
+  dropped: both reach only the fitter, and scoring takes its schema and its
+  solver's output from the table named by `-c`. The `-h` synopsis also names
+  `-c` on every line that needs it; three of its four forms failed exactly as
+  printed.
+- **`--scale abc` no longer rounds to zero decimals.** `atoi` cannot tell
+  "abc" from 0, and 4294967300 wrapped through undefined behaviour to 4. The
+  scale is parsed and bounded, 0 to 9, and the rounding is part of the
+  published answer, so a scale the caller never asked for was a wrong figure,
+  not a cosmetic default.
+- **`-g '*' --residuals` pools every row**, as `-g '*'` does without
+  `--residuals`. The star was read as a literal group code there, so asking a
+  working pooled fit for its residuals answered "no rows in group *".
+- **The progress timer is monotonic again.** `_POSIX_C_SOURCE` was defined
+  after the first standard header, so the guard it feeds was false everywhere
+  and the once-a-minute progress line silently used the wall clock, NTP and
+  DST steps included.
+- **The Java agrees with the C where it quietly disagreed**: solve failures
+  carry the C's codes and words, infinities and trailing control characters
+  are refused as the C refuses them, and the 31-character group-name bound is
+  enforced with a message that used to be garbled.
+- The documentation stopped repeating itself and got its figures measured:
+  `qr.h` had the memory comparison backwards (with column pivoting the QR
+  allocates about 14% more than the elimination, not less), NUMERICS.md
+  carries figures that come from the storage functions the callers actually
+  use, and `qr.c` states the one place the QR's reported residual can sit
+  below what any line achieves, on a rank-deficient design.
+- Two gates got sharper: the transcript checker stopped at the first blank
+  line, so the longest transcripts were never diffed; and ten format strings
+  gained the attribute `-Wformat` needs to see them.
+
 ## 0.4.3
 
 - **The Windows release archive was named `linearr-0.0.0-dev-...`.** MSYS2's
