@@ -567,8 +567,7 @@ static int open_training(const char *csv_path, FILE **fpp, int *nvars) {
     if (n != 1)
         return fail("%s has no header line", csv_path);
     n = csv_split(line, field, CSV_MAX_FIELDS);
-    if (n < 3)
-    {
+    if (n < 3) {
         if (n == 1 && (strchr(field[0], ';') || strchr(field[0], '\t')))
             return fail("%s has no commas in its header, but does have %s. It "
                         "looks %s-separated; this program reads commas only",

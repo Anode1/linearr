@@ -95,7 +95,7 @@ found by reading a claim against the code rather than by running anything:
 
 ## Nullable returns, and the segfault this project already had
 
-`los_var_name`, `process_term_name`, `params_get`, `hash_get`, `los_model_get`
+`los_var_name`, `process_term_name`, `hash_get`, `los_model_get`
 and `resolve_program_dir` are documented as possibly returning NULL, and that is
 the right design: "out of range" and "absent" are real answers. The hazard is
 what a caller does with one.

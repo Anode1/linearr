@@ -87,20 +87,6 @@ struct fit_info {
                            beautifully.                                    */
 };
 
-/* Fit one group's line from a training CSV of "group,value,<terms>" rows, whose
- * header names the terms. group selects the rows; "*" pools every row in the
- * file under that name. Writes a complete two-line coefficient file into out:
- * the header, a newline, then the fitted row, so
- *   linearr -t train.csv -g 001 > model.csv
- * produces a table the scorer can read straight back. info may be NULL.
- * Returns 0, or -1 (see process_error). A group with few rows still fits: see
- * info.df before believing the result. */
-/* Bytes held for ONE group while -t fits every group in one pass. The fitter,
- * the coefficients and the residual-check block, plus the record around them.
- * Multiply by the number of groups; nothing here depends on the row count. */
-/* Decimal places in the printed prediction, and in the trim point. 0..9;
- * returns -1 and changes nothing outside that. These were keys in a properties
- * file, which is a second way of saying what an option already says. */
 /* The column holding the value being predicted, by header name. NULL, the
  * default, takes column 2. */
 void process_use_response(const char *name);
@@ -108,6 +94,9 @@ void process_use_response(const char *name);
 /* Non-zero if --response named the column, rather than it being column 2. */
 int process_response_named(void);
 
+/* Decimal places in the printed prediction, and in the trim point. 0..9;
+ * returns -1 and changes nothing outside that. These were keys in a properties
+ * file, which is a second way of saying what an option already says. */
 int process_set_scale(int decimals);
 int process_set_trim_scale(int decimals);
 
@@ -116,6 +105,9 @@ int process_set_trim_scale(int decimals);
  * began, since_last the seconds since the previous line. */
 int process_progress_due(long long rows, long elapsed, long since_last);
 
+/* Bytes held for ONE group while -t fits every group in one pass. The fitter,
+ * the coefficients and the residual-check block, plus the record around them.
+ * Multiply by the number of groups; nothing here depends on the row count. */
 size_t process_group_bytes(int nvars);
 
 /* Bytes held for one group of a LOADED coefficient table, which is the scoring
@@ -123,6 +115,14 @@ size_t process_group_bytes(int nvars);
  * array is dimensioned at the build ceiling. */
 size_t process_model_bytes(void);
 
+/* Fit one group's line from a training CSV of "group,value,<terms>" rows, whose
+ * header names the terms. group selects the rows; "*" pools every row in the
+ * file under that name. Writes a complete two-line coefficient file into out:
+ * the header, a newline, then the fitted row, so
+ *   linearr -t train.csv -g 001 > model.csv
+ * produces a table the scorer can read straight back. info may be NULL.
+ * Returns 0, or -1 (see process_error). A group with few rows still fits: see
+ * info.df before believing the result. */
 int process_train(const char *csv_path, const char *group,
                   char *out, size_t outsz, struct fit_info *info);
 

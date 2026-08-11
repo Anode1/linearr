@@ -56,8 +56,10 @@
  * without saying which design produced it. Correlated noise only fools these
  * checks when the correlation lines up with a COLUMN, which on a series in time
  * -- where the x axis is the order itself -- it does by construction. That is
- * the case the caveat is about, and there it is half the time, not a fifth. There is no fix inside a one-pass residual check; a
- * Durbin-Watson statistic would name the cause but not repair the t. So: on
+ * the case the caveat is about, and there it is half the time, not a fifth.
+ *
+ * There is no fix inside a one-pass residual check; a Durbin-Watson statistic
+ * would name the cause but not repair the t. So: on
  * data with an order to it -- a series in time, a sequence down a well, repeat
  * measurements on the same subject -- treat a curvature warning as a reason to
  * look at the residual file, not as a conclusion. On unordered rows it means
@@ -131,7 +133,6 @@ struct diag {
 };
 
 struct diag_result {
-    long long rows;
     int    curved_term;   /* term whose square explains the residual, or -1 */
     double curved_t;      /* its t statistic, 0 when there is none          */
     int    curved_pow;    /* 2 or 3: which power explained the residual     */

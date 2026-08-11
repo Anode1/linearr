@@ -265,7 +265,6 @@ void diag_result(const struct diag *d, double bound, struct diag_result *out) {
     double best = 0.0, t;
     int j;
 
-    out->rows        = d->n;
     out->curved_term = -1;
     out->curved_t    = 0.0;
     out->curved_pow  = 0;

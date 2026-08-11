@@ -39,7 +39,7 @@ static const char *t_argv0 = "./linearr_ut";
 /* A NULL where a string was expected is a FAIL, not a crash that takes the
  * whole run down and tells you nothing about the other tests. Use this for
  * EVERY comparison against a function documented as possibly returning NULL
- * (los_var_name, process_term_name, params_get, ...); a bare strcmp on one of
+ * (los_var_name, process_term_name, los_model_get, ...); a bare strcmp on one of
  * those is how this suite once turned a wrong return value into a SEGV. */
 static int streq(const char *a, const char *b) {
     return a && b && strcmp(a, b) == 0;
@@ -659,12 +659,11 @@ static void test_qr(void) {
         int where;
         double x3[3];                    /* this block fits three terms */
         for (where = 0; where < 3; where++) {
-            double want0, want1;
+            double want0;
             qr_init(&q, 3, t_store);
             for (i = 0; i < 20; i++) {
                 double xi = (double)i;
                 double y  = 3.0 + 2.0 * xi + (double)((i % 3) - 1) * 0.9;
-                (void)y;
                 if (where == 0) { x3[0] = 7.0; x3[1] = xi; x3[2] = (double)((i * 7) % 5); }
                 if (where == 1) { x3[0] = xi; x3[1] = 7.0; x3[2] = (double)((i * 7) % 5); }
                 if (where == 2) { x3[0] = xi; x3[1] = (double)((i * 7) % 5); x3[2] = 7.0; }
@@ -683,13 +682,12 @@ static void test_qr(void) {
                     (void)qr_add(&q2, x2, 3.0 + 2.0 * xi + (double)((i % 3) - 1) * 0.9);
                 }
                 (void)qr_solve(&q2, t_beta2, t_scratch, &fr);
-                want0 = t_beta2[0]; want1 = t_beta2[1];
+                want0 = t_beta2[0];
             }
             CHECK(fabs(t_beta[0] - want0) < 1e-9 * (fabs(want0) + 1.0),
                   "qr pivot: the intercept is the reduced model's, at any position");
             CHECK(fabs(fq.rss - fr.rss) < 1e-9 * fr.rss,
                   "qr pivot: and so is the residual");
-            (void)want1;
         }
     }
 
@@ -1640,7 +1638,7 @@ static void test_process_score(void) {
 }
 
 static void test_process_train(void) {
-    char out[LINEARR_MAX_OUTPUT], expect[LINEARR_MAX_OUTPUT], header[LINEARR_MAX_OUTPUT];
+    char out[LINEARR_MAX_OUTPUT], header[LINEARR_MAX_OUTPUT];
     struct fit_info info;
     const struct los_model *m;
 
@@ -1656,7 +1654,6 @@ static void test_process_train(void) {
         int k, nf, same = 1;
         ref.trim_addition = 0.0;
         CHECK(los_format_header(header, sizeof header) == 0, "train: format reference header");
-        (void)expect;
 
         CHECK(process_train("example/train.csv", "001", out, sizeof out, &info) == 0,
               "train: fits group 001");

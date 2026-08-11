@@ -19,6 +19,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 /* The last directory separator. Windows argv[0] is normally C:\...\linearr.exe
  * and _fullpath gives backslashes back, so looking only for '/' meant the
@@ -35,7 +36,6 @@ static char *last_sep(const char *p) {
 #endif
     return a;
 }
-#include <sys/stat.h>
 
 /* Windows has every function this file needs under another name, and lacks
  * exactly one. A reviewer cross-compiled with mingw-w64: all thirteen sources

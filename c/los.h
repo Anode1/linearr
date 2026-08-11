@@ -100,7 +100,10 @@ const char *los_response_name(void);
  * Every refusal used to return a bare -1 and the caller printed one generic
  * sentence for all of them, which on a large file is not a diagnosis. */
 const char *los_parse_error(void);
-void        los_set_response_name(const char *name);
+
+/* Remember the response column's name, for the `# response:` line a fitted
+ * table carries. Set from the training header; los_response_name() reads it. */
+void los_set_response_name(const char *name);
 
 /* Why the last los_load/los_load_trims returned -1. Never NULL. */
 const char *los_error(void);

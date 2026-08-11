@@ -106,8 +106,6 @@ static int score_named(const char *group, char *const *assign, int n) {
     return 0;
 }
 
-/* --terms: the answer to "what am I supposed to type?". Without it the only way
- * to learn the model's column names was to open the CSV and count. */
 /* What a run will hold. Asked often enough to be worth answering without a
  * trial run, and the only figure in this program that depends on the problem
  * rather than on the model alone. */
@@ -137,6 +135,8 @@ static void print_footprint(int terms, long long groups) {
                  "the same figures cover a thousand rows and a trillion.\n");
 }
 
+/* --terms: the answer to "what am I supposed to type?". Without it the only way
+ * to learn the model's column names was to open the CSV and count. */
 static void print_terms(void) {
     int i, n = process_nterms();
 
@@ -152,10 +152,6 @@ static void print_terms(void) {
     (void)printf("\nname them: GROUP %s=1 ...\n", n > 0 ? process_term_name(0) : "TERM");
 }
 
-/* Every group in one pass. This is the default for -t now, because "one fitted
- * line per group" is what the model IS: the old default pooled every row into a
- * single line labelled '*', and getting a real table meant one invocation and
- * one full re-read of the training file per group. */
 /* What the file was read AS, before what came of it. The layout is fixed
  * -- column 1 the group, column 2 the response, the rest terms -- and a file
  * written in another order fits perfectly well and answers a question nobody
@@ -180,6 +176,10 @@ static void print_reading(void) {
                                            : ". Use -y NAME if that is the wrong column");
 }
 
+/* Every group in one pass. This is the default for -t now, because "one fitted
+ * line per group" is what the model IS: the old default pooled every row into a
+ * single line labelled '*', and getting a real table meant one invocation and
+ * one full re-read of the training file per group. */
 static int train_all(const char *path, const char *only,
                      const char *resid_file, const char *stats_file) {
     struct fit_summary sum;
@@ -332,9 +332,12 @@ static int train(const char *path, const char *group) {
         fprintf(stderr, ", cond=%.3g (%s%s)", info.condition, process_solver(),
                 info.pinned > 0 ? ", over the terms kept" : "");
     (void)fprintf(stderr, "\n");
-    /* R2 cannot see this failure: an ill-conditioned design fits its own sample
-     * beautifully and predicts nothing. Normal equations square the condition
-     * number, so this is the diagnostic that has to be said out loud. */
+    /* R2 cannot see this failure, and neither can the residual file: an
+     * ill-conditioned design fits its own sample beautifully, and predicts
+     * inside that sample beautifully too. What it gets wrong is the individual
+     * COEFFICIENTS -- and so anything extrapolated, and any reading of which
+     * term matters. That is why it has to be said out loud rather than left to
+     * a figure of merit, and why the sentence here used to be wrong about it. */
     if (info.condition > 1e8)
         (void)fprintf(stderr, "warning: the design is ill-conditioned (cond=%.3g). "
                         "The trailing digits of these coefficients are noise; "

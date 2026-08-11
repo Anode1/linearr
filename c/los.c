@@ -8,10 +8,11 @@
  * fixed array. Cases themselves are stack objects, processed one at a time and
  * forgotten: scoring ten cases and scoring ten million cost the same memory.
  *
- * The other two are params.c's config table and, while `-t` fits every group,
- * one accumulator per group in process.c. This comment used to say "nothing
- * else allocates", which was false the day it was written: params.c was already
- * there. A count is a claim like any other. */
+ * The others are hash.c's group index and, while `-t` fits every group, one
+ * accumulator per group in process.c. This comment used to say "nothing else
+ * allocates", which was false when it was written, and then named params.c,
+ * which was true until that file was deleted and false afterwards. A count is a
+ * claim like any other, and this one has now been wrong in both directions. */
 #include "los.h"
 #include "resolve.h"
 #include "csv.h"
