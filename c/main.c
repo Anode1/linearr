@@ -9,6 +9,7 @@
 #include "regress.h"
 #include "los.h"
 #include "process.h"
+#include "csv.h"        /* the line reader the stdin path shares with files */
 #include "constants.h"
 #include "version.h"   /* generated: LINEARR_VERSION, from the git tag */
 
@@ -85,7 +86,7 @@ static const char *s_(long n) { return (n == 1) ? "" : "s"; }
 /* Score one line; report a bad one and keep going, so a bad row in a batch does
  * not throw away the rest of the file. */
 static int score(const char *input) {
-    char out[MAX_OUTPUT];
+    char out[LINEARR_MAX_OUTPUT];
     debug("scoring '%s'", input);
     if (process(input, out, sizeof out) != 0) {
         (void)fprintf(stderr, "cannot score '%s': %s\n", input, process_error());
@@ -96,7 +97,7 @@ static int score(const char *input) {
 }
 
 static int score_named(const char *group, char *const *assign, int n) {
-    char out[MAX_OUTPUT];
+    char out[LINEARR_MAX_OUTPUT];
     if (process_named(group, assign, n, out, sizeof out) != 0) {
         (void)fprintf(stderr, "cannot score group '%s': %s\n", group, process_error());
         return -1;
@@ -281,7 +282,7 @@ static int train_all(const char *path, const char *only,
 }
 
 static int train(const char *path, const char *group) {
-    char out[MAX_OUTPUT];
+    char out[LINEARR_MAX_OUTPUT];
     struct fit_info info;
 
     if (process_train(path, group, out, sizeof out, &info) != 0) {
@@ -348,7 +349,10 @@ static int scale_arg(const char *s, const char *opt) {
 }
 
 static void need_model(void) {
-    char err[512];
+    /* As wide as process_error()'s own buffer. At 512 this truncated exactly the
+     * messages worth reading: resolve_file's, which name every directory it
+     * looked in, and which are the ones a reader needs whole. */
+    char err[RESOLVE_PATH_MAX + 512];
     if (process_init(err, sizeof err) != 0) die("%s", err);
 }
 
@@ -373,11 +377,13 @@ int main(int argc, char **argv) {
     const char *group = NULL;
     const char *resid_file = NULL;
     const char *stats_file = NULL;
-    char line[MAX_INPUT];
+    char line[LINEARR_MAX_INPUT];
     int c, bad = 0, want_terms = 0;
     int  footprint_terms = 0;
     int  response_named = 0, want_qr = 0;
-    long footprint_groups = 1;
+    int  scoring_opt = 0;               /* --scale, --trim-scale, --trim, --no-trim */
+    const char *scoring_opt_name = NULL;
+    long long footprint_groups = 1;
 
     g_prog = argv[0];               /* resolve.c finds our files from this */
 
@@ -398,15 +404,17 @@ int main(int argc, char **argv) {
                                   REGRESS_MAX_VARS);
                           footprint_terms = (int)v;
                       } break;
-            case 'S': if (process_set_scale(scale_arg(optarg, "--scale")) != 0)
-                          die("--scale takes 0 to 9 decimal places");
+            case 'S': scoring_opt = 1; scoring_opt_name = "--scale";
+                      (void)process_set_scale(scale_arg(optarg, "--scale"));
                       break;
-            case 'Z': if (process_set_trim_scale(scale_arg(optarg, "--trim-scale")) != 0)
-                          die("--trim-scale takes 0 to 9 decimal places");
+            case 'Z': scoring_opt = 1; scoring_opt_name = "--trim-scale";
+                      (void)process_set_trim_scale(scale_arg(optarg, "--trim-scale"));
                       break;
             case 'c': process_use_coef(optarg); break;
-            case 'R': process_use_trim(optarg); break;
-            case 'N': process_use_trim(NULL); break;
+            case 'R': scoring_opt = 1; scoring_opt_name = "--trim";
+                      process_use_trim(optarg); break;
+            case 'N': scoring_opt = 1; scoring_opt_name = "--no-trim";
+                      process_use_trim(NULL); break;
             case 'E': resid_file = optarg; break;
             case 'G': stats_file = optarg; break;
             case 'Q': want_qr = 1; process_use_qr(1); break;
@@ -441,16 +449,41 @@ int main(int argc, char **argv) {
     if (want_qr && !train_file)
         die("--qr chooses the solver that does the fitting, so it needs -t "
             "TRAIN.CSV. Scoring only multiplies out coefficients already fitted");
+    /* And the reciprocals, which the rule above always covered and the code did
+     * not. --footprint answers a question about a SHAPE and reads no data, so
+     * `-t train.csv --footprint 8` printed the table and never fitted the file,
+     * exit 0; and the rounding options reach only the scorer, which is the
+     * identical reason -y and --qr are refused just above. */
+    if (footprint_terms > 0 && train_file)
+        die("--footprint reports what a shape would hold and reads no data, so "
+            "it cannot be combined with -t");
+    if (footprint_terms > 0 && want_terms)
+        die("--footprint reports what a shape would hold; --terms lists a loaded "
+            "model. Ask for one or the other");
+    if (scoring_opt && train_file)
+        die("%s applies to a prediction, so it needs a case to score, not -t. "
+            "Fitting writes unrounded coefficients: the rounding belongs to the "
+            "figure they produce", scoring_opt_name);
     if (footprint_terms > 0) {
         /* An optional group count follows, so the common question ("how much
          * for 400,000 groups of 24 terms?") is one command and no arithmetic. */
         if (optind < argc) {
             char *end;
+            errno = 0;
             footprint_groups = strtoll(argv[optind], &end, 10);
-            if (*end != '\0' || footprint_groups < 1)
+            /* ERANGE, because strtoll saturates: --footprint 24 99999999999999999999
+             * silently became LLONG_MAX and printed a total for a file nobody
+             * has. The old `long` truncated on LLP64 as well. */
+            if (*end != '\0' || errno == ERANGE || footprint_groups < 1)
                 die("--footprint's group count must be a whole number, 1 or more");
+            optind++;
         }
     }
+    /* Anything left over was typed for a reason and did nothing:
+     * `linearr -t train.csv extra` fitted the file and ignored `extra`, which
+     * is how a mistyped option becomes an operand and disappears. */
+    if ((train_file || want_terms || footprint_terms > 0) && optind < argc)
+        die("'%s' is not used by this command", argv[optind]);
 
     if (want_terms) {
         need_model();
@@ -488,12 +521,21 @@ int main(int argc, char **argv) {
     } else {
         need_model();
         for (;;) {
-            size_t n;
-            /* A sentinel on the last byte, so the two ways line[n] can be the
-             * terminator below are told apart: fgets overwrites it only when
-             * it fills the whole buffer. */
-            line[sizeof line - 1] = 'x';
-            if (!fgets(line, sizeof line, stdin)) break;
+            /* csv.c's reader, which files use: it counts the bytes it stored,
+             * so a NUL and an over-long line are told apart without the
+             * sentinel this loop used to carry, and it has already consumed
+             * the line, so nothing has to be drained. The two readers were
+             * the same problem solved twice, and one of them solved it
+             * wrongly for the last line of a file. */
+            int eof, rv = csv_read_line(stdin, line, sizeof line, &eof);
+
+            if (eof || rv == CSV_ERR_IO) break;
+            if (rv < 0) {
+                (void)fprintf(stderr, "cannot score: the input %s\n",
+                              csv_line_error(rv, sizeof line));
+                bad = 1;
+                continue;
+            }
             /* Excel's "CSV UTF-8" puts three invisible bytes at the start of
              * the file. Left in place they join the first group name, and the
              * program then reports that a group is missing from a table it is
@@ -501,33 +543,6 @@ int main(int argc, char **argv) {
             if ((unsigned char)line[0] == 0xEF && (unsigned char)line[1] == 0xBB &&
                 (unsigned char)line[2] == 0xBF)
                 memmove(line, line + 3, strlen(line + 3) + 1);
-            n = strcspn(line, "\r\n");
-
-            /* No line ending and not at end of file means the line did not
-             * fit, OR the line holds a NUL byte. These need opposite
-             * handling, and conflating them lost a row: for a too-long line
-             * fgets stopped on a full buffer and the newline is still
-             * unread, so drain to it; for a NUL-bearing line fgets already
-             * consumed the newline, and the old unconditional drain ate the
-             * ENTIRE NEXT LINE -- a case that was never scored, reported as
-             * nothing, in a batch whose other rows all answered. */
-            if (line[n] == '\0' && !feof(stdin)) {
-                if (line[sizeof line - 1] == '\0' &&
-                    line[sizeof line - 2] != '\n') {
-                    int ch;                     /* full buffer: a long line */
-                    while ((ch = fgetc(stdin)) != EOF && ch != '\n')
-                        ;
-                    (void)fprintf(stderr,
-                            "cannot score: a line longer than %d bytes\n",
-                            MAX_INPUT - 2);
-                } else {                        /* newline already consumed */
-                    (void)fprintf(stderr,
-                            "cannot score: a line holding a NUL byte\n");
-                }
-                bad = 1;
-                continue;
-            }
-            line[n] = '\0';
             if (line[0] == '\0' || line[0] == '#') continue;
             if (score(line) != 0) bad = 1;
         }

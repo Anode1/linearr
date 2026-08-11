@@ -154,8 +154,47 @@ static void test_csv(void) {
         CHECK(strncmp(big, "group,los,", 10) == 0, "csv_next reached the header");
         CHECK(strchr(big, '\n') == NULL, "csv_next stripped the newline");
         /* A line that does not fit is refused, never silently split in two. */
-        CHECK(csv_next(fp, big, 8) == -1, "csv_next refuses an over-long line");
+        CHECK(csv_next(fp, big, 8) == CSV_ERR_TOO_LONG,
+              "csv_next refuses an over-long line");
         (void)fclose(fp);
+    }
+
+    /* What the byte count is for. Each of these was read by fgets as a short
+     * line, because a NUL ends the C string and fgets cannot say how many bytes
+     * it wrote; the last one was returned as DATA and fitted. */
+    {   const char *path = "test-csv-reader.csv";
+        struct { const char *bytes; size_t len; int want; const char *what; } t[] = {
+            { "a,1\0002,2\nb,2,2\n",         15, CSV_ERR_NUL,
+              "a NUL mid-file is refused" },
+            { "a,1,1\nb,2\0002,2",           14, CSV_ERR_NUL,
+              "a NUL in an unterminated last line is refused, not truncated" },
+            { "a,1,1\rb,2,2\r",              12, CSV_ERR_CR,
+              "a CR-only file is refused rather than cut at the first record" },
+            { "a,1,1\r\n",                    7, 0,
+              "CRLF is an ordinary line ending" },
+            { "a,1,1",                        5, 0,
+              "and so is a last line with no ending at all" }
+        };
+        size_t k;
+        for (k = 0; k < sizeof t / sizeof t[0]; k++) {
+            char buf[CSV_LINE_MAX];
+            int  rv = 0;
+            FILE *w = fopen(path, "wb");
+            if (!w) { CHECK(0, "csv reader: cannot write the fixture"); break; }
+            (void)fwrite(t[k].bytes, 1, t[k].len, w);
+            (void)fclose(w);
+            w = fopen(path, "rb");
+            /* To the end, because the refusals above are in the second line:
+             * what is asserted is the value the reader STOPS on, so a clean
+             * file has to reach end of file (0) and a bad one its own code. */
+            if (w) {
+                while ((rv = csv_next(w, buf, sizeof buf)) > 0)
+                    ;
+                (void)fclose(w);
+            }
+            CHECK(rv == t[k].want, t[k].what);
+        }
+        (void)remove(path);
     }
 }
 
@@ -446,7 +485,7 @@ static void test_resolve(void) {
 
 /* Naming the terms instead of counting commas. */
 static void test_named_case(void) {
-    char out[MAX_OUTPUT], row[MAX_INPUT];
+    char out[LINEARR_MAX_OUTPUT], row[LINEARR_MAX_INPUT];
     char *a[2];
     int on[2];
 
@@ -468,7 +507,7 @@ static void test_named_case(void) {
     make_case(row, sizeof row, "001", on, 2);
     los_free();
     {
-        char rowout[MAX_OUTPUT];
+        char rowout[LINEARR_MAX_OUTPUT];
         CHECK(process(row, rowout, sizeof rowout) == 0, "named: the row form scores");
         CHECK(strcmp(out, rowout) == 0, "named: both forms give the same answer");
     }
@@ -1452,7 +1491,7 @@ static void test_los_round(void) {
 
 static void test_los_schema(void) {
     char *names[3];
-    char  header[MAX_OUTPUT];
+    char  header[LINEARR_MAX_OUTPUT];
 
     names[0] = (char *)"km"; names[1] = (char *)"stops"; names[2] = (char *)"";
 
@@ -1524,7 +1563,7 @@ static void test_los_trims(void) {
 
 static void test_los_case(void) {
     struct los_case c;
-    char line[MAX_INPUT];
+    char line[LINEARR_MAX_INPUT];
     double los;
     int on[2];
 
@@ -1569,7 +1608,7 @@ static void test_los_predict(void) {
 }
 
 static void test_process_score(void) {
-    char line[MAX_INPUT], out[MAX_OUTPUT];
+    char line[LINEARR_MAX_INPUT], out[LINEARR_MAX_OUTPUT];
     int on[2];
 
     CHECK(los_load_both() == 0, "process: schema for the scoring tests");
@@ -1601,7 +1640,7 @@ static void test_process_score(void) {
 }
 
 static void test_process_train(void) {
-    char out[MAX_OUTPUT], expect[MAX_OUTPUT], header[MAX_OUTPUT];
+    char out[LINEARR_MAX_OUTPUT], expect[LINEARR_MAX_OUTPUT], header[LINEARR_MAX_OUTPUT];
     struct fit_info info;
     const struct los_model *m;
 
@@ -1656,7 +1695,7 @@ static void test_process_train(void) {
 }
 
 static void test_other_schema(void) {
-    char out[MAX_OUTPUT];
+    char out[LINEARR_MAX_OUTPUT];
     struct fit_info info;
 
     /* The whole claim of this program in one test: a file with two columns

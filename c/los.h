@@ -105,6 +105,16 @@ void        los_set_response_name(const char *name);
 /* Why the last los_load/los_load_trims returned -1. Never NULL. */
 const char *los_error(void);
 
+/* The program's one number parser: what a CSV field and what a TERM=VALUE
+ * assignment must both pass. Exported because process.c had a second copy, and
+ * the two had drifted apart on trailing whitespace -- "2<tab>" was refused in a
+ * file and accepted as a=2<tab> -- which is the disagreement between the two
+ * forms of a case that both files argue at length must not exist. Refuses an
+ * empty field, trailing text, hexadecimal, and any value that is not finite.
+ * Returns 0, or -1 with *why (unless why is NULL) set to a clause naming the
+ * fault, to follow the value: "'%s' %s". */
+int los_parse_number(const char *s, double *out, const char **why);
+
 /* The model for a group, or NULL if the table does not have it. */
 const struct los_model *los_model_get(const char *group);
 

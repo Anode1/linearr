@@ -26,8 +26,13 @@
  * build can, and they are the whole of this program's stack requirement.
  * Derived, the ceiling is the only thing to set on a small target. */
 #define CSV_LINE_MAX   ((LOS_MAX_VARS + 2) * CSV_FIELD_MAX + 1024)
-#define MAX_INPUT      CSV_LINE_MAX   /* longest input line we read from stdin */
-#define MAX_OUTPUT     (2 * CSV_LINE_MAX)
+/* LINEARR_-prefixed because MAX_INPUT is POSIX's: <limits.h> defines it as 255
+ * under _XOPEN_SOURCE or _POSIX_C_SOURCE, so this quietly redefined a system
+ * macro. Nothing collided only because no translation unit happened to include
+ * <limits.h> first, and resolve.c -- which defines _XOPEN_SOURCE 700 -- is one
+ * #include away from it. */
+#define LINEARR_MAX_INPUT   CSV_LINE_MAX  /* longest line we read from stdin  */
+#define LINEARR_MAX_OUTPUT  (2 * CSV_LINE_MAX)
                                /* longest result process() may produce; a fitted
                                   header plus its coefficient row has to fit    */
 #define CSV_MAX_FIELDS   512   /* most fields csv_split() will hand back        */

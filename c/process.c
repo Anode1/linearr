@@ -72,7 +72,7 @@ typedef char header_fits_in_line[
  * stack, bisected, and still dies with SIGSEGV and no diagnostic below it, so
  * the 128 KB thread stack named above does NOT fit a default-ceiling fit --
  * scoring fits in 113 KB, fitting does not. The remaining driver is
- * MAX_OUTPUT, two of which live in process_train_residuals' frame beside a
+ * LINEARR_MAX_OUTPUT, two of which live in process_train_residuals' frame beside a
  * line buffer. Shrinking the ceiling shrinks all of them together: a 32-term
  * build fits in 54 KB. doc/INTERNALS.md carries the table. */
 /* Big enough for whichever solver is chosen. Both are O(terms^2) and neither
@@ -407,7 +407,7 @@ static int ensure_tables(void) {
                     "is none)", path);
     } else if (los_load_trims(path) != 0) {
         /* Read BEFORE los_free, which clears it. */
-        char why[MAX_OUTPUT];
+        char why[LINEARR_MAX_OUTPUT];
         (void)snprintf(why, sizeof why, "%s", los_error());
         los_free();
         return fail("%s (leave --trim off if there is none)", why);
@@ -479,7 +479,6 @@ int process_named(const char *group, char *const *assign, int n,
     for (i = 0; i < n; i++) {
         const char *eq = strchr(assign[i], '=');
         char name[LOS_NAME_MAX];
-        char *end;
         size_t len;
         double v;
 
@@ -502,19 +501,10 @@ int process_named(const char *group, char *const *assign, int n,
          * same rule: the two forms must not disagree, and a=0x10 scored
          * prediction=32 while the file form of the same case was refused.
          * The scan skips what strtod skips, so a=<tab>0x10 is caught too. */
-        {   const char *t = eq + 1;
-            while (*t == ' ' || *t == '\t' || *t == '\n'
-                || *t == '\v' || *t == '\f' || *t == '\r') t++;
-            if (*t == '-' || *t == '+') t++;
-            if (t[0] == '0' && (t[1] == 'x' || t[1] == 'X'))
-                return fail("'%s' is hexadecimal, which is not a number here: "
-                            "write the value in decimal", eq + 1);
+        {   const char *why;
+            if (los_parse_number(eq + 1, &v, &why) != 0)
+                return fail("'%s' %s", eq + 1, why);
         }
-        errno = 0;
-        v = strtod(eq + 1, &end);
-        while (*end == ' ' || *end == '\t') end++;
-        if (end == eq + 1 || *end != '\0' || errno == ERANGE || !isfinite(v))
-            return fail("'%s' is not a finite number", eq + 1);
         c.x[j] = v;
     }
     return score_case(&c, out, outsz);
@@ -569,6 +559,11 @@ static int open_training(const char *csv_path, FILE **fpp, int *nvars) {
 
     while ((n = csv_next(*fpp, line, sizeof line)) == 2)
         ;                                   /* leading comments precede a header */
+    /* Why it is not a header, before the fact that it is not one: a CR-only
+     * file reaches here as one refused line, and "no header line" sent the
+     * reader looking for a header that is on screen. */
+    if (n < 0)
+        return fail("%s %s", csv_path, csv_line_error(n, sizeof line));
     if (n != 1)
         return fail("%s has no header line", csv_path);
     n = csv_split(line, field, CSV_MAX_FIELDS);
@@ -710,7 +705,7 @@ int process_train(const char *csv_path, const char *group,
         rows++;
         progress_row(seen, "fitting");
     }
-    if (n < 0) { fail("%s has a line longer than %d bytes", csv_path, CSV_LINE_MAX); goto cleanup; }
+    if (n < 0) { fail("%s %s", csv_path, csv_line_error(n, sizeof line)); goto cleanup; }
 
     if (rows == 0) {
         fail("no rows for group '%s' in %s (%lld rows read)", label, csv_path, seen);
@@ -727,7 +722,7 @@ int process_train(const char *csv_path, const char *group,
         fail("the fitted table does not fit in %zu bytes", outsz);
         goto cleanup;
     }
-    {   char note[MAX_OUTPUT];
+    {   char note[LINEARR_MAX_OUTPUT];
         if (format_pinned(label, &f, nvars, note, sizeof note)) {
             size_t used = strlen(out);
             if (used + strlen(note) + 2 < outsz) {
@@ -768,7 +763,12 @@ struct group_fit {
      * judged by the other group's error, and the guard that exists to stop the
      * checks correlating rounding error never fired for it. */
     double sigma;
-    long   ny;
+    long long ny;                   /* long long, as every other row counter is:
+                                       this one was `long`, so on LLP64 and on
+                                       32-bit it overflowed -- undefined
+                                       behaviour -- past 2^31 rows in one group,
+                                       in the program whose claim is that the
+                                       row count is not a limit */
     double ymean, ym2;
     double storage[1];              /* fitter + (nvars+1) beta + diag          */
 };
@@ -815,7 +815,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
     struct hash      *index = NULL;
     struct los_case   c;
     char   line[CSV_LINE_MAX];
-    char   row[MAX_OUTPUT];
+    char   row[LINEARR_MAX_OUTPUT];
     FILE  *fp = NULL;
     size_t need;
     int    rc = -1, n, nvars = 0;
@@ -922,7 +922,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
         progress_row(seen, "fitting");
     }
     if (n < 0) {
-        fail("%s has a line that is over-long or holds a NUL byte", csv_path);
+        fail("%s %s", csv_path, csv_line_error(n, sizeof line));
         goto cleanup;
     }
     if (groups == 0) {
@@ -973,7 +973,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             goto cleanup;
         }
         (void)fprintf(out, "%s\n", row);
-        {   char note[MAX_OUTPUT];
+        {   char note[LINEARR_MAX_OUTPUT];
             if (format_pinned(g->group, &f, nvars, note, sizeof note))
                 (void)fprintf(out, "%s\n", note);
         }
@@ -984,7 +984,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
                 (void)fprintf(stats, "group,rows,df,r2,resid_sd,cond,pinned\n");
                 first_stat = 0;
             }
-            (void)fprintf(stats, "%s,%lld,%lld,", g->group, (long long)g->ny, f.df);
+            (void)fprintf(stats, "%s,%lld,%lld,", g->group, g->ny, f.df);
             if (f.r2 >= 0.0) (void)fprintf(stats, "%.6f,", f.r2);
             else             (void)fprintf(stats, ",");
             if (f.sigma >= 0.0)
@@ -1068,7 +1068,14 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
                     sum->curved_term = dr.curved_term;
                     sum->curved_t    = dr.curved_t;
                     sum->curved_pow  = dr.curved_pow;
-                    memcpy(sum->worst_group, g->group, sizeof sum->worst_group);
+                    /* snprintf, not memcpy of the whole field: g->group is a
+                     * heap object filled by strcpy, so the bytes past its NUL
+                     * are indeterminate, and copying them all was the same
+                     * read of unset memory that the strcpy a few hundred lines
+                     * up was written to stop -- moved from the stack to the
+                     * heap, where ASan cannot see it either. */
+                    (void)snprintf(sum->worst_group, sizeof sum->worst_group,
+                                   "%s", g->group);
                 }
                 if (fabs(dr.fitted_t) > fabs(sum->fitted_t)) sum->fitted_t = dr.fitted_t;
                 if (fabs(dr.spread_t) > fabs(sum->spread_t)) sum->spread_t = dr.spread_t;

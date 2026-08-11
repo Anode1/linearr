@@ -76,6 +76,35 @@ case "$(printf 'A,1\000junk\n%s\n' "$CASE1" | score 2>&1 >/dev/null)" in
     *"NUL byte"*) ok ;; *) no "and the refusal names the NUL, not the length" ;;
 esac
 
+# The same byte in the LAST line of a file that does not end in a newline. fgets
+# hit EOF there, so the guard that asks "no line ending and not at end of file"
+# was false and the truncated prefix was returned as DATA: a row read as
+# A,10,4 when the file says A,10,4<NUL>,999,999, fitted, exit 0. Four rows and a
+# confident answer, which is this project's worst category of defect.
+printf 'group,y,x\nA,1,1\nA,2,2\nA,3,3\nA,10,4\000,999,999' > "$tmp/nul-last.csv"
+set +e
+out=$(cd "$tmp" && "$bin" -t nul-last.csv 2>&1 >/dev/null); rc=$?
+set -e
+check "a NUL in an unterminated last line is refused" "$rc" "1"
+case "$out" in *"NUL byte"*) ok ;; *) no "and names the NUL: got [$out]" ;; esac
+
+# A CR-only file (old Mac) is one line to every reader on a modern system. The
+# old reader cut at the first CR, so it read the header and threw the rest of
+# the file away without a word.
+printf 'group,y,x\rA,1,1\rA,2,2\r' > "$tmp/cronly.csv"
+set +e
+out=$(cd "$tmp" && "$bin" -t cronly.csv 2>&1 >/dev/null); rc=$?
+set -e
+check "a CR-only file is refused, not half-read" "$rc" "1"
+case "$out" in *"bare CR"*) ok ;; *) no "and names the CR: got [$out]" ;; esac
+# while CRLF, and a last line with no newline at all, are ordinary
+printf 'group,y,x\r\nA,1,1\r\nA,2,2\r\nA,4,3\r\n' > "$tmp/crlf.csv"
+check "CRLF still reads" \
+    "$(cd "$tmp" && "$bin" -t crlf.csv 2>/dev/null | tail -1)" "A,-0.666666666667,1.5"
+printf 'group,y,x\nA,1,1\nA,2,2\nA,4,3' > "$tmp/nonl.csv"
+check "and so does a file with no final newline" \
+    "$(cd "$tmp" && "$bin" -t nonl.csv 2>/dev/null | tail -1)" "A,-0.666666666667,1.5"
+
 # -h
 check "-h exit" "$("$bin" -h >/dev/null 2>&1; echo $?)" "0"
 case "$("$bin" -h 2>&1)" in usage:*) ok ;; *) no "-h prints usage" ;; esac
@@ -321,6 +350,30 @@ set +e
 ("$bin" -t "$root/example/simple-train.csv" --qr >/dev/null 2>&1); rc=$?
 set -e
 check "--qr with -t is still accepted" "$rc" "0"
+
+# The same rule in the other direction, which the code had never enforced.
+# --footprint reads no data, so `-t F --footprint 8` printed the table and never
+# fitted the file, exit 0; the rounding options reach only the scorer, which is
+# the identical reason -y and --qr are refused above; and a leftover operand is
+# how a mistyped option becomes an argument and disappears.
+for opt in "--footprint 8" "--scale 2" "--trim-scale 2" "--no-trim" "bogus"; do
+    set +e
+    ("$bin" -t "$root/example/simple-train.csv" $opt >/dev/null 2>&1); rc=$?
+    set -e
+    check "-t with $opt is refused, not silently dropped" "$rc" "1"
+done
+set +e
+(cd "$tmp" && "$bin" -c coef.csv --terms --footprint 8 >/dev/null 2>&1); rc=$?
+set -e
+check "--terms with --footprint is refused" "$rc" "1"
+# and --footprint's own group count is still read, ERANGE included: strtoll
+# saturates, so a 20-digit count silently became LLONG_MAX and printed a total
+set +e
+("$bin" --footprint 24 99999999999999999999 >/dev/null 2>&1); rc=$?
+set -e
+check "an out-of-range group count is refused" "$rc" "1"
+check "while a real one still answers" \
+    "$("$bin" --footprint 24 400000 | head -1)" "24 terms, 400000 groups"
 
 # Out of range was the only form caught, because the value was read with atoi,
 # which cannot tell "abc" from 0. Every one of these published a prediction
@@ -708,6 +761,31 @@ set +e
 "$bin" -t "$tmp/q.csv" >/dev/null 2>&1; rc=$?
 set -e
 check "a quoted name does not become a second group" "$rc" "1"
+
+# And with an apostrophe, which is the same fault and was the half the guard
+# missed: it tested a leading ' and a trailing ", so A' and A went on becoming
+# two groups in silence, which is exactly what the comment above the check says
+# it exists to prevent.
+printf 'group,y,x\nA,1,1\nA,2,2\nA'"'"',3,3\nA'"'"',4,4\n' > "$tmp/qa.csv"
+set +e
+msg=$("$bin" -t "$tmp/qa.csv" 2>&1 >/dev/null); rc=$?
+set -e
+check "a trailing apostrophe does not become a second group" "$rc" "1"
+case "$msg" in *quoted*) ok ;; *) no "and says it is quoted: got [$msg]" ;; esac
+
+# A subnormal is finite, representable, and a perfectly good coefficient. strtod
+# sets ERANGE for gradual UNDERFLOW as well as for overflow, so testing errno
+# refused 1e-320 and called it "not a finite number", which it is.
+printf 'group,intercept,km\nA,1e-320,2\n' > "$tmp/tiny.csv"
+check "a subnormal coefficient is not refused as non-finite" \
+    "$(cd "$tmp" && "$bin" -c tiny.csv A km=1)" "A prediction=2.0000"
+# while the overflow the errno test was meant to catch is still refused, by
+# isfinite, which has always been the check that mattered
+printf 'group,intercept,km\nA,1e400,2\n' > "$tmp/huge2.csv"
+set +e
+(cd "$tmp" && "$bin" -c huge2.csv A km=1 >/dev/null 2>&1); rc=$?
+set -e
+check "and 1e400 is still refused" "$rc" "1"
 
 # A semicolon HEADER was already named; the rows were not.
 printf 'group;y;a;b\nA;1;1;2\n' > "$tmp/s.csv"

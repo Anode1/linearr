@@ -223,10 +223,11 @@ static int fast_num(const char *s, double *out) {
  * for 1e400 (with ERANGE), and reads "0x10" as 16. Each of those loaded into a
  * coefficient table without complaint, scored "prediction=nan", and exited 0.
  * A number that is not finite is not a number we can publish. */
-static int parse_num(const char *s, double *out) {
+int los_parse_number(const char *s, double *out, const char **why) {
     char *end;
     double v;
 
+    if (why) *why = "is not a finite number";
     if (s[0] == '\0') return -1;
     if (fast_num(s, out) == 0) return 0;
     /* Hexadecimal, which strtod accepts and this function's own comment lists
@@ -244,14 +245,21 @@ static int parse_num(const char *s, double *out) {
         while (*t == ' ' || *t == '\t' || *t == '\n'
             || *t == '\v' || *t == '\f' || *t == '\r') t++;
         if (*t == '-' || *t == '+') t++;
-        if (t[0] == '0' && (t[1] == 'x' || t[1] == 'X')) return -1;
+        if (t[0] == '0' && (t[1] == 'x' || t[1] == 'X')) {
+            if (why) *why = "is hexadecimal, which is not a number here: "
+                            "write the value in decimal";
+            return -1;
+        }
     }
-    errno = 0;
+    /* No ERANGE test. strtod sets it for gradual UNDERFLOW as well as for
+     * overflow, so 1e-320 -- finite, representable, and a perfectly good
+     * coefficient -- was refused as "not a finite number", which was also a
+     * lie about it. Overflow needs no help from errno: strtod returns
+     * +-HUGE_VAL and the isfinite below has always caught 1e400. */
     v = strtod(s, &end);
-    if (errno == ERANGE) return -1;             /* 1e400, and denormal underflow */
     while (*end == ' ') end++;
     if (*end != '\0') return -1;
-    if (!isfinite(v)) return -1;                /* nan, inf, -inf */
+    if (!isfinite(v)) return -1;                /* nan, inf, -inf, 1e400 */
     *out = v;
     return 0;
 }
@@ -286,8 +294,7 @@ static int load_coefficients(const char *path) {
         }
     }
     if (n < 0) {
-        refuse("%s has a line over %d bytes, or one holding a NUL byte",
-               path, CSV_LINE_MAX - 2);
+        refuse("%s %s", path, csv_line_error(n, sizeof line));
         goto cleanup;
     }
     if (n != 1) {
@@ -316,7 +323,7 @@ static int load_coefficients(const char *path) {
     {   int numeric = 1, k;
         double tmp;
         for (k = 1; k < n; k++)
-            if (parse_num(field[k], &tmp) != 0) { numeric = 0; break; }
+            if (los_parse_number(field[k], &tmp, NULL) != 0) { numeric = 0; break; }
         if (numeric) {
             refuse("%s starts with a row of numbers where its header should be: "
                    "a coefficient file needs GROUP,Intercept,<term names>", path);
@@ -365,14 +372,14 @@ static int load_coefficients(const char *path) {
 
         m = xmalloc(sizeof *m);
         m->trim_addition = 0.0;
-        if (parse_num(field[1], &m->intercept) != 0) {
+        if (los_parse_number(field[1], &m->intercept, NULL) != 0) {
             free(m);
             refuse("%s group %s: the intercept '%s' is not a finite number",
                    path, group, field[1]);
             goto cleanup;
         }
         for (i = 0; i < nvars; i++) {
-            if (parse_num(field[i + 2], &v) != 0) {
+            if (los_parse_number(field[i + 2], &v, NULL) != 0) {
                 free(m);
                 refuse("%s group %s: %s = '%s' is not a finite number",
                        path, group, var_name[i], field[i + 2]);
@@ -385,8 +392,7 @@ static int load_coefficients(const char *path) {
         rows++;
     }
     if (n < 0) {
-        refuse("%s has a line over %d bytes, or one holding a NUL byte",
-               path, CSV_LINE_MAX - 2);
+        refuse("%s %s", path, csv_line_error(n, sizeof line));
         goto cleanup;
     }
 
@@ -416,15 +422,14 @@ int los_load_trims(const char *path) {
     while ((n = csv_next(fp, line, sizeof line)) == 2)
         ;
     if (n < 0) {
-        refuse("%s has a line over %d bytes, or one holding a NUL byte",
-               path, CSV_LINE_MAX - 2);
+        refuse("%s %s", path, csv_line_error(n, sizeof line));
         goto cleanup;
     }
     if (n != 1) {
         refuse("%s is empty", path);
         goto cleanup;
     }
-    if (csv_split(line, field, CSV_MAX_FIELDS) == 2 && parse_num(field[1], &first) == 0) {
+    if (csv_split(line, field, CSV_MAX_FIELDS) == 2 && los_parse_number(field[1], &first, NULL) == 0) {
         struct los_model *m0 = hash_get(models, field[0]);
         if (m0) { m0->trim_addition = first; have_trims = 1; }  /* data, not a header */
         debug("los: %s has no header line; treating the first line as data", path);
@@ -439,7 +444,7 @@ int los_load_trims(const char *path) {
             refuse("%s wants exactly GROUP,trim_addition on every line", path);
             goto cleanup;
         }
-        if (parse_num(field[1], &v) != 0) {
+        if (los_parse_number(field[1], &v, NULL) != 0) {
             refuse("%s group %s: the trim addition '%s' is not a finite number",
                    path, field[0], field[1]);
             goto cleanup;
@@ -450,8 +455,7 @@ int los_load_trims(const char *path) {
         if (m) { m->trim_addition = v; have_trims = 1; }
     }
     if (n < 0) {
-        refuse("%s has a line over %d bytes, or one holding a NUL byte",
-               path, CSV_LINE_MAX - 2);
+        refuse("%s %s", path, csv_line_error(n, sizeof line));
         goto cleanup;
     }
     rc = 0;
@@ -595,13 +599,15 @@ static int parse_row(const char *line, struct los_case *c, double *los,
      * rather than half-handled. */
     for (i = 0; i < n; i++) {
         size_t len = strlen(field[i]);
-        /* First OR last, because a field that merely ENDS in a quote is the
-         * same fault: A" and A became two groups, silently, which is the
-         * outcome this guard was written to prevent and it only checked byte
-         * zero. An interior apostrophe is left alone, since O'Brien is a name
+        /* First OR last, and both quote characters at both ends: a field that
+         * merely ENDS in a quote is the same fault, A" and A became two groups
+         * silently, and this guard was written for exactly that -- then checked
+         * a trailing '"' and not a trailing '\'', so A' and A went on doing it.
+         * An INTERIOR apostrophe is still left alone, since O'Brien is a name
          * and not a quoting attempt. */
         if (field[i][0] == '"' || field[i][0] == '\'' ||
-            (len > 0 && field[i][len - 1] == '"')) {
+            (len > 0 && (field[i][len - 1] == '"' ||
+                         field[i][len - 1] == '\''))) {
             show_field(shown, sizeof shown, field[i]);
             field_label(lbl, sizeof lbl, i, xoff);
             (void)snprintf(parse_why, sizeof parse_why,
@@ -622,7 +628,7 @@ static int parse_row(const char *line, struct los_case *c, double *los,
                        shown, GROUP_MAX - 1);
         return -1;
     }
-    if (los && parse_num(field[resp_field], los) != 0) {
+    if (los && los_parse_number(field[resp_field], los, NULL) != 0) {
         show_field(shown, sizeof shown, field[resp_field]);
         field_label(lbl, sizeof lbl, resp_field, xoff);
         (void)snprintf(parse_why, sizeof parse_why,
@@ -634,7 +640,7 @@ static int parse_row(const char *line, struct los_case *c, double *los,
 
     for (i = 0; i < nvars; i++) {
         int at = (xoff == 2) ? term_field[i] : i + xoff;
-        if (parse_num(field[at], &c->x[i]) != 0) {
+        if (los_parse_number(field[at], &c->x[i], NULL) != 0) {
             show_field(shown, sizeof shown, field[at]);
             field_label(lbl, sizeof lbl, at, xoff);
             (void)snprintf(parse_why, sizeof parse_why,
