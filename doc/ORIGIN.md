@@ -11,8 +11,7 @@ The problem itself has not changed since 2011: a table of coefficients, a
 stream of rows to apply them to, and often a machine on which installing a
 scientific stack is inconvenient or not permitted.
 
-The porting work the README names sometimes landed in plain Java without
-frameworks rather than C. The view behind it, and behind this program, is that
+The view behind that porting work, and behind this program, is that
 computation belongs as close to the processor and to the memory it touches as
 the problem allows; distance from it costs time, energy and hardware that a
 straight line does not need.

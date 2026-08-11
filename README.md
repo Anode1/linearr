@@ -290,7 +290,7 @@ and the machine they were taken on: [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md).
 The predictor named at the top was one of several statistical tools the author,
 trained in physics and computer science and a professional software developer,
 has built for scientists in industry. Much of that work was this same job:
-taking a model written in SAS, R or Matlab and turning it into C, so it could
+taking a model written in SAS, R or Matlab and turning it into C or Java, so it could
 run where the original could not.
 
 **This does not replace Python, R, SAS or Matlab.** Those are where a model is
