@@ -183,7 +183,7 @@ misses by 0.37. `--qr` carries the residual through the rotation and does not
 pay this at all.
 
 What a long run costs in accuracy, measured against the same accumulation
-carried in long double, is in [`doc/NUMERICS.md`](doc/NUMERICS.md).
+carried in long double, is in [`NUMERICS.md`](NUMERICS.md).
 
 **A long run says where it has got to.** After the first minute, and once a
 minute after that, a line goes to stderr:

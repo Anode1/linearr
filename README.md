@@ -284,60 +284,19 @@ and the machine they were taken on: [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md).
 
 ## Origin
 
-The author, trained in physics and computer science and a professional software
-developer, has built several statistical tools for scientists in industry. One
-of them was a least-squares length-of-stay predictor, in 2011: it went into
-production and was maintained by other people. This is a C implementation of
-the same arithmetic, written from scratch, generalised so the terms come from
-your file, and carrying none of the original data.
-
-Two views behind it: computation belongs as close to the processor as the
-problem allows, and data of any size should be read as a stream, so its size
-stops being a design question.
+The predictor named at the top was one of several statistical tools the author,
+trained in physics and computer science and a professional software developer,
+has built for scientists in industry. Much of that work was this same job:
+taking a model written in SAS, R or Matlab and turning it into C, so it could
+run where the original could not.
 
 **This does not replace Python, R, SAS or Matlab.** Those are where a model is
 explored, chosen and argued about. This is one method, small enough to read and
 checkable against published answers, for the places those cannot go.
 
-One core, one stream, no restart from a partial fit, and at 4.9 million rows a
-second the cost is reading text rather than the arithmetic.
-
 Read next in [`doc/ORIGIN.md`](doc/ORIGIN.md): what that work was, the same
 porting offered for other tools, the limitations in full, and the 24-term model
 the example data is shaped from.
-
-## The original term set
-
-The 24 terms in `example/coefficients.csv` are the production model's, and they are
-a subset of it. The original carried **35**, over 579 groups (the scale check
-above runs at a round 580). The eleven left out are recorded here, in the order
-the original used them, so that a future hospital length-of-stay implementation
-does not have to rediscover the schema:
-
-    1-14   Cardioversion, Cell_saver, Chemotherapy, Dialysis,
-           Heart_resuscitation, Mech_vent_ge_96_hours, mech_vent, Feeding_tube,
-           Paracentesis, Parenteral_nutrition, Pleurocentesis, Radiotherapy,
-           Tracheostomy, Vascular_access_device      # what was done
-    15     lso_outlier                               # omitted here
-    16-19  multiple_ie_2ormore, multiple_ie_3ormore, icu_indicator, hc_dad
-    20-23  age_under1, age_under18, age_60plus, age_80plus
-    24     obs_gt40
-    25-27  p75_flag, p90_flag, p95_flag              # omitted here
-    28-34  status_11 .. status_17                    # omitted here
-    35     ooh
-
-The eleven are `lso_outlier`, the three percentile flags, and the seven
-discharge-status indicators. They are properties of how the stay ended rather
-than of what was done during it, and none of them means anything without the
-trimming rules that set their thresholds, so an example table meant to be
-fitted and checked against a known answer is better off without them. A second
-table held the other side of the same split and used a parallel set:
-`non_lso_outlier`, `p10_flag`, `p25_flag`, `status_01 .. status_07`, 34 terms
-over the same groups, with the 24 above common to both.
-
-Only the names and their order are recorded here. The coefficients that went
-with them were production values and are not in this repository; see *The
-example data is synthetic* above. Anyone reimplementing this fits their own.
 
 ## Platforms, and reporting a bug
 

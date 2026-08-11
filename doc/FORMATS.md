@@ -300,7 +300,7 @@ examples for the checks this program exists to run.
 
 **Two the program refuses**, which are the only files here that exit non-zero.
 `gaps.csv` has an empty field and `semicolons.csv` is semicolon-separated; both
-exist so the [refusal messages](doc/FORMATS.md#what-it-will-not-read) can be shown rather than
+exist so the [refusal messages](#what-it-will-not-read) can be shown rather than
 described.
 
 No real data is distributed with this project. Point `-c` at your own table, or
