@@ -202,9 +202,11 @@ warning, and where the checks are wrong.
   them that are the method).
 
 **Reach for something else (or reach the author :) when:** you need regularization (ridge, lasso,
-elastic net), categorical encoding, missing-value handling, cross-validation,
+elastic net), categorical encoding, imputation, cross-validation,
 weighted least squares, or inference: standard errors, confidence intervals,
-prediction intervals, p-values. None of that is here. The residual standard
+prediction intervals, p-values. None of that is here. An empty field or an `NA`
+is refused with the row and the term named, rather than filled in or quietly
+dropped, which is a refusal and not a treatment of missing data. The residual standard
 deviation is reported, as `resid SD=` in the fit summary: the typical distance
 between the fit and the rows it was fitted to, in the response's own units. It
 is an in-sample figure and a floor, not an estimate of the error on a new row. R2 is
