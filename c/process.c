@@ -214,6 +214,7 @@ static char err_buf[RESOLVE_PATH_MAX + 512] = "no error";
 
 /* Set the reason and fail in one statement, so no path can return -1 while
  * leaving the previous run's explanation behind. */
+static int fail(const char *fmt, ...) LINEARR_PRINTF(1, 2);
 static int fail(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
@@ -400,7 +401,7 @@ static int score_case(const struct los_case *c, char *out, size_t outsz) {
 
     m = los_model_get(c->group);
     if (!m)
-        return fail("no group '%s' in %s (%ld groups there)",
+        return fail("no group '%s' in %s (%lld groups there)",
                     c->group, coef_path, los_ngroups());
 
     pscale = predict_scale;
@@ -636,12 +637,12 @@ int process_train(const char *csv_path, const char *group,
         if (n == 2) continue;
         seen++;
         if (los_parse_training(line, &c, &los) != 0) {
-            fail("%s row %ld: %s", csv_path, seen, los_parse_error());
+            fail("%s row %lld: %s", csv_path, seen, los_parse_error());
             goto cleanup;
         }
         if (!pool && strcmp(c.group, group) != 0) continue;
         if (fitter_add(&r, c.x, los) != 0) {
-            fail("%s row %ld holds a value that is not finite", csv_path, seen);
+            fail("%s row %lld holds a value that is not finite", csv_path, seen);
             goto cleanup;
         }
         rows++;
@@ -650,7 +651,7 @@ int process_train(const char *csv_path, const char *group,
     if (n < 0) { fail("%s has a line longer than %d bytes", csv_path, CSV_LINE_MAX); goto cleanup; }
 
     if (rows == 0) {
-        fail("no rows for group '%s' in %s (%ld rows read)", label, csv_path, seen);
+        fail("no rows for group '%s' in %s (%lld rows read)", label, csv_path, seen);
         goto cleanup;
     }
 
@@ -788,7 +789,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
         if (n == 2) continue;
         seen++;
         if (los_parse_training(line, &c, &los) != 0) {
-            fail("%s row %ld: %s", csv_path, seen, los_parse_error());
+            fail("%s row %lld: %s", csv_path, seen, los_parse_error());
             goto cleanup;
         }
         if (only && strcmp(c.group, only) != 0) continue;
@@ -830,7 +831,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             g->ym2   += dy * (los - g->ymean);
         }
         if (fitter_add(&g->r, c.x, los) != 0) {
-            fail("%s row %ld holds a value that is not finite", csv_path, seen);
+            fail("%s row %lld holds a value that is not finite", csv_path, seen);
             goto cleanup;
         }
         rows++;
@@ -850,7 +851,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
      * like, which is the commonest way to write this file wrongly, and it used
      * to produce a table of one-row models and exit 0. */
     if (rows >= 3 && groups == rows) {
-        fail("%s puts every one of its %ld rows in a different group, so there "
+        fail("%s puts every one of its %lld rows in a different group, so there "
              "is nothing to fit. The first column is the group; if your data "
              "has no groups, add a column with the same value on every row",
              csv_path, rows);

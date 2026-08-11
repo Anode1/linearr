@@ -35,6 +35,7 @@ static char reason[RESOLVE_PATH_MAX + 512] = "";
  * visible only under -d. */
 const char *los_error(void) { return reason; }
 
+static int refuse(const char *fmt, ...) LINEARR_PRINTF(1, 2);
 static int refuse(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
@@ -337,11 +338,11 @@ static int load_coefficients(const char *path) {
         }
 
         if (csv_split(line, field, CSV_MAX_FIELDS) != nvars + 2) {
-            refuse("%s row %ld does not have %d columns", path, rows + 1, nvars + 2);
+            refuse("%s row %lld does not have %d columns", path, rows + 1, nvars + 2);
             goto cleanup;
         }
         if (copy_group(group, sizeof group, field[0]) != 0) {
-            refuse("%s row %ld has an empty group, or one over %d characters",
+            refuse("%s row %lld has an empty group, or one over %d characters",
                    path, rows + 1, GROUP_MAX - 1);
             goto cleanup;
         }
@@ -380,7 +381,7 @@ static int load_coefficients(const char *path) {
         goto cleanup;
     }
 
-    debug("los: %ld groups from %s", rows, path);
+    debug("los: %lld groups from %s", rows, path);
     rc = 0;
 cleanup:
     (void)fclose(fp);
