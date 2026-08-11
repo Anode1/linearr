@@ -6,8 +6,9 @@ is the operating manual for working on it. Read it, then `README.md`.
 ## The contract (read first)
 
 - **`README.md`**: what the program promises: the two directions (fit and
-  score), the data-driven schema, the configuration keys, the memory bound, and
-  the Style section. Behaviour that contradicts it is a defect in one of them.
+  score), the data-driven schema, the options (there is no configuration file:
+  every setting is an option), and the memory bound. Behaviour that contradicts
+  it is a defect in one of them. The style rules live in `doc/INTERNALS.md`.
 - **`los.h`**: the model: the schema, the tables, the arithmetic. The header
   comments are the specification the `.c` implements.
 - **`regress.h`**: what the fitter guarantees, including what it does with a
@@ -21,13 +22,16 @@ Do not change behaviour without changing these first.
 ## Build and test
 
     make          # build ./linearr
-    make check    # ut + cliut: the commit gate
+    make check    # ut + cliut + readme + java + r: the commit gate
     make ut       # the unit tests: the fast inner loop
     make cliut    # black-box: the built binary through a shell and a pty
+    make readme   # every transcript in README.md and doc/, run and diffed
+    make java     # both implementations fit every example; the output is diffed
+    make r        # the same against R's lm(), which uses a different method
     make ut-asan  # the tests under AddressSanitizer
     make ut-ubsan # the tests under UndefinedBehaviorSanitizer
     make pedantic # -pedantic -Wshadow -Wstrict-prototypes -Wmissing-prototypes ...
-    make hooks    # install the pre-push hook (runs both sanitizers)
+    make hooks    # install the pre-push hook (every gate, then both sanitizers)
     make clean
 
 Run the tests from the project root: they read `example/` by
@@ -51,12 +55,13 @@ refactor:
   footprint formula is a data size. Collecting rows into an array to "make it
   simpler" throws this away, and it is the reason the program exists. `sh
   scripts/scale.sh` is the check: fit the same model over 10x the rows and peak
-  Memory must not move. Three things allocate, all bounded by the model or the
-  config: the coefficient table (`los.c`), and
-  one accumulator per group during a fit-everything pass (`process.c`). Adding a
-  fourth needs an argument. Note also that the fitter's matrices are STATIC, not
-  automatic: as locals they needed 1.18 MB of contiguous stack and killed the
-  program under `ulimit -s 1024` with no diagnostic.
+  Memory must not move. Three things allocate, all bounded by the model and
+  never by the data: the coefficient table (`los.c`), the group index
+  (`hash.c`), and one accumulator per group during a fit-everything pass
+  (`process.c`). Adding a fourth needs an argument. Note also that the fitter's
+  matrices are STATIC, not automatic: as locals they needed 1.18 MB of
+  contiguous stack and killed the program under `ulimit -s 1024` with no
+  diagnostic.
 - **The terms come from the file, not from the source.** `los_schema_set` is the
   only place a column list is established, and both loaders feed it from a
   header line. Hardcoding a count or a name anywhere else (including in a test
@@ -161,8 +166,8 @@ Tests are the objective gate. Never trust output you have not verified.
 
 1. **Lock the contract.** If the change needs new behaviour, update `README.md`
    and the relevant header first, so there is one agreed spec.
-2. **Implement** against it, in the README's Style idiom: one concept per file,
-   modules return codes, only the CLI `die()`s.
+2. **Implement** against it, in the Style idiom of `doc/INTERNALS.md`: one
+   concept per file, modules return codes, only the CLI `die()`s.
 3. **Test.** Add or extend `tests.c`: linear, inline, ONE comment per test
    saying what it checks. Cover the new behaviour and its edges.
 4. **Verify.** `make check` green, `make pedantic` warning-free, then the two

@@ -116,7 +116,7 @@ The program is C99 plus a few POSIX functions. There are two routes, and the
 first is the one to take.
 
 **WSL, Microsoft's built-in Linux.** Nothing here is modified for it: it is the
-same build this README describes, because WSL is Linux.
+same build described above, because WSL is Linux.
 
     1. Open PowerShell as Administrator and run:  wsl --install
     2. Restart, then choose a username and password when Ubuntu starts.

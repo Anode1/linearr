@@ -20,14 +20,16 @@ answer, different prices.
     R                frame        1.32s    128780 KB  agrees to 1e-12
 
 An implementation that is not installed, or that fails, prints why and the
-others still run.
+others still run. Peak memory is what `/usr/bin/time -f %M` reports, in
+kilobytes of 1024 bytes, and every MB and GB in this file is that same
+1024-based unit: 315904 KB is 308 MB, not 316.
 
 All but the last read the file one row at a time, which each of these languages
 permits. Writing the C as a stream and the Python with pandas would compare two
 styles rather than two languages, so the materialising row is also Python: the
 same language, machine and algorithm, with one variable changed. Over a tenfold
 increase in rows the streaming figures are unchanged and that row rises from
-41 MB to 316 MB.
+308 MB to 2.9 GB.
 
 The JVM's number is mostly the JVM. Capping its heap separates the runtime's
 appetite from what the algorithm needs: 500,000 rows fit in a 16 MB heap at
@@ -87,12 +89,14 @@ Time is linear in the rows for all six. Memory is not:
 | Python, frame | 3.30s to 35.36s | 308 MB to 2.9 GB |
 
 The three streaming rows are flat to within measurement noise over a tenfold
-increase. The two frame rows grow with the file: R holds about 196 bytes per
-row and the materialising Python about 629. The Java row grows because the JVM takes
-more heap when a machine has it, not because the algorithm needs it; capped at
-`-Xmx16m` the same 5,000,000 rows fit in 65 MB and finish in 1.83s.
+increase. The two frame rows grow with the file: at 5,000,000 rows R holds
+about 196 bytes per row (959236 KB) and the materialising Python about 629
+(3068800 KB), and those two figures are where every memory ceiling below comes
+from. The Java row grows because the JVM takes more heap when a machine has it,
+not because the algorithm needs it; capped at `-Xmx16m` the same 5,000,000 rows
+fit in 65 MB and finish in 1.83s.
 
-Extrapolating the memory, on a machine with 64 GB to give:
+Extrapolating that memory onto the 62 GB this machine has:
 
 | implementation | rows before it runs out of memory |
 | --- | --- |
@@ -101,16 +105,16 @@ Extrapolating the memory, on a machine with 64 GB to give:
 | Python, materialised in memory | about 105 million |
 
 Those two are the shape of the comparison. The streaming implementations
-get slower; the frame ones stop. At a billion rows R would need about 200 GB and
-the materialising Python about 600 GB, while linearr holds 2.4 MB and takes
-about four minutes.
+get slower; the frame ones stop. At a billion rows R would need about 180 GB and
+the materialising Python about 590 GB, while linearr holds 2.4 MB and takes
+about three and a half minutes.
 
 **That row is not pandas.** `bench/fit-frame.py` is hand-written Python holding
 the file as a list of tuples, and it is the control for STYLE: same language,
 same machine, same algorithm as `bench/fit.py`, with one variable changed.
 Real pandas is faster and lighter than it and is not measured here. A reviewer
-did measure it and reported roughly 3.5s and 1.0 GB where this row says 34.6s
-and 3.1 GB, which would move the ceiling from 105 to about 320 million rows.
+did measure it and reported roughly 3.5s and 1.0 GB where this row says 35.36s
+and 2.9 GB, which would move the ceiling from 105 to about 300 million rows.
 Read the row as what materialising costs in principle, not as a figure for
 pandas.
 
@@ -146,27 +150,28 @@ the same through a pipe rather than a file. Nothing lands on disk.
 
 **The row count is bounded by time, not by memory.** A row is folded into the
 cross-products and dropped, so the tenth row and the ten-billionth cost the same
-space. Measured at 10,000,000 rows: 2.04 s, 2.0 MB, the same memory as at two
+space. Measured at 10,000,000 rows: 2.04 s, 2.0 MB, no more than at two
 million. That is 4.9 million rows a second.
 
 The same file fitted by a streaming Python and by R, so the extrapolation has
 something to be compared against: Python reads 215,000 rows a second in 10 MB,
-and R's `read.csv` plus `lm()` reads 570,000 a second with a peak of 3.2 GB,
-about 318 bytes a row, which is what decides where its column ends. That peak
+and R's `read.csv` plus `lm()` reads 570,000 a second. What decides where R's
+column ends is its memory, and that figure comes from the benchmark above:
+about 196 bytes a row, the 959236 KB it peaked at on 5,000,000 rows. That peak
 is the parser's high-water mark, not what the frame occupies: `object.size()`
 on the resident frame is about 48 bytes a row, so a machine that can tolerate
 the transient holds far more rows than the table's ceiling suggests.
 
 | rows | linearr | Python, streaming | R, `read.csv` + `lm()` |
 | --- | --- | --- | --- |
-| 10 million | 2 seconds | 47 seconds | 18 seconds, 3.2 GB |
-| 100 million | 20 seconds | 8 minutes | 3 minutes, 32 GB |
-| a billion | 3.5 minutes | 1.3 hours | 318 GB, will not fit |
+| 10 million | 2 seconds | 47 seconds | 18 seconds, 1.8 GB |
+| 100 million | 20 seconds | 8 minutes | 3 minutes, 18 GB |
+| a billion | 3.5 minutes | 1.3 hours | 180 GB, will not fit |
 | a trillion | 2.4 days | 54 days | will not fit |
 | **10 trillion** | **24 days** | **1.5 years** | **will not fit** |
 
-The R column stops at about 200 million rows on a machine with 64 GB if the
-peak is what has to fit, and around 1.3 billion if only the resident frame
+The R column stops at about 340 million rows on this machine's 62 GB if the
+peak is what has to fit, and around 1.4 billion if only the resident frame
 does. Either way it is memory that ends it, not the clock, and the two
 streaming columns only get slower. `bench/fit.R` is also the slow variant: it
 rescans the whole frame per group and rebuilds the formula in the loop, so a

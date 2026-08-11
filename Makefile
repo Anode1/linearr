@@ -201,7 +201,7 @@ ut-ubsan: $(SOURCES.c) $(HEADERS.h) .build-flags
 # before anything reaches the remote. Bypass once with `git push --no-verify`.
 hooks:
 	git config core.hooksPath scripts/hooks
-	@echo "hooks enabled: scripts/hooks/pre-push runs ut-asan + ut-ubsan"
+	@echo "hooks enabled: scripts/hooks/pre-push runs every gate, then both sanitizers"
 
 # install: the binary on PATH, its data in share. resolve.c looks in the current
 # directory, then beside the binary, then <bindir>/../share/linearr, so this

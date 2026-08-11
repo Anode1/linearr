@@ -5,7 +5,7 @@ result of specific defects rather than taste.
 
 ## Before you send anything
 
-    make check        # unit tests + CLI black-box tests
+    make check        # all five gates: ut, cliut, readme, java, r
     make pedantic     # must be warning-free
     make ut-asan
     make ut-ubsan
@@ -24,7 +24,7 @@ result of specific defects rather than taste.
   serious defect this project has had was invisible to exactly that kind of
   test. Add the scaled, offset and near-collinear cases too.
 - **Before adding a `malloc`,** check it against the three the project already
-  sanctions (`README.md`, Style). A fourth needs an argument.
+  sanctions (`doc/INTERNALS.md`, Style). A fourth needs an argument.
 
 ## Reporting a bug
 

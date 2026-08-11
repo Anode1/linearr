@@ -82,7 +82,7 @@ Anscombe's quartet, fitted four at once, which is what groups are for:
     IV,3.00172727273,0.499909090909
 
 The same line four times to two decimals, and each set on its own gives
-`R2=0.666`, `resid SD=1.24`, `df=9`. Twelve significant digits are printed, so
+`R2=0.67`, `resid SD=1.24`, `df=9`. Twelve significant digits are printed, so
 the small differences between the four are visible here and are not in most
 tools.
 
@@ -141,9 +141,9 @@ its line taken away, and it is the shape a residual plot is read for. The eleven
 numbers say it without a plot.
 
 Note the sum of that column is zero and its mean is zero, as least squares
-guarantees; the residual SD is 1.237 whichever of the four sets you fit. No
-summary of these numbers can see the arch. Only their order can, and order is
-what a single figure throws away.
+guarantees; the residual SD is 1.24 whichever of the four sets you fit (1.237
+for sets I and II, 1.236 for III and IV). No summary of these numbers can see
+the arch. Only their order can, and order is what a single figure throws away.
 
 The remedy is the one the warning names. Add a column holding x squared to the
 training file and fit again, and the arch goes; the header names the terms, so

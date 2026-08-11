@@ -251,7 +251,7 @@ trust a sentence:
     the same figures cover a thousand rows and a trillion.
 
 At 4.9 million rows a second, a billion rows is three and a half minutes and
-ten trillion is 24 days; R stops at about 200 million because the frame runs
+ten trillion is 24 days; R stops at about 340 million because the frame runs
 out of memory, not the clock.
 
 Read next in [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md): the full extrapolation
@@ -277,7 +277,7 @@ coefficients are checked against linearr's before any time is printed.
 500,000 rows, 8 terms, 50 groups, on one laptop core. Ten times the rows leaves
 the streaming figures flat and multiplies the materialising ones, which is
 where the difference stops being about speed: at a billion rows R needs about
-200 GB and linearr holds 2.4 MB.
+180 GB and linearr holds 2.4 MB.
 
 Full tables, the ten-million-row measurements, the extrapolation to 10 trillion
 and the machine they were taken on: [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md).

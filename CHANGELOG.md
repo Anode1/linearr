@@ -121,7 +121,12 @@ and the tests that missed them are fixed too.
   any variable with an origin, and a training file with no group column that
   fitted garbage and exited 0.
 
-## 0.1.0 (unreleased)
+## 0.2.0
+
+Tagged, with no entry written at the time. Nothing is reconstructed here after
+the fact: `git log v0.1.0..v0.2.0` is the record of what went into it.
+
+## 0.1.0
 
 First public version.
 

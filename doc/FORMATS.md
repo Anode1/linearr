@@ -232,7 +232,7 @@ read from stdin, so a file of cases round trips through a pipeline:
     001 prediction=19.9611 trim=46.5
 
 At two terms the row form is fine. At two hundred it is unusable, which is why
-the named form exists and is what the rest of this README uses.
+the named form exists and is what the rest of this file uses.
 
 Files named with `-c`, `--trim` and `-t` are looked for in the current
 directory first, then beside the program, so an installed `linearr` finds the
