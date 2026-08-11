@@ -66,7 +66,15 @@ typedef char header_fits_in_line[
  * and locked-down clinical targets, where a 128 KB thread stack is normal. The
  * same bytes in BSS are allocated once, cost the same, and cannot blow a stack.
  * The consequence is that a fit is not reentrant, which is true of this
- * single-threaded CLI anyway and is now written down instead of implied. */
+ * single-threaded CLI anyway and is now written down instead of implied.
+ *
+ * That fixed the matrices and not the buffers. A fit still needs 188 KB of
+ * stack, bisected, and still dies with SIGSEGV and no diagnostic below it, so
+ * the 128 KB thread stack named above does NOT fit a default-ceiling fit --
+ * scoring fits in 113 KB, fitting does not. The remaining driver is
+ * MAX_OUTPUT, two of which live in process_train_residuals' frame beside a
+ * line buffer. Shrinking the ceiling shrinks all of them together: a 32-term
+ * build fits in 54 KB. doc/INTERNALS.md carries the table. */
 /* Big enough for whichever solver is chosen. Both are O(terms^2) and neither
  * depends on the data, so one buffer serves both.
  *

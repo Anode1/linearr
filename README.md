@@ -236,8 +236,8 @@ trust a sentence:
     24 terms, 400000 groups
 
     fitting, -t, one accumulator per group
-      per group   8456 bytes
-      in total    3.15 GB
+      per group   8704 bytes
+      in total    3.24 GB
 
     scoring, a loaded coefficient table
       per group   2064 bytes
@@ -247,7 +247,7 @@ trust a sentence:
     coefficient array is sized at this build's ceiling of 256, so a
     small model pays for a large one. The fitting figure does move.
 
-    Neither depends on the number of ROWS:
+    Neither depends on the number of ROWS, which is the point:
     the same figures cover a thousand rows and a trillion.
 
 At 4.9 million rows a second, a billion rows is three and a half minutes and

@@ -37,9 +37,25 @@ PROMPT = re.compile(r"^(\s*)\$ (.+)$")
 FOLLOW_ON = ("sort ", "cat ", "head ", "wc ")
 
 
+# scripts/bench.sh and scripts/scale.sh are deliberately NOT run here. They
+# measure a machine: their transcripts carry wall-clock seconds and peak RSS,
+# which differ between runs on one box and differ more between boxes, so
+# diffing them line by line reports a stale document every time the CPU is
+# busy. They were already going undiffed by accident, through a parser that
+# stopped at the first blank line; this says so on purpose instead.
+#
+# The claims inside them that ARE deterministic -- the per-group and total
+# memory a shape costs -- are gated separately, by `./linearr --footprint`
+# transcripts, which is why those exist as their own blocks.
+MEASURES_A_MACHINE = ("sh scripts/bench.sh", "sh scripts/scale.sh")
+
+
 def runnable(cmd):
+    if cmd.startswith(MEASURES_A_MACHINE):
+        return False
     return (cmd.startswith("./linearr") or cmd.startswith("sh scripts/")
             or cmd.startswith(FOLLOW_ON))
+
 
 
 def blocks(text):
@@ -57,7 +73,28 @@ def blocks(text):
         expected = []
         while i < len(lines):
             line = lines[i]
-            if not line.strip():                 # blank ends the block
+            if not line.strip():
+                # A blank line INSIDE a transcript is output, not the end of
+                # one. scale.sh and bench.sh both print blank lines between
+                # their sections, and ending the block at the first one meant
+                # scale.sh was compared for a single line while its forty lines
+                # of numbers went undiffed -- and bench.sh, whose output starts
+                # after a blank, yielded no expected lines at all and was
+                # skipped entirely by the `if not expected` below. Both were
+                # displayed as verified and checked by nothing, which is how
+                # the --footprint figures in doc/INTERNALS.md came to disagree
+                # with the binary in a block labelled "output verbatim".
+                #
+                # So look past the blanks: if the output resumes at this
+                # block's indent and is not a new command, they belong to it.
+                j = i
+                while j < len(lines) and not lines[j].strip():
+                    j += 1
+                if (j < len(lines) and lines[j].startswith(indent)
+                        and not PROMPT.match(lines[j])):
+                    expected.extend([""] * (j - i))
+                    i = j
+                    continue
                 break
             if PROMPT.match(line):               # next command ends it
                 break

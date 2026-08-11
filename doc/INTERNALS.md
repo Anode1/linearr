@@ -194,14 +194,27 @@ Three things that table does **not** cover:
 
 - The fitter's matrices live in **static storage, not on the stack**, so the
   ceiling costs no stack at all and cannot overflow one.
-- The **stack** requirement is about **190 KB**, and it is the line buffers in
-  `constants.h`, which are derived from the ceiling rather than fixed. Measured
-  at the default: it runs under `ulimit -s 192` and fails under 160. Setting the
-  ceiling is all a small target needs, and it pays twice: a
-  `-DLOS_MAX_VARS=32 -DREGRESS_MAX_VARS=32` build runs under `ulimit -s 64`.
+- The **stack** requirement is the line buffers in `constants.h`, which are
+  derived from the ceiling rather than fixed. Bisected on this machine, at the
+  default ceiling of 256 terms:
+
+  | what | needs | dies below |
+  | --- | --- | --- |
+  | fitting, `-t` | **188 KB** | 187 KB |
+  | scoring | **113 KB** | 112 KB |
+  | fitting, a 32-term build | **54 KB** | 53 KB |
+
+  Below those it is a SIGSEGV with no diagnostic, so read the first column as a
+  requirement and not as a guideline. **A 128 KB thread stack, which is
+  ordinary on the embedded and locked-down targets this is otherwise suited
+  to, will not fit a default-ceiling fit**: scoring fits, fitting does not.
+  Setting the ceiling is what a small target needs, and it pays twice, since
+  the buffers follow it — a 32-term build fits a fit into 54 KB. The driver is
+  `MAX_OUTPUT`, which is `2 * CSV_LINE_MAX`: `process_train_residuals` holds
+  two of those plus a line buffer in one frame.
 - Fitting **every** group in one pass holds one accumulator per group. That is
   the fitter, the coefficients and the residual-check block, and `linearr
-  --footprint TERMS GROUPS` prints it: 8.4 MB for 580 groups of 35 terms, which
+  --footprint TERMS GROUPS` prints it: 8.6 MB for 580 groups of 35 terms, which
   `scripts/scale.sh` then measures at 8.5 MB. It is still never a function of
   how many rows you feed it.
 
@@ -238,8 +251,8 @@ model had (35 terms, 580 groups), output verbatim:
       35 terms, 580 groups
 
       fitting, -t, one accumulator per group
-        per group   15232 bytes
-        in total    8.4 MB
+        per group   15568 bytes
+        in total    8.6 MB
 
       scoring, a loaded coefficient table
         per group   2064 bytes
@@ -249,11 +262,11 @@ model had (35 terms, 580 groups), output verbatim:
       coefficient array is sized at this build's ceiling of 256, so a
       small model pays for a large one. The fitting figure does move.
 
-      Neither depends on the number of ROWS:
+      Neither depends on the number of ROWS, which is the point:
       the same figures cover a thousand rows and a trillion.
 
 Ten times the data, the same memory: that is the first pair of rows. The second
 pair is the part a memory claim usually omits. Fitting 580 groups instead of one
-costs 8.5 MB more, and the per-group figure printed underneath predicts 8.4 MB,
+costs 8.5 MB more, and the per-group figure printed underneath predicts 8.6 MB,
 so the script measures the claim rather than restating it. Time scales with the
 number of rows, memory with the number of groups.
