@@ -56,17 +56,14 @@ void hash_delete(struct hash *table) {
     free(table);
 }
 
-/* Double the table when it is full, so N insertions cost O(N) and not O(N^2).
- * With a fixed 1024 buckets, loading 400,000 groups took 26 seconds: clean
- * 4x time for every 2x groups, which is the signature of chains that never stop
- * growing. Keys are moved, not recomputed, and nothing is reallocated. */
+/* Double the table when full, so N insertions cost O(N), not O(N^2). Buckets
+ * are moved; nothing is reallocated. */
 static void hash_grow(struct hash *table) {
     long i, newsize;
     hash_bucket **nt;
 
-    /* Tested BEFORE the multiply: computing it and then looking is signed
-     * overflow, which is undefined, and is the shape MISRA and the Power of
-     * Ten both forbid. Unreachable at any real table size; still wrong. */
+    /* Tested BEFORE the multiply: computing it first is signed overflow, which
+     * is undefined. Unreachable at any real table size. */
     if (table->size > LONG_MAX / 2) return;
     newsize = table->size * 2;
     nt = malloc(sizeof(hash_bucket *) * (size_t)newsize);

@@ -1,37 +1,25 @@
 /* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
-/* canon.h: published datasets whose answers somebody else certified.
- *
- * Every other test in this project checks the code against arithmetic this
- * project also wrote. That catches a change in behaviour and nothing else: if
- * the solver and the expected value are derived from the same understanding,
- * they are wrong together and the suite stays green. The recurring fault in this
- * project is exactly that: a gate aimed one file to the left of the defect.
- *
- * These datasets close that. They come from outside, their answers were
- * computed by somebody else to more digits than a double carries, and they are
- * the sets a statistician already knows:
+/* canon.h: published datasets whose answers somebody else certified. Every other
+ * test checks the code against arithmetic this project also wrote, which can be
+ * wrong with the solver and stay green. These are from outside, computed to more
+ * digits than a double carries:
  *
  *   NORRIS    36 points, one term, from a NIST calibration study. The easy
  *             case, and the one that says the plain path is right.
  *   LONGLEY   16 points, six terms, US macroeconomic series 1947-1962. Longley
- *             published it in 1967 precisely because the regression packages of
- *             the day returned as few as two correct digits on it; it has been
- *             the standard hard case ever since.
+ *             published it in 1967 because the packages of the day returned as
+ *             few as two correct digits on it.
  *   WAMPLER1  21 points on an exact quintic, y = 1 + x + x^2 + ... + x^5. Every
- *             coefficient is 1 and the residual is 0, so any departure is the
- *             solver's own error with nothing else mixed in. This is the set
- *             that separates the two solvers here: see the numbers in tests.c.
+ *             coefficient is 1 and the residual 0, so any departure is the
+ *             solver's own error. This set separates the two solvers; the
+ *             numbers are in tests.c.
  *
- * The certified values are from the NIST Statistical Reference Datasets
- * (Linear Regression), which are a US Government work and not under copyright.
- * They were checked before being written down: solving each set again in exact
- * rational arithmetic reproduces the published values to 1e-15, so the data and
- * the certified answers confirm each other rather than both resting on a
- * transcription.
- *
- * Anscombe's quartet is canonical too and is not here: it is a test of the
- * residual checks rather than of arithmetic, so it lives in example/ where it
- * can be run, and tests/cli.sh fits it. */
+ * Certified values from the NIST Statistical Reference Datasets (Linear
+ * Regression), a US Government work not under copyright. Solving each set again
+ * in exact rational arithmetic reproduces them to 1e-15, so data and answers
+ * confirm each other rather than resting on a transcription. Anscombe's quartet
+ * is canonical too but tests the residual checks, not arithmetic, so it lives in
+ * example/ and tests/cli.sh fits it. */
 #ifndef CANON_H
 #define CANON_H
 

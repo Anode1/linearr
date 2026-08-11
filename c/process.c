@@ -1,20 +1,11 @@
 /* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
-/* process.c: see process.h. The two halves of the model: fit the line from a
- * training file, then use the line to score a case.
- *
- * The prediction is the intercept plus one coefficient-times-term product per
- * column, rounded half away from zero to four digits; the trim point is that
- * plus the group's trim addition, rounded to one. The rounding is part of the
- * answer, not presentation: the published figure is the rounded number. Both
- * scales are configurable, and so is the number of terms; it comes from the
- * file's header, not from this file. */
-/* Before any header, including this module's own: process.h pulls in <stdio.h>,
- * and glibc resolves <features.h> on the first standard header it sees. Defined
- * after that, as it was, this macro does nothing at all -- CLOCK_MONOTONIC and
- * _POSIX_TIMERS stay undefined, the guard in progress_now() is false, and the
- * timer silently falls back to time(NULL), the wall clock whose NTP and DST
- * steps the comment there says were fixed. `nm -u linearr` showed no
- * clock_gettime at all. resolve.c has always had this the right way round. */
+/* process.c: see process.h. Fit the line from a training file; score a case.
+ * Prediction = intercept + sum of coefficient*term, rounded half away from zero
+ * to 4 digits; trim point = that plus the group's trim addition, rounded to 1.
+ * The rounded number is the answer. Both scales are configurable; the term count
+ * comes from the file's header. */
+/* Before any header, process.h included: glibc resolves <features.h> on the
+ * first one. Defined later this does nothing and progress_now() uses time(). */
 #define _POSIX_C_SOURCE 200809L   /* clock_gettime */
 
 #include "process.h"
@@ -40,18 +31,15 @@
 #include <math.h>
 #include <errno.h>
 
-/* The model may not be wider than the fitter. Overriding one ceiling and not
- * the other would otherwise fail far away from here, as a schema that loads and
- * then a fit that refuses it, so it fails at compile time instead. */
+/* The model may not be wider than the fitter; overriding one ceiling alone
+ * would otherwise fail at run time. */
 typedef char los_fits_in_regress[(LOS_MAX_VARS <= REGRESS_MAX_VARS) ? 1 : -1];
 
 /* A case line has to fit in a CSV line, and its fields in the field array. */
 typedef char case_fits_in_csv[(LOS_MAX_VARS + 2 <= CSV_MAX_FIELDS) ? 1 : -1];
 
-/* The line buffers are derived from LOS_MAX_VARS and CSV_FIELD_MAX, which is
- * only correct while a field really is at most CSV_FIELD_MAX bytes. This is
- * the file that sees both headers, so it is where raising LOS_NAME_MAX stops
- * being free: a header of the widest names must still fit in a line. */
+/* The line buffers derive from LOS_MAX_VARS and CSV_FIELD_MAX: a field must be
+ * at most CSV_FIELD_MAX bytes and the widest header must fit in a line. */
 typedef char name_fits_in_field[(LOS_NAME_MAX + 1 <= CSV_FIELD_MAX) ? 1 : -1];
 typedef char header_fits_in_line[
     ((LOS_MAX_VARS + 2) * (LOS_NAME_MAX + 1) + GROUP_MAX < CSV_LINE_MAX) ? 1 : -1];
@@ -59,52 +47,29 @@ typedef char header_fits_in_line[
 #define DEFAULT_PREDICT_SCALE 4
 #define DEFAULT_TRIM_SCALE 1
 
-/* The fitter's two matrices, in static storage rather than on the stack.
- * As automatics they were 606 KB and 531 KB, live at the same time, so the
- * default build needed 1.18 MB of contiguous stack and died with SIGSEGV and no
- * diagnostic under `ulimit -s 1024`, on a program whose README sells embedded
- * and locked-down clinical targets, where a 128 KB thread stack is normal. The
- * same bytes in BSS are allocated once, cost the same, and cannot blow a stack.
- * The consequence is that a fit is not reentrant, which is true of this
- * single-threaded CLI anyway and is now written down instead of implied.
- *
- * That fixed the matrices and not the buffers. A fit still needs 188 KB of
- * stack, bisected, and still dies with SIGSEGV and no diagnostic below it, so
- * the 128 KB thread stack named above does NOT fit a default-ceiling fit --
- * scoring fits in 113 KB, fitting does not. The remaining driver is
- * LINEARR_MAX_OUTPUT, two of which live in process_train_residuals' frame beside a
- * line buffer. Shrinking the ceiling shrinks all of them together: a 32-term
- * build fits in 54 KB. doc/INTERNALS.md carries the table. */
-/* Big enough for whichever solver is chosen. Both are O(terms^2) and neither
- * depends on the data, so one buffer serves both.
- *
- * "Big enough" was a comment and not a check, and it stopped being true when
- * the QR gained column scaling: qr_storage() grew four vectors of p+1, for
- * each column's range and its running 2-norm, and this figure did not. At the
- * default ceiling qr_init() then memset 8 KB past the end of this array. The
- * release build printed a plausible table and exited 0; only ASan saw it, and
- * only at 255 terms or more, which nothing tested.
- *
- * So the two solvers' own formulas are written out here and the array takes
- * the larger, with the asserts below tying it to them. A solver that grows its
- * storage again now fails to compile instead of writing past this. */
+/* Static, not automatic: 606 KB + 531 KB live at once needs 1.18 MB of
+ * contiguous stack, against the 128 KB a thread gets on the embedded targets
+ * this is built for. Cost is the same in BSS. A fit is therefore not reentrant.
+ * A fit still needs 188 KB of stack, so 128 KB does not fit a default-ceiling
+ * fit; scoring fits in 113 KB. The remaining driver is LINEARR_MAX_OUTPUT, two
+ * of which sit in process_train_residuals' frame beside a line buffer. A
+ * 32-term build fits in 54 KB. Table in doc/INTERNALS.md. */
+/* One buffer for either solver: both are O(terms^2) and data-independent, so
+ * each formula is written out and the array takes the larger. */
 #define REGRESS_STORE_DOUBLES ((size_t)REGRESS_MAX_VARS * (size_t)REGRESS_MAX_VARS \
                                + 2u * (size_t)REGRESS_MAX_VARS)
 #define QR_STORE_DOUBLES (((size_t)REGRESS_MAX_VARS + 1u) * ((size_t)REGRESS_MAX_VARS + 2u) \
                           + 4u * ((size_t)REGRESS_MAX_VARS + 1u))
 #define FIT_STORE_DOUBLES (QR_STORE_DOUBLES > REGRESS_STORE_DOUBLES \
                            ? QR_STORE_DOUBLES : REGRESS_STORE_DOUBLES)
-/* If either solver's storage grows again, this stops compiling, which is the
- * diagnostic whose absence cost 8 KB of silent overwrite. */
 typedef char fit_store_holds_regress[
     (FIT_STORE_DOUBLES >= REGRESS_STORE_DOUBLES) ? 1 : -1];
 typedef char fit_store_holds_qr[
     (FIT_STORE_DOUBLES >= QR_STORE_DOUBLES) ? 1 : -1];
 
 static double fit_store[FIT_STORE_DOUBLES];
-/* Large enough for either solver: regress_solve's elimination workspace, and
- * qr_solve's re-triangularisation of the kept columns when a design turns out
- * to be rank deficient. */
+/* Either solver: regress_solve's elimination workspace, or qr_solve's
+ * re-triangularisation of the kept columns on a rank-deficient design. */
 static double fit_scratch[(REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2)];
 static double fit_beta[REGRESS_MAX_TERMS];
 
@@ -112,17 +77,9 @@ static int use_qr;
 void process_use_qr(int on) { use_qr = on; }
 const char *process_solver(void) { return use_qr ? "QR" : "normal equations"; }
 
-/* One accumulator, one of two shapes. The caller owns the storage in both
- * cases, so the choice costs nothing but a branch. */
-/* A union, not a struct: as a struct every group carried BOTH solvers, and
- * struct qr is 4 KB because it holds its column ranges inline, so a two-term
- * model paid 4232 bytes a group for the one it was not using.
- *
- * And it remembers which one it is. use_qr was read afresh in init, add and
- * solve, so nothing bound the three: a caller that changed the flag between
- * them would have a struct regress block reinterpreted as a struct qr, with
- * q->r read as a garbage pointer. Unreachable from today's main, which parses
- * options before it fits, and one field to remove for good. */
+/* One accumulator, one of two shapes; the caller owns the storage. A union:
+ * struct qr is 4 KB (column ranges inline), so both inline would cost a two-term
+ * model 4232 bytes a group. is_qr is set at init, so init/add/solve agree. */
 struct fitter {
     int is_qr;
     union {
@@ -137,15 +94,13 @@ static size_t fitter_storage(int nvars) {
 }
 
 static int fitter_init(struct fitter *f, int nvars, double *storage) {
-    f->is_qr = use_qr;                  /* decided once, here, and remembered */
+    f->is_qr = use_qr;
     return f->is_qr ? qr_init(&f->u.q, nvars, storage)
                     : regress_init(&f->u.r, nvars, storage);
 }
 
-/* Where each column sits, for the residual probes to take their powers about.
- * The normal equations already hold the means; QR does not centre, so the
- * midpoint of each column's range stands in, which is what its rank test
- * already keeps. Either is enormously better than the first row's value. */
+/* Where each column sits, for the residual probes. The normal equations hold the
+ * means; QR does not centre, so its rank test's column midpoints stand in. */
 static void fitter_centers(const struct fitter *f, int nvars, double *out) {
     int j;
     if (!f->is_qr) {
@@ -176,24 +131,8 @@ void process_use_trim(const char *path) { trim_override = path; trim_override_se
 
 static int  tables_loaded;
 
-/* A pinned term is written as 0 in the coefficient row, and 0 is also what an
- * estimated no-effect looks like. Redirecting a fit into a table therefore used
- * to LOSE the distinction between "we could not identify this" and "this does
- * nothing", and scoring a case that turns such a term on then produced a
- * confident extrapolation off the training data's column space. R writes NA for
- * an aliased term; statsmodels drops it. Here the count went to stderr and the
- * file said nothing.
- *
- * So the file carries a note. It is a '#' line, which every reader of these
- * files already skips, so the table still round-trips into the scorer
- * unchanged, but the fact survives the redirect and a human reading the table
- * can see which zeroes are claims and which are silences. Returns 0 if there was
- * nothing to say. */
 /* Why a solve failed, in the caller's words. -2 is the one cause a user can act
- * on: a column so large that its cross-products overflowed while they were
- * being accumulated, which the normal equations cannot survive and the QR does
- * not have. It used to be reported as "the result is not a finite line", which
- * is true and useless, and which blamed the whole fit for one column. */
+ * on: a column whose cross-products overflowed, which QR does not have. */
 static const char *solve_failure(int rv, const char *group) {
     static char msg[320];
     if (rv == -2)
@@ -203,10 +142,8 @@ static const char *solve_failure(int rv, const char *group) {
                        "Rescale that column, or use --qr, which does not square "
                        "them. Run with -d to see which term", group);
     else if (rv == -3)
-        /* The advice differs from -2's, and saying why matters: --qr keeps
-         * the COLUMNS from being squared, but both solvers square the
-         * response for its residual, so the remedy that saves an overflowing
-         * term does nothing for an overflowing response. */
+        /* Different advice from -2's: --qr spares the columns, but both solvers
+         * square the response for its residual. */
         (void)snprintf(msg, sizeof msg,
                        "group '%s': the response's values are so "
                        "large that squaring them overflowed (near 1e160 or "
@@ -219,6 +156,8 @@ static const char *solve_failure(int rv, const char *group) {
     return msg;
 }
 
+/* A pinned term and an estimated no-effect are both 0, so a '#' note names the
+ * pinned; readers skip '#', so the table round-trips. 0 if nothing to say. */
 static int format_pinned(const char *group, const struct regress_fit *f,
                          int nvars, char *out, size_t outsz) {
     size_t used = 0;
@@ -250,8 +189,7 @@ static int format_pinned(const char *group, const struct regress_fit *f,
 static char coef_path[RESOLVE_PATH_MAX];
 static char err_buf[RESOLVE_PATH_MAX + 512] = "no error";
 
-/* Set the reason and fail in one statement, so no path can return -1 while
- * leaving the previous run's explanation behind. */
+/* Reason and failure in one statement: no path returns -1 with a stale err_buf. */
 static int fail(const char *fmt, ...) LINEARR_PRINTF(1, 2);
 static int fail(const char *fmt, ...) {
     va_list ap;
@@ -264,25 +202,10 @@ static int fail(const char *fmt, ...) {
 
 const char *process_error(void) { return err_buf; }
 
-/* Progress on a long run.
- *
- * A fit over a billion rows takes minutes and a fit over a trillion takes
- * days, and until it finishes the program says nothing at all. A run that is
- * working and a run that is wedged look identical, which is the wrong thing
- * for a program whose whole argument is that the row count is not a limit.
- *
- * The first line appears only after a minute, so nothing that finishes quickly
- * ever prints one, and then once a minute after that. The clock is read once
- * per million rows rather than once per row, since reading it is a syscall on
- * some systems and the row path is where the time goes.
- *
- * A MONOTONIC clock where there is one. time() is a wall clock: an NTP or DST
- * step backwards makes the elapsed figure negative, and since prog_last only
- * advances when a line prints, one backward step used to stop the reporting
- * for the rest of the run.
- *
- * To stderr, which is where this program's commentary already goes, so stdout
- * stays a coefficient file. */
+/* Progress to stderr, so stdout stays a coefficient file. First line after a
+ * minute, then once a minute. The clock is read per million rows, not per row: a
+ * syscall on some systems. Monotonic where there is one; time()'s NTP and DST
+ * steps make elapsed negative. */
 #define PROGRESS_AFTER  60      /* seconds of silence before the first line */
 #define PROGRESS_EVERY  60      /* seconds between lines after that        */
 #define PROGRESS_MASK   0xFFFFFL/* check the clock every 1,048,576 rows    */
@@ -297,10 +220,8 @@ static long prog_start, prog_last;
 
 /* Seconds from some fixed point; only differences are ever used. */
 static long progress_now(void) {
-/* Not on Windows: MinGW's headers declare CLOCK_MONOTONIC and _POSIX_TIMERS
- * and its default libraries have no clock_gettime, so the guard those two
- * suggest compiles and then fails to link. Found by cross-compiling, which is
- * the only way to find it from here. */
+/* Not on Windows: MinGW declares CLOCK_MONOTONIC and _POSIX_TIMERS but its
+ * default libraries have no clock_gettime, so the guard fails to link. */
 #if defined(CLOCK_MONOTONIC) && defined(_POSIX_TIMERS) && !defined(_WIN32)
     struct timespec ts;
     if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) return (long)ts.tv_sec;
@@ -333,19 +254,11 @@ static void progress_row(long long rows, const char *what) {
                   elapsed > 0 ? (double)rows / (double)elapsed / 1e6 : 0.0);
 }
 
-/* The two roundings, set by --scale and --trim-scale. A scale outside 0 to 9 is
- * rejected here rather than falling back to the default, so what the caller
- * asked for and what the program does cannot differ silently. */
 static int predict_scale = DEFAULT_PREDICT_SCALE;
 static int trim_scale    = DEFAULT_TRIM_SCALE;
 
-/* Name the column being predicted, instead of taking column 2. NULL restores
- * the positional default. */
 void process_use_response(const char *name) { response_override = name; }
 
-/* Whether the response was named or taken from the column order. The summary
- * line says so, and offers the remedy only when one is needed: a reader who
- * passed -y does not need to be told it exists. */
 int process_response_named(void) { return response_override != NULL; }
 
 int process_set_scale(int decimals) {
@@ -364,23 +277,12 @@ static int ensure_tables(void) {
     const char *trim, *want;
     char path[RESOLVE_PATH_MAX];
 
-    /* Both halves of this condition are load-bearing. The flag alone used to be
-     * trusted, and it lies: los.c holds the schema and the table as module
-     * state that something else can clear (los_free) or repurpose
-     * (process_train, whose training header replaces the schema). Scoring then
-     * proceeded against a schema of zero terms, and process_term_name handed
-     * back NULL to a caller that had every reason to expect a string. Asking
-     * los whether it still has a schema is self-healing: if it does not, we
-     * load again. */
+    /* Both halves are load-bearing: los.c's schema is module state los_free
+     * clears and process_train repurposes, so the flag alone is not a fact. */
     if (tables_loaded && los_nvars() > 0) return 0;
     tables_loaded = 0;
 
-    /* Named, or nothing. There used to be a search: a properties file, then a
-     * table shipped beside the binary, so a bare run scored against a demo
-     * model the reader had never seen, and the same command in two directories
-     * could answer with two different models without saying so. A model is the
-     * whole of what the answer means; it is not something to find by
-     * convention. */
+    /* Named, or nothing: there is no search path for a model. */
     if (!coef_override)
         return fail("no coefficient table. Name one with -c FILE, or fit one "
                     "first: linearr -t TRAIN.CSV > model.csv");
@@ -390,18 +292,13 @@ static int ensure_tables(void) {
     if (los_load(path) != 0) return fail("%s", los_error());
     (void)snprintf(coef_path, sizeof coef_path, "%s", path);
 
-    /* The trim table is optional in two ways, and they are different: named
-     * with --trim and unreadable is a failure the user asked for and must hear
-     * about; not named at all means there is none, and the trim point is the
-     * prediction. */
+    /* Optional two ways: named with --trim and unreadable is a failure; not
+     * named means there is none, and the trim point is the prediction. */
     trim = trim_override_set ? trim_override : NULL;
     if (!trim || trim[0] == '\0') {
         debug("process: no --trim; the trim point is the prediction");
     } else if (resolve_file(trim, path, sizeof path) != 0) {
-        /* Two different failures, and they were reported as one. When
-         * resolve_file is what failed, los_load_trims never ran and los_error()
-         * still held whatever was there before, which on a first load is
-         * nothing: the message was a leading space and a parenthesis. */
+        /* los_load_trims never ran, so los_error() has nothing to say here. */
         los_free();
         return fail("cannot find the trim table %s (leave --trim off if there "
                     "is none)", path);
@@ -430,8 +327,7 @@ long long process_ngroups(void) { return los_ngroups(); }
 const char *process_term_name(int i) { return los_var_name(i); }
 const char *process_coef_path(void) { return coef_path; }
 
-/* The half both entry points share: a filled-in case becomes two rounded
- * numbers and a line of text. */
+/* Shared by both entry points: a case becomes two rounded numbers and a line. */
 static int score_case(const struct los_case *c, char *out, size_t outsz) {
     const struct los_model *m;
     double prediction, trim;
@@ -445,14 +341,11 @@ static int score_case(const struct los_case *c, char *out, size_t outsz) {
     pscale = predict_scale;
     tscale = trim_scale;
 
-    /* The trim point is built on the ROUNDED prediction, not the raw one: the
-     * published figure is what the next step is entitled to use. */
+    /* On the ROUNDED prediction: the published figure is what may be used. */
     prediction = los_round(los_predict(m, c), pscale);
     trim       = los_round(los_trim_point(m, prediction), tscale);
 
-    /* Without a trim table the trim point IS the prediction, so printing it
-     * again invents a second quantity. A reader who passed --no-trim and still
-     * saw trim= could not tell what the flag had done. */
+    /* No trim table: the trim point is the prediction, not a second quantity. */
     if (los_has_trims())
         w = snprintf(out, outsz, "%s prediction=%.*f trim=%.*f",
                      c->group, pscale, prediction, tscale, trim);
@@ -495,12 +388,8 @@ int process_named(const char *group, char *const *assign, int n,
             return fail("no term '%s' in %s; run --terms to list them",
                         name, coef_path);
 
-        /* Trim, because csv_split does and the two forms of a case must not
-         * disagree: "a=1 " was refused while "G,1 " was accepted. */
-        /* Hexadecimal is refused, as los.c refuses it in a CSV field, for the
-         * same rule: the two forms must not disagree, and a=0x10 scored
-         * prediction=32 while the file form of the same case was refused.
-         * The scan skips what strtod skips, so a=<tab>0x10 is caught too. */
+        /* Trimmed, hexadecimal refused, as csv_split and los.c do for a CSV
+         * field. The scan skips what strtod skips, catching a=<tab>0x10. */
         {   const char *why;
             if (los_parse_number(eq + 1, &v, &why) != 0)
                 return fail("'%s' %s", eq + 1, why);
@@ -516,23 +405,16 @@ int process(const char *input, char *out, size_t outsz) {
     if (ensure_tables() != 0) return -1;
 
     if (los_parse_case(input, &c) != 0)
-        /* los.c has already composed a sentence naming the column and the
-         * reason. Both training paths print it; this one asked for a generic
-         * one instead, which is the message the rewrite existed to remove. */
+        /* los.c already named the column and the reason. */
         return fail("%s", los_parse_error());
 
     return score_case(&c, out, outsz);
 }
 
-/* Opening a training file is the same job for both fitters: resolve it, read
- * past any leading comments, and take the schema from the header. The header
- * defines the polynomial (GROUP, the observed value, then one column per
- * term), so adding a column to the file adds a term to the fit, and nothing here
- * counts the terms for itself.
- *
- * On return the file is positioned at the first data row and *nvars holds the
- * term count. *fpp is set as soon as the file is open, including on the failing
- * paths, so the caller's cleanup closes it either way. */
+/* Resolve, skip leading comments, take the schema from the header: GROUP, the
+ * observed value, one column per term, so a column added is a term added. On
+ * return the file sits at the first data row, *nvars holds the term count, and
+ * *fpp is set if the file opened at all, so the caller's cleanup closes it. */
 static int open_training(const char *csv_path, FILE **fpp, int *nvars) {
     char   path[RESOLVE_PATH_MAX];
     char   line[CSV_LINE_MAX];
@@ -543,14 +425,10 @@ static int open_training(const char *csv_path, FILE **fpp, int *nvars) {
     *nvars = 0;
 
     if (strcmp(csv_path, "-") == 0) {
-        /* A pipe. This is what a cloud invocation looks like: object storage
-         * streamed straight in, nothing landing on disk. The fit needs exactly
-         * one pass, so a pipe is enough for it; --residuals needs a second and
-         * is refused separately. */
+        /* One pass, so a pipe suffices; --residuals is refused separately. */
         *fpp = stdin;
     } else {
-        /* the same two places as the tables: your file first, then the ones
-         * that shipped beside the program, so the examples work from anywhere */
+        /* as for the tables: your file, then what shipped with the program */
         if (resolve_file(csv_path, path, sizeof path) != 0)
             return fail("cannot open the training file %s", path);
         *fpp = fopen(path, "r");
@@ -559,9 +437,7 @@ static int open_training(const char *csv_path, FILE **fpp, int *nvars) {
 
     while ((n = csv_next(*fpp, line, sizeof line)) == 2)
         ;                                   /* leading comments precede a header */
-    /* Why it is not a header, before the fact that it is not one: a CR-only
-     * file reaches here as one refused line, and "no header line" sent the
-     * reader looking for a header that is on screen. */
+    /* Why before what: a CR-only file arrives here as one refused line. */
     if (n < 0)
         return fail("%s %s", csv_path, csv_line_error(n, sizeof line));
     if (n != 1)
@@ -576,10 +452,7 @@ static int open_training(const char *csv_path, FILE **fpp, int *nvars) {
         return fail("%s needs a header of group, the observed value, and at "
                     "least one term", csv_path);
     }
-    /* Which column is being predicted, and therefore which are terms. Column 2
-     * unless --response names another: nothing in the data can say which is
-     * which, so a file written in a different order fits perfectly well and
-     * answers a question nobody asked. */
+    /* Which column is predicted, and so which are terms: 2 unless --response. */
     if (response_override) {
         int rc = los_schema_set_response((const char *const *)field, n,
                                          response_override);
@@ -615,14 +488,9 @@ static int open_training(const char *csv_path, FILE **fpp, int *nvars) {
         los_set_response_name(field[1]);
     }
 
-    /* The schema now belongs to this training file, not to the coefficient
-     * table, so anything scoring afterwards must load the real one again. This
-     * is set HERE and not on the caller's success path: every `goto cleanup`
-     * used to leave the borrowed schema installed while tables_loaded still
-     * said the tables were good, and a caller could then score a 24-term model
-     * with a 2-term case. That is the same "a flag another module can
-     * invalidate is not a fact" defect this file already fixed once, in the
-     * other direction. */
+    /* The schema now belongs to this training file, so later scoring must load
+     * the real one again. Set here, not on the caller's success path: no
+     * `goto cleanup` may leave it installed with tables_loaded still set. */
     tables_loaded = 0;
     *nvars = los_nvars();
     return 0;
@@ -641,9 +509,8 @@ static int format_table(const char *group, const struct los_model *m,
     return los_format_model(group, m, out + used, outsz - used);
 }
 
-/* The solved coefficients as a model row. beta[0] is the intercept and the rest
- * follow the schema's column order; the trim table is a separate input, so a
- * freshly fitted model carries no trim addition. */
+/* The solved coefficients as a model row: beta[0] the intercept, the rest in
+ * schema order. The trim table is a separate input, so a fresh fit has none. */
 static void model_from_beta(struct los_model *m, int nvars) {
     int i;
     m->intercept = fit_beta[0];
@@ -661,8 +528,7 @@ int process_train(const char *csv_path, const char *group,
     FILE  *fp;
     int    rc = -1, n, pinned, nvars;
     int    pool = (!group || strcmp(group, "*") == 0);
-    /* What the fitted row is labelled with, and what an error calls it: a
-     * pooled fit is one line named '*', a named one keeps its own name. */
+    /* The fitted row's label: a pooled fit is one line named '*'. */
     const char *label = pool ? "*" : group;
     long long rows = 0, seen = 0;
 
@@ -674,15 +540,12 @@ int process_train(const char *csv_path, const char *group,
              REGRESS_MAX_VARS);
         goto cleanup;
     }
-    /* One row at a time: read it, add it to the cross-products, forget it. The
-     * file may be any size; the fitter's footprint is the same either way. */
+    /* Read, add to the cross-products, forget. The file may be any size. */
     while ((n = csv_next(fp, line, sizeof line)) > 0) {
         double los;
         if (n == 2) {
-            /* The check the coefficient loader has always run, and this reader
-             * did not: a '#' line that splits into a data row's fields is a
-             * training row whose group starts with '#', and skipping it fitted
-             * the file MINUS that group, exit 0, nothing on screen. */
+            /* A '#' line splitting into a data row's fields is a row whose group
+             * starts with '#'; skipping it fits the file minus that group. */
             if (csv_comment_is_data_shaped(line, nvars + 2)) {
                 fail("%s has a line beginning with '#' that has the shape of a "
                      "data row: a group code cannot start with '#', because "
@@ -746,40 +609,26 @@ cleanup:
     return rc;
 }
 
-/* One accumulator per group, in first-seen order so the emitted table is
- * reproducible. The hash gives O(1) lookup per row; the list gives an order. */
+/* One accumulator per group, first-seen order so the table is reproducible: the
+ * hash gives O(1) lookup per row, the list the order. */
 struct group_fit {
     struct group_fit *next;
     char   group[GROUP_MAX];
     struct fitter r;
     struct diag   d;                /* its own, so groups are not pooled       */
     double *beta;
-    /* This group's own residual SD, and a Welford pair for its own response.
-     * The residual checks compare the two to decide whether there is anything
-     * left to explain, and both used to be taken from the WHOLE file: the worst
-     * residual SD of any group against the spread of every row together. A
-     * group that fits exactly, sitting beside one that does not, was therefore
-     * judged by the other group's error, and the guard that exists to stop the
-     * checks correlating rounding error never fired for it. */
+    /* Residual SD and a Welford pair for the response; the checks compare the
+     * two for anything left to explain. Per group, so a group that fits exactly
+     * is not judged by its neighbour's error. */
     double sigma;
     long long ny;                   /* long long, as every other row counter is:
-                                       this one was `long`, so on LLP64 and on
-                                       32-bit it overflowed -- undefined
-                                       behaviour -- past 2^31 rows in one group,
-                                       in the program whose claim is that the
-                                       row count is not a limit */
+                                       `long` overflows past 2^31 rows in one
+                                       group on LLP64 and on 32-bit            */
     double ymean, ym2;
     double storage[1];              /* fitter + (nvars+1) beta + diag          */
 };
 
-/* What ONE group costs, exactly. The allocation below calls this rather than
- * repeating the arithmetic, so the number a user is told and the number the
- * program asks for cannot differ.
- *
- * They did. scale.sh said "groups x (terms + 1) doubles", the README said
- * "about 2 KB per group", and process.h said the bound was groups x terms^2.
- * All three were describing the fitter alone, or a guess at it, and none
- * counted the beta vector or the residual-check block. */
+/* The allocation below calls this, so reported and allocated cannot differ. */
 size_t process_group_bytes(int nvars) {
     if (nvars < 1) return 0;
     return sizeof(struct group_fit)
@@ -787,11 +636,7 @@ size_t process_group_bytes(int nvars) {
            * sizeof(double);
 }
 
-/* And what one group costs on the SCORING side, which is a different number
- * and was being quoted as if it were this one. A loaded model is a fixed
- * struct: the coefficient array is dimensioned at the build ceiling, not at
- * the model's own term count, so a two-term model pays for LOS_MAX_VARS. That
- * is a real cost and it is stated rather than averaged away. */
+/* Dimensioned at the build ceiling: a two-term model pays for LOS_MAX_VARS. */
 size_t process_model_bytes(void) {
     return sizeof(struct los_model);
 }
@@ -820,16 +665,11 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
     int    rc = -1, n, nvars = 0;
     long long rows = 0, seen = 0, groups = 0;
     int    first_stat = 1;
-    /* -g '*' means pool every row into one line named '*', which is what it
-     * means in process_train. Here it was read as a literal group code, so a
-     * pooled fit that worked without --residuals became "no rows in group *"
-     * with it: adding a flag that asks for MORE output made a working fit stop
-     * working, and it was the pooled fit -- the one whose residuals a reader
-     * most wants, since pooling is what a wrong shape hides in. */
+    /* -g '*' pools every row into one line named '*'; not a literal group. */
     const int pool = (only != NULL && strcmp(only, "*") == 0);
 
-    /* Checked before anything is read or written: the refusal used to arrive
-     * after the coefficient table had already gone to stdout. */
+    /* Checked before anything is read or written: the refusal must not follow
+     * the table to stdout. */
     if (resid && strcmp(csv_path, "-") == 0)
         return fail("--residuals needs to read the training data a second time, "
                     "to subtract each row from its own prediction, and a pipe "
@@ -850,14 +690,13 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
     need  = fitter_storage(nvars);
     index = hash_create(1024);
 
-    /* One pass. A row is added to its group's accumulator and forgotten, so the
-     * file may be any size; only the number of GROUPS costs memory. */
+    /* One pass. A row joins its group's accumulator and is forgotten, so only
+     * the number of GROUPS costs memory. */
     while ((n = csv_next(fp, line, sizeof line)) > 0) {
         double los;
         if (n == 2) {
-            /* As in process_train: a data-shaped '#' line is a swallowed row,
-             * not a comment. The residual second pass keeps its plain skip,
-             * because this refusal has already run before it can start. */
+            /* As in process_train: a data-shaped '#' line is a swallowed row.
+             * The second pass keeps its plain skip; this refusal ran first. */
             if (csv_comment_is_data_shaped(line, nvars + 2)) {
                 fail("%s has a line beginning with '#' that has the shape of a "
                      "data row: a group code cannot start with '#', because "
@@ -872,7 +711,6 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             goto cleanup;
         }
         if (pool) {
-            /* one accumulator, whatever the row said its group was */
             (void)strcpy(c.group, "*");        /* one byte into GROUP_MAX */
         } else if (only && strcmp(c.group, only) != 0) {
             continue;
@@ -883,10 +721,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             g->next = NULL;
             g->beta = g->storage + need;     /* nvars+1 doubles, after the fitter */
             (void)diag_init(&g->d, nvars, g->beta + nvars + 1);
-            /* strcpy, not memcpy of the whole field: c is an automatic and
-             * copy_group only writes up to the NUL, so the bytes past it are
-             * indeterminate on the first row and used to propagate into
-             * sum->worst_group. Neither sanitizer sees that. */
+            /* strcpy, not memcpy: c is automatic; copy_group stops at NUL. */
             strcpy(g->group, c.group);       /* both are GROUP_MAX, c is bounded */
             if (fitter_init(&g->r, nvars, g->storage) != 0) {
                 free(g);
@@ -903,12 +738,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             tail = g;
             groups++;
         }
-        {   /* Welford over this group's response. It is what the group's
-             * residual checks are judged against, and it is two doubles and a
-             * count, so it does not make the footprint a function of the data.
-             * There used to be one of these for the WHOLE FILE instead, which
-             * meant a group that fits exactly was judged by the spread of every
-             * other group's rows. */
+        {   /* Welford over the response: two doubles and a count. */
             double dy = los - g->ymean;
             g->ny++;
             g->ymean += dy / (double)g->ny;
@@ -930,10 +760,8 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
         fail("%s has no data rows", csv_path);
         goto cleanup;
     }
-    /* Every row in a group of its own cannot be fitted: a line through one
-     * point is not a fit. It is also what omitting the group column looks
-     * like, which is the commonest way to write this file wrongly, and it used
-     * to produce a table of one-row models and exit 0. */
+    /* A line through one point is not a fit, and this is what omitting the group
+     * column looks like. */
     if (rows >= 3 && groups == rows) {
         fail("%s puts every one of its %lld rows in a different group, so there "
              "is nothing to fit. The first column is the group; if your data "
@@ -957,12 +785,8 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
         {   int srv = fitter_solve(&g->r, fit_beta, fit_scratch, &f);
             if (srv != 0) { fail("%s", solve_failure(srv, g->group)); goto cleanup; }
         }
-        /* Keep this group's line. The residual pass needs it after every group
-         * has been solved, and fit_beta is one shared buffer the next group
-         * overwrites. Without this the residual pass read whatever xmalloc had
-         * left in the block and printed predictions around 1e161, the one
-         * good thing about uninitialised memory being that it is obviously
-         * wrong rather than plausibly wrong. */
+        /* Keep this group's line: the next group overwrites fit_beta, and the
+         * residual pass needs it after all groups are solved. */
         {   int b;
             for (b = 0; b <= nvars; b++) g->beta[b] = fit_beta[b];
         }
@@ -996,9 +820,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             sum->pinned += f.pinned;
             if (sum->groups == 0 || f.df < sum->min_df) sum->min_df = f.df;
             if (f.condition > sum->max_condition) sum->max_condition = f.condition;
-            /* The lowest R2 over the groups, skipping the ones where it is
-             * not defined. With 580 groups it is as useful as the worst
-             * residual SD, and --stats says which group it came from. */
+            /* Lowest R2, skipping undefined ones; --stats names the group. */
             if (f.r2 >= 0.0 && (sum->min_r2 < 0.0 || f.r2 < sum->min_r2))
                 sum->min_r2 = f.r2;
             else if (f.r2 == REGRESS_R2_FLAT_Y) sum->groups_flat_y++;
@@ -1012,9 +834,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
     }
     if (sum) sum->rows = rows;
 
-    /* The second pass. Re-read rather than remember: holding the rows would
-     * make the footprint a function of the data, which is the one thing this
-     * program does not do. */
+    /* Second pass, re-read: holding the rows would tie the footprint to it. */
     if (resid) {
         FILE *again;
         char  path[RESOLVE_PATH_MAX];
@@ -1026,8 +846,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             fail("cannot re-read %s for the residuals", csv_path);
             goto cleanup;
         }
-        /* Each group's probes centred on its own fit, and each judged against
-         * its own spread. */
+        /* Probes centred on each group's own fit, judged against its spread. */
         for (g = head; g; g = g->next) {
             double ctr[REGRESS_MAX_VARS];
             fitter_centers(&g->r, nvars, ctr);
@@ -1055,13 +874,9 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
         }
         fclose(again);
 
-        /* The residuals are the only place a wrong SHAPE shows: every number in
-         * the summary is an average over them, and an average cannot see a
-         * pattern. */
         if (sum) {
-            /* One bound for the whole file, because the summary reports the
-             * largest probe over every group: the number of probes read is
-             * what decides how large a maximum is unsurprising. */
+            /* One bound for the whole file: the summary reports the largest
+             * probe over every group, and the probe count sets it. */
             double bound = diag_bound(nvars, groups);
             for (g = head; g; g = g->next) {
                 struct diag_result dr;
@@ -1070,12 +885,8 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
                     sum->curved_term = dr.curved_term;
                     sum->curved_t    = dr.curved_t;
                     sum->curved_pow  = dr.curved_pow;
-                    /* snprintf, not memcpy of the whole field: g->group is a
-                     * heap object filled by strcpy, so the bytes past its NUL
-                     * are indeterminate, and copying them all was the same
-                     * read of unset memory that the strcpy a few hundred lines
-                     * up was written to stop -- moved from the stack to the
-                     * heap, where ASan cannot see it either. */
+                    /* snprintf, not memcpy of the whole field: g->group is heap
+                     * filled by strcpy, so bytes past its NUL are junk. */
                     (void)snprintf(sum->worst_group, sizeof sum->worst_group,
                                    "%s", g->group);
                 }

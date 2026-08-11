@@ -1,8 +1,7 @@
 /* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
-/* tests.c: in-place unit tests, run by `make ut` (which builds every source
- * with -DUNIT_TEST; this file is empty otherwise, and main.c's main() is then
- * compiled out). Add a CHECK when you add a feature. Idempotent, and run from
- * the project root: example/ is read by relative path. */
+/* tests.c: unit tests, run by `make ut` (-DUNIT_TEST on every source; this file
+ * is empty otherwise and main.c's main() is compiled out). Add a CHECK with any
+ * feature. Idempotent. Run from the project root: example/ is a relative path. */
 #ifdef UNIT_TEST
 
 #include "common.h"
@@ -25,9 +24,7 @@
 
 static int pass, fail;
 
-/* argv[0], so test_resolve can ask about the binary that is actually running
- * rather than about a name written down a second time in a file that cannot
- * see the Makefile. Kept as a fallback for a caller that passes none. */
+/* argv[0] of the binary actually running; the literal is only the fallback. */
 static const char *t_argv0 = "./linearr_ut";
 #define CHECK(cond, msg) do { \
     if (cond) pass++; \
@@ -36,19 +33,13 @@ static const char *t_argv0 = "./linearr_ut";
 
 #define NEAR(a, b) (fabs((a) - (b)) < 1e-9)
 
-/* A NULL where a string was expected is a FAIL, not a crash that takes the
- * whole run down and tells you nothing about the other tests. Use this for
- * EVERY comparison against a function documented as possibly returning NULL
- * (los_var_name, process_term_name, los_model_get, ...); a bare strcmp on one of
- * those is how this suite once turned a wrong return value into a SEGV. */
+/* NULL is a FAIL, not a crash: use for los_var_name, process_term_name, etc. */
 static int streq(const char *a, const char *b) {
     return a && b && strcmp(a, b) == 0;
 }
 
-/* Pull the numbers out of a "GROUP,b0,b1,..." row. Coefficients are written at
- * full precision now, so comparing the TEXT of a fit against the text of the
- * table it was generated from is a comparison of rounding, not of arithmetic.
- * Compare the values. */
+/* Numbers out of a "GROUP,b0,b1,..." row. Compare values; text compares the
+ * rounding, coefficients being printed at full precision. */
 static int coef_row(const char *row, double *v, int max) {
     const char *p = strchr(row, ',');
     const char *eol = strchr(row, '\n');       /* a '# pinned' note may follow */
@@ -64,15 +55,13 @@ static int coef_row(const char *row, double *v, int max) {
 #define COEF "example/coefficients.csv"
 #define TRIM "example/trim_additions.csv"
 
-/* The pair, as the scorer loads them. They are two calls because the trim
- * table is optional; see test_los_trims. */
+/* The pair, as the scorer loads them. Two calls: the trim table is optional. */
 static int los_load_both(void) {
     if (los_load(COEF) != 0) return -1;
     return los_load_trims(TRIM);
 }
 
-/* Build "GROUP,x1,...,xp" for the loaded schema, with the listed terms set to
- * 1. Requires a schema: call after los_load. */
+/* Build "GROUP,x1,...,xp" with the listed terms set to 1. After los_load. */
 static void make_case(char *buf, size_t bufsz, const char *group,
                       const int *on, int non) {
     size_t used = (size_t)snprintf(buf, bufsz, "%s", group);
@@ -103,10 +92,8 @@ static void test_hash(void) {
     hash_delete(h);
 }
 
-/* The two roundings, which were keys in a properties file and are options now.
- * The properties path accepted a value outside 0..9 by falling back to the
- * default without a word; the option refuses it. */
 static void test_scales(void) {
+    /* The two rounding scales: 0..9, refused outside. */
     CHECK(process_set_scale(0) == 0 && process_set_scale(9) == 0,
           "scale: 0 and 9 are accepted");
     CHECK(process_set_scale(-1) == -1 && process_set_scale(10) == -1,
@@ -138,13 +125,11 @@ static void test_csv(void) {
     strcpy(line, "a,b,c");
     CHECK(csv_split(line, f, 2) == -1, "csv refuses more fields than it was given room for");
 
-    /* csv_next skips blank and '#' lines and strips the line ending. */
     fp = fopen("example/train.csv", "r");
     CHECK(fp != NULL, "csv open example");
     if (fp) {
         char big[CSV_LINE_MAX];
-        /* Comment lines are RETURNED with a 2 rather than swallowed, so a
-         * caller can tell a comment from a data row it has misread. */
+        /* Comments come back as 2, telling one from a misread data row. */
         int r;
         CHECK((r = csv_next(fp, big, sizeof big)) == 2, "csv_next returns comments to the caller");
         CHECK(big[0] == '#', "csv_next: and hands back the comment text");
@@ -153,15 +138,12 @@ static void test_csv(void) {
         CHECK(r == 1, "csv_next reads the data line after them");
         CHECK(strncmp(big, "group,los,", 10) == 0, "csv_next reached the header");
         CHECK(strchr(big, '\n') == NULL, "csv_next stripped the newline");
-        /* A line that does not fit is refused, never silently split in two. */
         CHECK(csv_next(fp, big, 8) == CSV_ERR_TOO_LONG,
               "csv_next refuses an over-long line");
         (void)fclose(fp);
     }
 
-    /* What the byte count is for. Each of these was read by fgets as a short
-     * line, because a NUL ends the C string and fgets cannot say how many bytes
-     * it wrote; the last one was returned as DATA and fitted. */
+    /* Byte counts, not strlen: a NUL ends the string short of what fgets wrote. */
     {   const char *path = "test-csv-reader.csv";
         struct { const char *bytes; size_t len; int want; const char *what; } t[] = {
             { "a,1\0002,2\nb,2,2\n",         15, CSV_ERR_NUL,
@@ -184,9 +166,8 @@ static void test_csv(void) {
             (void)fwrite(t[k].bytes, 1, t[k].len, w);
             (void)fclose(w);
             w = fopen(path, "rb");
-            /* To the end, because the refusals above are in the second line:
-             * what is asserted is the value the reader STOPS on, so a clean
-             * file has to reach end of file (0) and a bad one its own code. */
+            /* To the end: asserted is the value the reader stops on, 0 at end
+             * of file or the error code. */
             if (w) {
                 while ((rv = csv_next(w, buf, sizeof buf)) > 0)
                     ;
@@ -198,16 +179,9 @@ static void test_csv(void) {
     }
 }
 
-/* Storage for the fitter, which allocates nothing itself. Static, because the
- * matrices are ~1 MB at the default ceiling and this is exactly where the
- * program used to blow a small stack.
- *
- * Sized for the LARGER of the two solvers, not for regress alone. It was the
- * regress formula, which is smaller than qr_storage() once column scaling
- * added four vectors of nvars+1 -- the same undersizing that let qr_init()
- * write 8 KB past process.c's buffer. Every qr test here passes small nvars,
- * so nothing reached the end of it; a test at the ceiling does, which is what
- * caught this. */
+/* Fitter storage; the fitter allocates nothing. Static: ~1 MB at the default
+ * ceiling. Sized for the larger solver, qr_storage() wanting four further
+ * vectors of nvars+1 for column scaling. Grow this if either solver's grows. */
 static double t_store[(REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2)
                       + 4 * (REGRESS_MAX_VARS + 1)];
 static double t_scratch[(REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2)];
@@ -221,7 +195,7 @@ static void test_regress(void) {
     struct regress_fit f;
     double x[2];
 
-    /* An exact line through exact points comes back exactly: y = 2 + 3x1 - x2. */
+    /* An exact line through exact points: y = 2 + 3x1 - x2. */
     regress_init(&r, 2, t_store);
     x[0] = 0; x[1] = 0; regress_add(&r, x, 2.0);
     x[0] = 1; x[1] = 0; regress_add(&r, x, 5.0);
@@ -234,7 +208,7 @@ static void test_regress(void) {
     CHECK(NEAR(f.r2, 1.0), "regress: R2 is 1 on an exact fit");
     CHECK(f.df == 1, "regress: df");
 
-    /* Noise around that line: close but not exact, and R2 must fall below 1. */
+    /* Noise around that line: close but not exact. */
     regress_init(&r, 1, t_store);
     x[0] = 0; regress_add(&r, x, 1.0);
     x[0] = 1; regress_add(&r, x, 3.1);
@@ -244,11 +218,8 @@ static void test_regress(void) {
     CHECK(fabs(t_beta[1] - 2.0) < 0.1, "regress: slope through noisy points");
     CHECK(f.r2 < 1.0 && f.r2 > 0.99, "regress: R2 below 1 once points are not collinear");
 
-    /* The residual SD is the number a prediction consumer needs and R2 cannot
-     * give: how far a prediction typically lands from the truth, in the
-     * response's own units. Built from noise of SD 2, it must come back near 2
-     * and R2 near 1 at the same time, which is the point: a high R2 and a
-     * large error are not contradictory. */
+    /* Residual SD: error in the response's own units, which R2 cannot give.
+     * SD-2 noise returns near 2, with R2 near 1. */
     {
         int i;
         regress_init(&r, 1, t_store);
@@ -273,11 +244,8 @@ static void test_regress(void) {
         CHECK(f.sigma < 0.0, "residual SD: and it is not reported");
     }
 
-    /* THE UNITS TEST. y = 1 + 2e-6*big + 5*flag. The two columns differ by six
-     * orders of magnitude, so their X'X diagonals differ by twelve, and the
-     * old absolute rank tolerance deleted the indicator for being small,
-     * reporting a constant model with a straight face. Whether a term exists
-     * must not depend on whether you write dollars or thousands. */
+    /* Units. y = 1 + 2e-6*big + 5*flag: columns six orders of magnitude apart,
+     * X'X diagonals twelve. A term's existence must not depend on the unit. */
     {
         int i;
         regress_init(&r, 2, t_store);
@@ -293,10 +261,8 @@ static void test_regress(void) {
         CHECK(f.r2 > 0.999999999, "units: R2");
     }
 
-    /* THE OFFSET TEST. y carries a 1e8 offset. Uncentered sums of squares are
-     * differences of huge nearly-equal numbers, so this used to report R2=1.0000
-     * for a model with a true R2 of 0: the clamp at sse<0 manufactured the
-     * perfect score. Centered accumulation makes the offset cancel first. */
+    /* Offset. y carries 1e8. Uncentered sums of squares cancel to noise, scored
+     * perfect by the sse<0 clamp. Centered accumulation cancels the offset. */
     {
         int i;
         regress_init(&r, 1, t_store);
@@ -309,7 +275,7 @@ static void test_regress(void) {
         CHECK(fabs(t_beta[1] - 4.0) < 1e-9, "offset: slope survives 1e8");
         CHECK(f.r2 > 0.999999, "offset: R2 is still 1 on exact data");
     }
-    {   /* and an offset response with real noise must not report a perfect fit */
+    {
         int i;
         regress_init(&r, 1, t_store);
         for (i = 0; i < 60; i++) {
@@ -321,8 +287,7 @@ static void test_regress(void) {
         CHECK(f.r2 > 0.9, "offset: but it is still a good fit");
     }
 
-    /* A constant column is collinear with the intercept: pinned, and its effect
-     * correctly absorbed rather than fought over. */
+    /* A constant column is collinear with the intercept: pinned, absorbed. */
     regress_init(&r, 2, t_store);
     x[0] = 0; x[1] = 7; regress_add(&r, x, 1.0);
     x[0] = 1; x[1] = 7; regress_add(&r, x, 3.0);
@@ -333,7 +298,6 @@ static void test_regress(void) {
     CHECK(NEAR(t_beta[1], 2.0), "regress: the identified slope is still right");
     CHECK(NEAR(t_beta[0], 1.0), "regress: and the intercept is never pinned");
 
-    /* Two columns saying the same thing: one is pinned, the fit still fits. */
     regress_init(&r, 2, t_store);
     x[0] = 1; x[1] = 2; regress_add(&r, x, 4.0);
     x[0] = 2; x[1] = 4; regress_add(&r, x, 6.0);
@@ -342,24 +306,20 @@ static void test_regress(void) {
     CHECK(f.pinned == 1, "regress: collinear column is pinned");
     CHECK(NEAR(f.r2, 1.0), "regress: the collinear fit still fits");
 
-    /* An ill-conditioned but not singular design must be REPORTED, because R2
-     * cannot see it: the fit is beautiful on its own sample and predicts noise. */
+    /* Ill-conditioned but not singular must be reported: R2 cannot see it. */
     {
         int i;
         regress_init(&r, 2, t_store);
         for (i = 0; i < 50; i++) {
             x[0] = 1.0 + i * 0.01;
-            /* Nearly the same column, but NOT proportional to it: a strictly
-             * proportional column is exactly rank-deficient and gets pinned,
-             * which is a different verdict. This one is identifiable and
-             * badly conditioned, which is the case R2 cannot see. */
+            /* Near-duplicate, not proportional: proportional would be pinned. */
             x[1] = x[0] + ((i % 2) ? 1.0e-6 : 0.0);
             regress_add(&r, x, 1.0 + 2.0 * x[0] + 3.0 * x[1]);
         }
         regress_solve(&r, t_beta, t_scratch, &f);
         CHECK(f.condition > 1e6, "conditioning: a near-duplicate column is reported");
     }
-    {   /* and a healthy design reports a small number, so the warning is useful */
+    {
         int i;
         regress_init(&r, 2, t_store);
         for (i = 0; i < 50; i++) {
@@ -370,8 +330,7 @@ static void test_regress(void) {
         CHECK(f.condition < 1e3, "conditioning: a healthy design reports a small number");
     }
 
-    /* Non-finite input is refused at the door rather than poisoning every
-     * coefficient and being published as a table of "nan". */
+    /* Non-finite input is refused at the door, not left to poison the fit. */
     regress_init(&r, 1, t_store);
     x[0] = 1.0;
     CHECK(regress_add(&r, x, 1.0) == 0, "regress: a finite observation is accepted");
@@ -379,12 +338,10 @@ static void test_regress(void) {
     x[0] = 1.0 / 0.0;
     CHECK(regress_add(&r, x, 1.0) == -1, "regress: an infinite term is refused");
 
-    /* An empty sample is not a fit, and says so. */
     regress_init(&r, 2, t_store);
     CHECK(regress_solve(&r, t_beta, t_scratch, &f) == -1, "regress: refuses an empty sample");
 
-    /* Fewer rows than terms is NOT refused: ordinary here, and pinning answers
-     * it. One row identifies the intercept and nothing else. */
+    /* Fewer rows than terms is not refused: pinning answers it. */
     regress_init(&r, 2, t_store);
     x[0] = 1; x[1] = 1; regress_add(&r, x, 4.0);
     regress_solve(&r, t_beta, t_scratch, &f);
@@ -397,9 +354,7 @@ static void test_regress(void) {
     CHECK(regress_init(&r, 2, NULL) == -1, "regress: refuses no storage");
 }
 
-/* The ceiling is not decoration: fit a model as wide as the build allows and
- * check every coefficient comes back. 32 terms was a toy bound; a real table is
- * hundreds of columns wide, and this is the test that says so. */
+/* A model as wide as the build allows; every coefficient must come back. */
 static void test_wide_fit(void) {
     struct regress r;
     struct regress_fit f;
@@ -409,8 +364,7 @@ static void test_wide_fit(void) {
 
     regress_init(&r, p, t_store);
 
-    /* y = 3 + sum(0.25*j * xj). One row per term isolates it; a handful of
-     * combinations afterwards leave residual degrees of freedom behind. */
+    /* y = 3 + sum(0.25*j * xj): one row per term, then combinations for the df. */
     for (i = 0; i < p; i++) x[i] = 0.0;
     regress_add(&r, x, 3.0);
     for (j = 0; j < p; j++) {
@@ -432,7 +386,6 @@ static void test_wide_fit(void) {
     CHECK(ok, "wide: every one of the terms comes back");
     CHECK(f.r2 > 0.999999, "wide: R2");
 
-    /* And the schema will carry that many named columns. */
     {
         static char  names[LOS_MAX_VARS][LOS_NAME_MAX];
         static char *namep[LOS_MAX_VARS];
@@ -448,23 +401,13 @@ static void test_wide_fit(void) {
     }
 }
 
-/* Finding the files: the reason `linearr` used to work only in its own source
- * directory. g_prog must be set before the first call: the program directory
- * is worked out once and remembered. */
+/* g_prog must be set before the first call: the program directory is found once. */
 static void test_resolve(void) {
     char path[RESOLVE_PATH_MAX];
 
-    /* This binary's own argv[0], not a copy of its name. It was written out as
-     * "./linearr_ut", which is the Makefile's TESTBIN spelled a second time in
-     * a file that cannot see the Makefile: renaming one and not the other made
-     * resolve_program_dir() resolve a path that does not exist. */
     g_prog = t_argv0;
-    /* Absolute, because argv[0] is run through realpath first: a symlinked
-     * binary must find the files beside the REAL one, not beside the link. */
-    {   /* Absolute, because argv[0] is run through realpath first. What
-         * "absolute" looks like is not the same everywhere: a leading slash on
-         * POSIX, a drive letter or a UNC prefix on Windows. This asserted the
-         * slash and failed the Windows release build on a correct result. */
+    {   /* argv[0] goes through realpath: a symlinked binary finds the files
+         * beside the real one. Absolute is '/', a drive letter, or a UNC prefix. */
         const char *dir = resolve_program_dir();
         int absolute = dir != NULL &&
                        (dir[0] == '/' || dir[0] == '\\' ||
@@ -479,7 +422,6 @@ static void test_resolve(void) {
           "resolve: an absolute path that is not there fails");
     CHECK(resolve_file("no-such-file-anywhere", path, sizeof path) == -1,
           "resolve: a name that is nowhere fails");
-    /* The failure is not silent: out says where it looked, for the error. */
     CHECK(strstr(path, "looked in") != NULL, "resolve: says where it looked");
 }
 
@@ -489,10 +431,7 @@ static void test_named_case(void) {
     char *a[2];
     int on[2];
 
-    /* Named, because there is no longer anything to fall back to. Scoring used
-     * to find a table by searching: a properties file, then one shipped beside
-     * the binary. These tests passed on that search, which meant they were also
-     * testing the search rather than the scoring. */
+    /* Named outright: under test is the scoring, not the search for a table. */
     process_use_coef(COEF);
     process_use_trim(TRIM);
 
@@ -500,8 +439,6 @@ static void test_named_case(void) {
     a[1] = (char *)"icu_indicator=1";
     CHECK(process_named("001", a, 2, out, sizeof out) == 0, "named: scores");
 
-    /* It must agree with the row form to the character. Two ways of writing the
-     * same case that disagree would be worse than having only one. */
     CHECK(los_load_both() == 0, "named: schema for the row form");
     on[0] = 0; on[1] = 16;
     make_case(row, sizeof row, "001", on, 2);
@@ -512,16 +449,14 @@ static void test_named_case(void) {
         CHECK(strcmp(out, rowout) == 0, "named: both forms give the same answer");
     }
 
-    /* Terms nobody mentioned are 0, which is the whole point at 256 columns. */
+    /* Terms nobody mentioned are 0: at 256 columns, most of them. */
     a[0] = (char *)"icu_indicator=0";
     CHECK(process_named("001", a, 1, out, sizeof out) == 0, "named: one term");
     CHECK(strstr(out, "prediction=6.4832") != NULL, "named: unmentioned terms are 0");
 
-    /* Case-insensitive, because a column name is a label, not an identifier. */
     a[0] = (char *)"ICU_INDICATOR=1";
     CHECK(process_named("001", a, 1, out, sizeof out) == 0, "named: case-insensitive");
 
-    /* Every refusal says which thing was wrong, by name. */
     a[0] = (char *)"nosuchterm=1";
     CHECK(process_named("001", a, 1, out, sizeof out) == -1, "named: unknown term refused");
     CHECK(strstr(process_error(), "nosuchterm") != NULL, "named: and it names the term");
@@ -547,9 +482,8 @@ static void test_named_case(void) {
     process_free();
 }
 
-/* QR reaches the same answer without forming X'X, so it keeps the digits that
- * squaring the condition number throws away. On a well-conditioned design the
- * two agree; on a bad one QR is right and the normal equations are not. */
+/* QR never forms X'X, so it keeps the digits squaring the condition number
+ * throws away. Well-conditioned, the two agree; ill-conditioned, only QR. */
 static void test_qr(void) {
     struct qr q;
     struct regress r;
@@ -591,12 +525,7 @@ static void test_qr(void) {
         CHECK(fq.condition < fr.condition, "qr: reports the unsquared conditioning");
     }
 
-    /* THE UNITS TEST, for QR as for the normal equations. The first version of
-     * this module judged each diagonal of R against the LARGEST column's
-     * magnitude, so a term in a small unit was deleted for being small: the
-     * same defect regress.c documents as fixed. The case below is the one that
-     * showed it: an indicator worth 5, deleted beside a column of size 1e15,
-     * after which the fit reported R2=1.0000 on residuals of 4. */
+    /* Units, for QR: each R diagonal is judged against its own column's size. */
     {
         int u;
         for (u = 0; u < 3; u++) {
@@ -614,13 +543,8 @@ static void test_qr(void) {
         }
     }
 
-    /* When a column IS dropped, the residual of the ROTATION belongs to a model
-     * that was never returned; it once understated the error by fifteen orders
-     * of magnitude. The answer used to be to withhold R2 and the residual SD,
-     * which left a fit nobody could judge. Now the residual of the model
-     * actually returned is computed, and this is the test that it is the right
-     * number: the same data fitted WITHOUT the redundant column must give the
-     * same residual, because it is the same model. */
+    /* With a column dropped, the rotation's residual belongs to a model never
+     * returned. Reported is the returned model's; the reduced fit must match. */
     {
         struct qr q2;
         struct regress_fit f2;
@@ -649,12 +573,8 @@ static void test_qr(void) {
               "qr: the slope is the one the reduced model gives");
     }
 
-    /* A dropped column in EVERY position, not just the last one. Back
-     * substitution alone is the least-squares answer only when no kept column
-     * sits to the right of a dropped one, and the old test used exactly that
-     * case: with the redundant column last it was exact, and with it first the
-     * intercept came back 3.00755 where least squares gives 2.91. The kept
-     * columns are re-triangularised now, so the position cannot matter. */
+    /* A dropped column in every position. Back substitution alone is the answer
+     * only when no kept column sits right of a dropped one: re-triangularised. */
     {
         int where;
         double x3[3];                    /* this block fits three terms */
@@ -691,26 +611,20 @@ static void test_qr(void) {
         }
     }
 
-    /* The same, with a column that is collinear rather than constant, and with
-     * the whole design sitting a long way from zero: the case the 2-norm scale
-     * exists for. A term that merely has an offset must not be deleted. */
+    /* Collinear, not constant, far from zero: what the 2-norm scale is for. */
     {
         qr_init(&q, 2, t_store);
         for (i = 0; i < 30; i++) {
             x[0] = 1.0e6 + (double)i;              /* offset, but informative */
             x[1] = 5.0e3 + (double)(i % 7) * 0.5;  /* offset, and independent */
-            /* Noiseless on purpose. With noise the fitted slope differs from
-             * the one the data was built from by the amount the noise moves
-             * it, which on thirty rows is a few per cent, and a test that then
-             * demands six digits is testing the noise. */
+            /* Noiseless on purpose: with noise the slope moves by a few per
+             * cent on thirty rows, and a six-digit test then tests the noise. */
             qr_add(&q, x, 1.0 + 2.0 * x[0] - 4.0 * x[1]);
         }
         (void)qr_solve(&q, t_beta, t_scratch, &fq);
         CHECK(fq.pinned == 0, "qr scale: an offset column is not mistaken for collinear");
         CHECK(fabs(t_beta[1] - 2.0) < 1e-6 && fabs(t_beta[2] + 4.0) < 1e-6,
               "qr scale: and both slopes come back");
-        /* And a genuinely dependent column at the same offsets IS dropped, so
-         * the loosened scale has not simply stopped finding rank deficiency. */
         qr_init(&q, 2, t_store);
         for (i = 0; i < 30; i++) {
             x[0] = 1.0e6 + (double)i;
@@ -721,10 +635,9 @@ static void test_qr(void) {
         CHECK(fq.pinned == 1, "qr scale: a dependent column at the same offset is dropped");
         CHECK(fq.term[1] == REGRESS_COLLINEAR,
               "qr scale: and reported collinear rather than constant");
-        /* Where it stops working, under test so it cannot quietly change. At
-         * an offset of 1e9 an uncentred factorisation cannot separate a
-         * dependent column from an independent one; the fit says so through
-         * cond= and not through the rank. See QR_RANK_EPS in qr.c. */
+        /* Where it stops working, under test so it cannot change quietly. At
+         * offset 1e9 an uncentred factorisation cannot separate a dependent from
+         * an independent column: cond= says so, not the rank (QR_RANK_EPS, qr.c). */
         qr_init(&q, 2, t_store);
         for (i = 0; i < 30; i++) {
             x[0] = 1.0e9 + (double)i;
@@ -735,12 +648,9 @@ static void test_qr(void) {
         CHECK(fq.condition > 1e7,
               "qr scale: at 1e9 the rank test misses, and cond= reports it instead");
 
-        /* And a column so large that squaring it overflows. colss used to be a
-         * plain sum of squares, so any column past about 1.3e154 sent it to
-         * +inf, made the scaled diagonal |R_ii|/inf = 0, and deleted a
-         * perfectly identified term as COLLINEAR. The fit must be the same at
-         * every magnitude, since scaling a column scales its coefficient and
-         * nothing else. */
+        /* A column so large that squaring it overflows: a plain sum of squares
+         * goes to +inf past about 1.3e154, making |R_ii|/inf = 0. Scaling a
+         * column scales its coefficient only, so the fit is magnitude-invariant. */
         {   double huge[] = { 1.0, 1.0e153, 1.0e154, 1.0e200 };
             size_t h;
             for (h = 0; h < sizeof huge / sizeof huge[0]; h++) {
@@ -759,12 +669,8 @@ static void test_qr(void) {
             }
         }
 
-        /* A RESPONSE so large that squaring it overflows. colscale protects
-         * the columns; nothing protected cyy or the rotated-out residual, so
-         * this returned 0 with rss=inf, sigma=inf and r2=NaN -- the same
-         * NaN-comparisons-are-false road the pivot test once rode. Both
-         * solvers must refuse it as -3, and neither may leave a non-finite
-         * figure behind a return of 0. */
+        /* A response so large that squaring it overflows. colscale protects the
+         * columns, not cyy or the rotated-out residual: both solvers refuse -3. */
         {   struct regress rn;
             struct regress_fit fn;
             qr_init(&q, 1, t_store);
@@ -781,7 +687,6 @@ static void test_qr(void) {
         }
     }
 
-    /* A column that never varies is dropped, as in the normal equations. */
     qr_init(&q, 2, t_store);
     x[0] = 0; x[1] = 7; qr_add(&q, x, 1.0);
     x[0] = 1; x[1] = 7; qr_add(&q, x, 3.0);
@@ -800,11 +705,8 @@ static void test_qr(void) {
     CHECK(qr_solve(&q, t_beta, t_scratch, &fq) == -1, "qr: an empty sample is not a fit");
     CHECK(qr_init(&q, REGRESS_MAX_VARS + 1, t_store) == -1, "qr: refuses too many terms");
 
-    /* The residual here comes out of the rotation rather than from cancelling
-     * two large sums, so it is never a bound. The field was simply never
-     * assigned, and the caller declares the struct uninitialised and prints
-     * '<' or '=' from it: at -O2 it happened to be 0, and under
-     * -ftrivial-auto-var-init=pattern every QR fit printed 'resid SD<'. */
+    /* The residual comes from the rotation, never a bound. The caller prints '<'
+     * or '=' from this flag, so the solver must assign it, initialised or not. */
     qr_init(&q, 1, t_store);
     x[0] = 0.0; qr_add(&q, x, 1.0);
     x[0] = 1.0; qr_add(&q, x, 3.0);
@@ -814,21 +716,15 @@ static void test_qr(void) {
     CHECK(qr_solve(&q, t_beta, t_scratch, &fq) == 0, "qr: solves for the bound flag");
     CHECK(fq.sigma_is_bound == 0, "qr: reports a residual value, never a bound");
 
-    /* Storage. qr_storage() grew four vectors of nvars+1 when column scaling
-     * arrived, and the single static buffer both solvers share did not: at the
-     * ceiling qr_init() memset 8 KB past its end, silently, and the release
-     * build then printed a plausible table. process.c now asserts the sizing at
-     * compile time; this is the same claim at run time, where a reader can see
-     * it fail. */
+    /* The shared static buffer must hold the wider solver at the term ceiling;
+     * process.c asserts this at compile time. */
     CHECK(qr_storage(REGRESS_MAX_VARS) <= (size_t)(sizeof t_store / sizeof t_store[0]),
           "qr: the shared fit buffer holds the QR at the term ceiling");
     CHECK(qr_storage(REGRESS_MAX_VARS) > (size_t)(REGRESS_MAX_VARS + 1) * (REGRESS_MAX_VARS + 2),
           "qr: and needs more than R alone, which is what the old sizing assumed");
 }
 
-/* The residual checks. Structure in the residuals is what says a straight line
- * was the wrong shape, and every number in the fit summary is an average over
- * them, so none of those can see it. */
+/* Residual checks: structure in the residuals says the line was wrong. */
 static void test_diag(void) {
     static double dstore[REGRESS_MAX_VARS * 3 + 8];
     struct diag d;
@@ -846,7 +742,6 @@ static void test_diag(void) {
     CHECK(r.curved_term == 0, "diag: names the term whose shape is wrong");
     CHECK(fabs(r.curved_t) > 5.0, "diag: and the evidence is strong");
 
-    /* An error that grows with the prediction. */
     diag_init(&d, 1, dstore);
     for (i = 1; i <= 60; i++) {
         x[0] = (double)i;
@@ -855,8 +750,6 @@ static void test_diag(void) {
     diag_result(&d, DIAG_T, &r);
     CHECK(fabs(r.spread_t) > 3.5, "diag: sees the error growing with the prediction");
 
-    /* A correct model with ordinary noise must stay silent, or the check is
-     * worthless: a warning that always fires is not a warning. */
     diag_init(&d, 1, dstore);
     for (i = 0; i < 200; i++) {
         x[0] = (double)(i % 17);
@@ -866,18 +759,10 @@ static void test_diag(void) {
     CHECK(r.curved_term == -1, "diag: quiet on an unstructured residual");
     CHECK(r.spread_t == 0.0, "diag: and quiet about its spread");
 
-    /* THE LOCATION TEST. The same quadratic with x moved away from zero. The
-     * first version correlated against RAW x^2, and since the residual is
-     * already orthogonal to x, the signal fell from 0.20 to 0.0001 as the
-     * offset grew: invisible on any variable with an origin, which is most of
-     * them. Partialling x^2 on [1, x], about the column's own centre, makes it
-     * invariant.
-     *
-     * The curve carries noise on purpose. Without it the residual is an EXACT
-     * quadratic, the correlation is 1 to the last bit, and what the test then
-     * compares across offsets is the rounding error in 1 - r^2, which is free
-     * to vary by a factor of ten and did. An exact relation is checked
-     * separately, below, and only for the cap it is supposed to print. */
+    /* Location. The same quadratic with x moved off zero. Correlation against
+     * raw x^2 fades with the offset, the residual being already orthogonal to x;
+     * partialling x^2 on [1, x] about the column's own centre is invariant.
+     * Noise on purpose: exact, r is 1 and the test compares rounding in 1-r^2. */
     {
         int k;
         double first = 0.0;
@@ -899,9 +784,8 @@ static void test_diag(void) {
         }
     }
 
-    /* An exact relation prints the cap rather than a t of 1e8: past r = 1 to
-     * within 1e-12 the divisor has no digits left and the number would be an
-     * artefact of the summation order. */
+    /* An exact relation prints the cap, not a t of 1e8: past r = 1 to within
+     * 1e-12 the divisor has no digits left. */
     {
         int k;
         for (k = 0; k < 4; k++) {
@@ -918,8 +802,7 @@ static void test_diag(void) {
         }
     }
 
-    /* A cubic is odd in x, and the square probe is even, so it cannot see one.
-     * The cube probe can. */
+    /* A cubic is odd in x and the square probe even, so only the cube sees it. */
     {
         diag_init(&d, 1, dstore);
         for (i = -60; i <= 60; i++) {
@@ -931,7 +814,6 @@ static void test_diag(void) {
         CHECK(r.curved_pow == 3, "diag: and it is named as a cube, not a square");
     }
 
-    /* Too few rows to say anything. */
     diag_init(&d, 1, dstore);
     for (i = 0; i < 5; i++) { x[0] = (double)i; diag_add(&d, x, (double)(i*i), 1.0); }
     diag_result(&d, DIAG_T, &r);
@@ -939,15 +821,9 @@ static void test_diag(void) {
 }
 
 /* ---------------------------------------------------------------------------
- * The certified sets. See canon.h for why these are here and the rest of this
- * file is not enough on its own.
- *
- * The tolerances below are relative and were MEASURED, not chosen: each is
- * roughly ten times the error the solver actually makes today, which is loose
- * enough to survive a compiler with a different order of operations and tight
- * enough that losing a digit fails the build. They are stated per solver
- * because the two do not agree, and the difference is the point.
- */
+ * The certified sets; see canon.h. Tolerances below are relative and measured,
+ * not chosen: about ten times today's error, loose enough for a different order
+ * of operations, tight enough that a lost digit fails. Per solver: they differ. */
 static double worst_rel(const double *got, const double *want, int m) {
     double w = 0.0;
     int i;
@@ -960,8 +836,7 @@ static double worst_rel(const double *got, const double *want, int m) {
     return w;
 }
 
-/* Fit one set with each solver and report the worst relative error in the
- * coefficients, plus the residual SD each reported. */
+/* Fit one set with one solver: worst relative coefficient error, sigma, R2. */
 static void canon_fit(const struct canon_set *c, int use_qr, double *rel,
                       double *sigma, double *r2) {
     struct regress_fit f;
@@ -987,16 +862,11 @@ static void canon_fit(const struct canon_set *c, int use_qr, double *rel,
 static void test_canonical(void) {
     double rel, sigma, r2;
 
-    /* NORRIS. The easy set. Both solvers should be at the double's own limit,
-     * and if either is not, something ordinary is broken. */
+    /* Norris. The easy set: both solvers at the double's own limit. */
     canon_fit(&canon_norris, 0, &rel, &sigma, &r2);
     CHECK(rel < 1e-12, "Norris: normal equations match the certified coefficients");
-    /* 1e-9 and not the 1e-12 the coefficients get. The normal equations form
-     * RSS by subtraction, Syy - beta'Sxy, and Norris fits so well that those
-     * two agree to five digits before they are subtracted. What survives is
-     * the certified value to about eleven digits. This is not a defect to fix
-     * in this solver; it is what one pass over X'X can tell you, and it is
-     * measured as a property of its own below. */
+    /* 1e-9, not the coefficients' 1e-12: RSS is formed as Syy - beta'Sxy, and
+     * Norris fits so well the two agree to five digits. Eleven survive. */
     CHECK(fabs(sigma - canon_norris.sigma) < 1e-9 * canon_norris.sigma,
           "Norris: and the certified residual SD");
     CHECK(fabs(r2 - canon_norris.r2) < 1e-12, "Norris: and the certified R2");
@@ -1005,12 +875,9 @@ static void test_canonical(void) {
     CHECK(fabs(sigma - canon_norris.sigma) < 1e-13 * canon_norris.sigma,
           "Norris: QR and the certified residual SD, to the double's own limit");
 
-    /* LONGLEY. The set published because packages of the day returned two
-     * correct digits on it. Both solvers here return eleven. The normal
-     * equations manage it only because regress.c accumulates CENTERED
-     * co-moments: on the raw cross-products this set is the textbook
-     * catastrophe, and a change that quietly drops the centering will be
-     * caught here and nowhere else in this file. */
+    /* Longley. Published because packages of the day returned two correct digits
+     * on it; both solvers here return eleven. The normal equations manage it only
+     * through regress.c's centered co-moments, caught here and nowhere else. */
     canon_fit(&canon_longley, 0, &rel, &sigma, &r2);
     CHECK(rel < 1e-9, "Longley: normal equations match the certified coefficients");
     CHECK(fabs(sigma - canon_longley.sigma) < 1e-9 * canon_longley.sigma,
@@ -1021,37 +888,25 @@ static void test_canonical(void) {
     CHECK(fabs(sigma - canon_longley.sigma) < 1e-10 * canon_longley.sigma,
           "Longley: QR and the certified residual SD");
 
-    /* WAMPLER1. An exact quintic: certified coefficients all 1, certified
-     * residual 0. Nothing in the data can absorb a solver's error, so this is
-     * the cleanest statement of the difference between the two, and the
-     * measured numbers are worth writing down.
+    /* Wampler1. An exact quintic: certified coefficients all 1, certified
+     * residual 0. Nothing absorbs a solver's error.
      *
      *                 worst coefficient error     reported residual SD
      *   normal eqns          4.4e-9                     2.3e-2
      *   QR                   4.4e-10                    6.7e-11
      *
-     * The certified residual SD is zero. The normal equations report 0.023,
-     * which is not a small number in a column of y running to four million,
-     * but is the honest size of what squaring x^5 threw away. QR reports 7e-11.
-     * Neither is wrong about its own arithmetic; only one of them is close to
-     * the answer, and this is what --qr is for. */
+     * Certified residual SD is 0; 0.023 is what squaring x^5 lost, QR's 7e-11. */
     canon_fit(&canon_wampler1, 0, &rel, &sigma, &r2);
-    /* 1e-4, not the 1e-7 this used to be. Wampler1 is where the normal
-     * equations are at the edge of what a double can do -- x^5 times x^5
-     * reaches 1e16 -- and how far over that edge they fall depends on the
-     * compiler. x86-64 with gcc gives 4.4e-9; arm64 with clang failed 1e-7,
-     * which is not a defect in either, it is fused multiply-add and a
-     * different summation order on an expression that has no digits to spare.
-     * The ORDERING is the property worth asserting and it is checked below:
-     * QR must beat this, on every platform, by orders of magnitude. */
+    /* 1e-4, loose on purpose. x^5 times x^5 reaches 1e16, the edge of a double
+     * for the normal equations, and how far over depends on the compiler:
+     * 4.4e-9 on x86-64 with gcc, past 1e-7 on arm64 with clang. */
     CHECK(rel < 1e-4, "Wampler1: normal equations roughly recover the quintic");
     CHECK(sigma > 1e-4 && sigma < 1.0,
           "Wampler1: and report a residual SD that is visibly not zero");
     canon_fit(&canon_wampler1, 1, &rel, &sigma, &r2);
     CHECK(rel < 1e-8, "Wampler1: QR recovers the quintic");
     CHECK(sigma < 1e-6, "Wampler1: and its residual SD is near the certified zero");
-    {   /* Stated as a comparison, so the ordering itself is under test: a
-         * change that makes QR the worse solver here should not pass. */
+    {   /* The ordering itself under test: QR becoming the worse must fail. */
         double rq, rn, sq, sn, junk;
         canon_fit(&canon_wampler1, 0, &rn, &sn, &junk);
         canon_fit(&canon_wampler1, 1, &rq, &sq, &junk);
@@ -1060,10 +915,8 @@ static void test_canonical(void) {
     }
 }
 
-/* The residual SD from the normal equations loses digits in proportion to how
- * well the model fits, because RSS is recovered as Syy - beta'Sxy and those two
- * agree to more and more places as R^2 approaches 1. Measured on the same data
- * at six noise levels:
+/* The normal equations' residual SD loses digits in proportion to the fit: RSS
+ * is Syy - beta'Sxy, and those agree to more places as R^2 nears 1. Measured:
  *
  *      1 - R^2      relative error in the reported residual SD
  *      2.5e-01                 8e-16
@@ -1073,15 +926,9 @@ static void test_canonical(void) {
  *      3.3e-09                 2e-07
  *      3.3e-11                 8e-06
  *
- * A hundredfold better fit costs a hundredfold worse residual SD. QR does not
- * pay it: it carries the residual through the rotation instead of subtracting
- * for it. Nothing in the fit summary would tell you this was happening, which
- * is why it is written down here and in regress.h rather than left to be
- * rediscovered.
- *
- * Under test as a RATIO, not as absolute numbers: the absolute figures depend
- * on the compiler's order of operations, but that the loss tracks 1/(1-R^2),
- * and that QR does not share it, are properties of the two methods. */
+ * A hundredfold better fit costs a hundredfold worse residual SD. QR carries the
+ * residual through the rotation and does not pay it. Tested as a ratio: absolute
+ * figures depend on the compiler's order of operations, the 1/(1-R^2) does not. */
 static void test_fit_quality_cost(void) {
     struct regress rg;
     struct qr q;
@@ -1105,8 +952,7 @@ static void test_fit_quality_cost(void) {
         }
         (void)regress_solve(&rg, t_beta, t_scratch, &fr);
         (void)qr_solve(&q, t_beta2, t_scratch, &fq);
-        /* QR is the reference: on this data it agrees with the exact answer to
-         * the last bit at both noise levels. */
+        /* QR is the reference: exact to the last bit at both noise levels. */
         err = fabs(fr.sigma - fq.sigma) / fq.sigma;
         if (k == 0) loose = err; else { tight = err; r2_tight = fr.r2; }
     }
@@ -1117,32 +963,12 @@ static void test_fit_quality_cost(void) {
     CHECK(tight < 1e-6, "sigma cost: but not so many that the number is useless");
 }
 
-/* The two defects that this file did not catch, now with tests that do.
- *
- * Both were found by review, and neither could have failed a test that existed
- * at the time: one wrote outside its block but still inside the allocation, and
- * the other only misbehaved on data whose columns had an origin. Every test
- * here used columns centred on zero and one term at a time. */
+/* Each probe block stays in its own slots; an overrun of one lands inside the
+ * allocation, where a guard past the end cannot see it. Hence both checks. */
 static void test_diag_probe_isolation(void) {
-    /* DEFECT ONE. probe_add() wrote eleven doubles into a block declared as
-     * ten, so each term's last sum landed on the next term's first slot. It was
-     * invisible for two reasons: nothing was written outside the allocation, so
-     * AddressSanitizer had nothing to say, and the effect was that the probes
-     * went QUIET rather than reporting something wrong.
-     *
-     * The slot that overran is the LAST one a probe writes, the sum of
-     * residual times u cubed. Only the cube probe reads it, so data with a
-     * quadratic departure cannot detect the fault at all: the square probe uses
-     * the first ten slots and is untouched. The first version of this test made
-     * exactly that mistake and passed against the defect it was written for.
-     *
-     * With a cubic departure and the block one short, the probe reports NOTHING
-     * AT ALL: curved_term comes back -1 at every model size. That is the whole
-     * character of the defect, a check that goes quiet rather than wrong, and
-     * it is what the first assertion below tests. The second pins the value,
-     * which is fixed by the geometry since the data carries no noise, so a
-     * partial corruption that still leaves something above the bound cannot
-     * pass either. */
+    /* The slot at risk is the last a probe writes, sum of residual times u
+     * cubed, read only by the cube probe: hence a cubic departure, a quadratic
+     * one cannot detect the fault. One slot short, curved_term returns -1. */
     {
         double t0 = 0.0;
         int k;
@@ -1166,9 +992,8 @@ static void test_diag_probe_isolation(void) {
             diag_result(&d, DIAG_T, &r);
             CHECK(r.curved_term == 0 && r.curved_pow == 3,
                   "diag blocks: the cubic is found in term 0, at every model size");
-            /* The CORRELATION is what cannot depend on the other terms; the
-             * t does, through its degrees of freedom, which are n - p - 2.
-             * Dividing it out leaves r/sqrt(1-r^2), which must be identical. */
+            /* The correlation cannot depend on the other terms; t does, through
+             * df = n - p - 2. Dividing it out leaves r/sqrt(1-r^2). */
             {   double df = 121.0 - (double)nvars - 2.0;
                 double z  = r.curved_t / sqrt(df);
                 if (k == 0) t0 = z;
@@ -1179,12 +1004,8 @@ static void test_diag_probe_isolation(void) {
         }
     }
 
-    /* The same fault seen from the other side. Term j's overrun landed on term
-     * j+1's SHIFT, the value its powers are taken about, so the term AFTER a
-     * curved one is the one whose arithmetic is destroyed. Put a term at a
-     * large offset behind another: with its shift intact the offset costs
-     * nothing, and with the shift gone the cancellation that the shift exists
-     * to prevent comes straight back. */
+    /* From the other side: term j's block runs into term j+1's shift, the centre
+     * its powers are taken about, so the term after a curved one is at risk. */
     {
         struct diag d;
         struct diag_result r;
@@ -1207,8 +1028,7 @@ static void test_diag_probe_isolation(void) {
         free(store);
     }
 
-    /* And a guard past the end, for the ordinary kind of overrun. The one above
-     * would not trip this, which is the point of having both. */
+    /* A guard past the end, for the ordinary overrun the block above misses. */
     {
         struct diag d;
         struct diag_result r;
@@ -1233,10 +1053,7 @@ static void test_diag_probe_isolation(void) {
     }
 }
 
-/* The probes take their powers about a centre the CALLER supplies, from the
- * completed fit. Taken from the first row instead, an outlier arriving first
- * became the centre and every other value was measured from it: the same rows
- * in a different order gave t=9999 one way and t=78.8 the other. */
+/* Powers are taken about a centre from the completed fit, not the first row. */
 static void test_diag_center(void) {
     struct diag d;
     struct diag_result r;
@@ -1262,18 +1079,14 @@ static void test_diag_center(void) {
           "diag centre: and to the same value, whichever row arrives first");
 }
 
-/* The spread check sees an error that grows SYMMETRICALLY about the middle of
- * the range. It was a linear correlation of |r| against the prediction, and a
- * linear correlation of a symmetric pattern is zero, so it was blind to the
- * textbook picture of the thing it exists to find. */
+/* A spread growing symmetrically: |r| against the prediction correlates zero. */
 static void test_diag_spread(void) {
     struct diag d;
     struct diag_result r;
     double x[1];
     int i;
 
-    /* Symmetric: the residual's size grows with |fitted|, and its sign does
-     * not, so the old probe saw nothing here. */
+    /* Symmetric: the residual's size grows with |fitted|, its sign does not. */
     diag_init(&d, 1, t_diag);
     for (i = -150; i <= 150; i++) {
         double u = i * 0.02;
@@ -1284,9 +1097,7 @@ static void test_diag_spread(void) {
     diag_result(&d, DIAG_T, &r);
     CHECK(r.spread_t > DIAG_T, "diag spread: a symmetric change in spread is seen");
 
-    /* Constant spread: nothing to report. The noise has to be unstructured in
-     * u, so a small generator rather than i mod something, which is periodic
-     * in i and therefore in u. */
+    /* Constant spread: noise unstructured in u, so a generator, not i mod n. */
     {   unsigned long seed = 12345UL;
         diag_init(&d, 1, t_diag);
         for (i = -150; i <= 150; i++) {
@@ -1300,13 +1111,9 @@ static void test_diag_spread(void) {
     diag_result(&d, DIAG_T, &r);
     CHECK(r.spread_t == 0.0, "diag spread: and a constant one is not");
 
-    /* DIAG_T_CAP is a sentinel meaning "exact", not a measurement, and
-     * diag_result picks the worst finding by magnitude. spread_stat returned
-     * its F unclamped, so a spread that is merely very strong outranked one
-     * that is exactly quadratic: t_of carries the same note and the same fix,
-     * and this probe was written later without inheriting it. Driven here
-     * across four decades of jitter, the reported figure must stay inside the
-     * cap at every one. */
+    /* DIAG_T_CAP is a sentinel for "exact", not a measurement, and diag_result
+     * picks the worst by magnitude: an unclamped F would outrank an exact
+     * quadratic. Four decades of jitter. */
     {   double jitter[4];
         int k;
         jitter[0] = 1e-3; jitter[1] = 1e-5; jitter[2] = 1e-7; jitter[3] = 1e-9;
@@ -1328,18 +1135,9 @@ static void test_diag_spread(void) {
 }
 
 static void test_diag_offsets(void) {
-    /* DEFECT TWO. The probes accumulated raw powers of the column, up to the
-     * sixth, and recovered variances by subtracting: the naive formula
-     * regress.c refuses to use, in a file that cites regress.c for refusing it.
-     * The offsets it names as the reason the probe exists -- a year, a price, a
-     * temperature in Kelvin -- are exactly where a raw sum of v^6 has no
-     * significant digits left.
-     *
-     * Two failures, and a test for each. The probe went SILENT on a real curve
-     * at an offset of 1e5, and it INVENTED one at 1e4 where the model was
-     * right. Both directions are checked, at the offsets where they happened
-     * and past them, because a check that only covers zero is what let this
-     * through. */
+    /* No raw powers up to the sixth recovered by subtraction: at the offsets the
+     * probe exists for -- a year, a price, a Kelvin temperature -- a raw sum of
+     * v^6 has no digits left. Both failures checked: silence, and invention. */
     static const double OFFSET[] = { 0.0, 1.0e3, 1.0e4, 1.0e5, 1.0e6, 1.0e9 };
     const int NOFF = (int)(sizeof OFFSET / sizeof OFFSET[0]);
     struct diag d;
@@ -1348,8 +1146,7 @@ static void test_diag_offsets(void) {
     double x[1];
     int k, i;
 
-    /* A real quadratic departure. Seen at every offset, and with the same
-     * strength: shifting a column changes none of these correlations. */
+    /* A quadratic departure. Shifting a column changes no correlation: same t. */
     for (k = 0; k < NOFF; k++) {
         diag_init(&d, 1, t_diag);
         for (i = -60; i <= 60; i++) {
@@ -1365,8 +1162,7 @@ static void test_diag_offsets(void) {
                    "diag offsets: and with the same strength");
     }
 
-    /* A real cubic departure, which needs the cube probe partialled on 1, u and
-     * u^2. On [1, u] it was not offset-invariant even in exact arithmetic. */
+    /* The cube probe is partialled on 1, u, u^2; on [1, u] it was not invariant. */
     for (k = 0; k < NOFF; k++) {
         diag_init(&d, 1, t_diag);
         for (i = -60; i <= 60; i++) {
@@ -1382,9 +1178,6 @@ static void test_diag_offsets(void) {
                    "diag offsets: and with the same strength");
     }
 
-    /* The other direction, and the one that matters more: a model that is
-     * RIGHT must stay quiet wherever its column sits. The raw-power version
-     * reported a departure at an offset of 1e4 on data that had none. */
     for (k = 0; k < NOFF; k++) {
         diag_init(&d, 1, t_diag);
         for (i = -60; i <= 60; i++) {
@@ -1397,12 +1190,7 @@ static void test_diag_offsets(void) {
     }
 }
 
-/* The memory figure quoted to a user and the memory the program asks for. They
- * were three different numbers in three files, none of them counting more than
- * the fitter, so this checks the arithmetic rather than the prose: the growth
- * per term must match what the three sizing functions actually return. */
-/* The progress line on a long run. The decision is split out of the printing
- * so it can be tested without waiting a minute for one. */
+/* The progress line; the decision is split from the printing to be testable. */
 static void test_progress(void) {
     const long M = 1048576;                  /* the clock is read this often */
 
@@ -1418,9 +1206,7 @@ static void test_progress(void) {
           "progress: the first line is due exactly at the bound");
     CHECK(process_progress_due(0, 3600, 3600) == 1,
           "progress: row 0 is a clock row, which is where a run begins");
-    {   /* A fit of a million rows takes well under a second, so no ordinary
-         * run can print anything. This is the property that keeps the line out
-         * of every test and transcript in the project. */
+    {   /* A million rows takes well under a second, so no ordinary run prints. */
         long r, printed = 0;
         for (r = 0; r < 4L * M; r++)
             if (process_progress_due(r, 0, 0)) printed++;
@@ -1428,6 +1214,7 @@ static void test_progress(void) {
     }
 }
 
+/* The quoted memory figure: growth per term must match the sizing functions. */
 static void test_footprint(void) {
     size_t two   = process_group_bytes(2);
     size_t three = process_group_bytes(3);
@@ -1437,10 +1224,7 @@ static void test_footprint(void) {
           "footprint: a model with no terms costs nothing to report");
     CHECK(two > 0 && three > two, "footprint: another term costs more");
 
-    /* The figure must cover the residual-check block, which is the part every
-     * earlier statement of it left out: three files quoted the fitter alone.
-     * fitter_storage() is private to process.c, so the check is that the growth
-     * per term exceeds what the fitter alone would explain. */
+    /* fitter_storage() is private, so the check is growth beyond the fitter. */
     fixed = (size_t)(diag_storage(3) - diag_storage(2)) * sizeof(double);
     CHECK(three - two > fixed,
           "footprint: a term costs more than its residual-check block alone");
@@ -1449,19 +1233,15 @@ static void test_footprint(void) {
     CHECK(two > (size_t)sizeof(void *) + GROUP_MAX,
           "footprint: the record around the arrays is counted too");
 
-    /* The scoring side is a different number, and it does NOT move with the
-     * term count: the coefficient array is dimensioned at the build ceiling.
-     * This was the figure being quoted for the fitting side. */
+    /* Scoring is a different figure: its array is dimensioned at the ceiling. */
     CHECK(process_model_bytes() >= (size_t)(LOS_MAX_VARS + 2) * sizeof(double),
           "footprint: a loaded model carries the build's whole ceiling");
     CHECK(process_model_bytes() != process_group_bytes(LOS_MAX_VARS < REGRESS_MAX_VARS
                                                        ? LOS_MAX_VARS : REGRESS_MAX_VARS),
           "footprint: fitting and scoring are not the same figure");
 
-    /* The two formulas the documents quote. qr.h said its factor was smaller
-     * than the normal equations' and README.md said larger, and neither counted
-     * the three per-column vectors qr.c keeps. Stated here as arithmetic so the
-     * prose cannot drift from the allocation again. */
+    /* The documents' formulas as arithmetic, so prose cannot drift from the
+     * allocation. QR is the larger, per-column vectors counted. */
     {
         int w[] = { 1, 2, 8, 24, 35, 64 };
         size_t i;
@@ -1479,8 +1259,7 @@ static void test_footprint(void) {
 }
 
 static void test_los_round(void) {
-    /* Half away from zero, NOT printf's round half to even, which would make
-     * these 2 and -2. */
+    /* Half away from zero, not printf's half to even, which gives 2 and -2. */
     CHECK(NEAR(los_round(2.5, 0), 3.0), "round: half up");
     CHECK(NEAR(los_round(-2.5, 0), -3.0), "round: half away from zero when negative");
     CHECK(NEAR(los_round(15.63514, 4), 15.6351), "round: to four digits");
@@ -1506,7 +1285,6 @@ static void test_los_schema(void) {
     CHECK(los_schema_set((const char *const *)names, 0) == -1, "schema: refuses no terms");
     CHECK(los_schema_set((const char *const *)names, LOS_MAX_VARS + 1) == -1, "schema: refuses too many terms");
     CHECK(los_schema_set((const char *const *)names, 3) == -1, "schema: refuses an empty column name");
-    /* A rejected header must leave the working schema alone, not half-replace it. */
     CHECK(los_nvars() == 2 && streq(los_var_name(0), "km"),
           "schema: a rejected header changes nothing");
     los_free();
@@ -1516,8 +1294,7 @@ static void test_los_tables(void) {
     const struct los_model *m;
 
     CHECK(los_load_both() == 0, "los: tables load");
-    /* The coefficient header defines the model: 24 terms in this example table,
-     * two in example/simple-train.csv, and neither is compiled in anywhere. */
+    /* The header defines the model: 24 terms here, 2 in simple-train.csv. */
     CHECK(los_nvars() == 24, "los: the table's header set the term count");
     CHECK(streq(los_var_name(0), "Cardioversion"), "los: first term named");
     CHECK(streq(los_var_name(16), "icu_indicator"), "los: term 17 named");
@@ -1542,9 +1319,8 @@ static void test_los_tables(void) {
 static void test_los_trims(void) {
     const struct los_model *m;
 
-    /* Coefficients alone are a working model: every trim addition is 0 and the
-     * trim point is the prediction. A table produced by -t has no trim file,
-     * and demanding one made such a table impossible to score against. */
+    /* Coefficients alone are a working model: addition 0, trim point equal to
+     * the prediction. A table produced by -t has no trim file. */
     CHECK(los_load(COEF) == 0, "trims: coefficients load on their own");
     m = los_model_get("001");
     CHECK(m && m->trim_addition == 0.0, "trims: none loaded means an addition of 0");
@@ -1642,9 +1418,7 @@ static void test_process_train(void) {
     struct fit_info info;
     const struct los_model *m;
 
-    /* example/train.csv was generated from the example coefficients, so fitting
-     * it must give those coefficients back, to every printed digit, which is
-     * the strongest statement the fitter can make about itself. */
+    /* train.csv came from the example coefficients: fitting gives them back. */
     CHECK(los_load(COEF) == 0, "train: reference table loads");
     m = los_model_get("001");
     CHECK(m != NULL, "train: reference group present");
@@ -1671,7 +1445,6 @@ static void test_process_train(void) {
         CHECK(info.df == 9, "train: reports the residual degrees of freedom");
     }
 
-    /* The fitted output is a coefficient FILE, header and all, so it reads back. */
     CHECK(strncmp(out, "group,intercept,Cardioversion,", 30) == 0,
           "train: output carries its own header");
     CHECK(strchr(out, '\n') != NULL && strstr(out, "\n001,") != NULL,
@@ -1695,8 +1468,7 @@ static void test_other_schema(void) {
     char out[LINEARR_MAX_OUTPUT];
     struct fit_info info;
 
-    /* The whole claim of this program in one test: a file with two columns
-     * nobody wrote any code for, fitted by the same binary that does the
+    /* Two columns nobody wrote any code for, fitted by the binary that does the
      * twenty-four-term model. MINUTES = 5 + 2.5*km + 1.5*stops. */
     CHECK(process_train("example/simple-train.csv", "A", out, sizeof out, &info) == 0,
           "other schema: fits a two-term file");

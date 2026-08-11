@@ -1,6 +1,5 @@
 /* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
-/* diag.c: see diag.h. Correlations from running sums, partialled where it
- * matters, converted to a t statistic. */
+/* diag.c: see diag.h. Correlations from running sums, partialled, as a t. */
 #include "diag.h"
 #include "common.h"
 
@@ -29,21 +28,15 @@ void diag_scale(struct diag *d, double resid_sd, double response_sd) {
     d->response_sd = response_sd;
 }
 
-/* Term j's block at j*DIAG_PER_TERM; the fitted value's block after the terms;
- * the shared sums after that. */
+/* Term j's block at j*DIAG_PER_TERM, then the fitted value's, then the shared. */
 #define B(d, j)    ((d)->s + (size_t)(j) * DIAG_PER_TERM)
 #define FIT(d)     ((d)->s + (size_t)(d)->nvars * DIAG_PER_TERM)
 #define SH(d)      ((d)->s + ((size_t)(d)->nvars + 1) * DIAG_PER_TERM)
 
-/* Powers about the column's own centre, taken from its first value. Shifting by
- * a constant changes none of the partial correlations below, and it removes the
- * cancellation that destroyed them: a raw sum of v^6 at v ~ 1e5 has no
- * significant digits left for a variance recovered by subtraction. Measured: the
- * square probe went silent at a column offset of 1e5 and, worse, inflated at
- * 1e4 into a departure that was not there.
- *
- * Layout: [0] shift, [1] n, then sums of u, u^2, u^3, u^4, u^5, u^6, r*u,
- * r*u^2, r*u^3 where u = v - shift. */
+/* Powers about the column's own centre. A constant shift leaves the partial
+ * correlations below unchanged and removes the cancellation: a raw sum of v^6 at
+ * v ~ 1e5 keeps no significant digits for a variance recovered by subtraction.
+ * Layout: [0] shift, [1] n, then u, u^2..u^6, r*u, r*u^2, r*u^3, u = v-shift. */
 void diag_center(struct diag *d, const double *shift, double yhat) {
     int j;
     if (!d || !shift || d->n != 0) return;   /* only before any row is added */
@@ -82,9 +75,8 @@ void diag_add(struct diag *d, const double *x, double resid, double fitted) {
     probe_add(FIT(d), fitted, resid, d->shifted);
 
     sh = SH(d);
-    {   /* The fitted value shifted by the same constant the fit probe uses, so
-         * the spread correlation is computed about a centre too. A correlation
-         * is shift-invariant, and the sums are not. */
+    {   /* The fitted value shifted by the fit probe's constant, so the spread
+         * correlation is about a centre too: the sums are not shift-invariant. */
         double fs = fitted - FIT(d)[0];
         double rr = resid * resid;
         sh[0] += resid;
@@ -94,14 +86,10 @@ void diag_add(struct diag *d, const double *x, double resid, double fitted) {
         sh[4] += a * fs;
         sh[5] += fs;
         sh[6] += fs * fs;
-        /* For the spread check: the SQUARED residual against the prediction
-         * and its square. Correlating |r| with the prediction, which is what
-         * this did, is a LINEAR correlation, and an error that grows
-         * symmetrically about the middle of the range has none: measured, that
-         * probe fired on 2.5% of samples where the spread genuinely varied
-         * with |x|. Regressing r^2 on 1, u and u^2 is the shape R's bptest and
-         * car::ncvTest use, and it sees both the monotone and the symmetric
-         * case. */
+        /* For the spread check: r^2 against the prediction and its square. |r|
+         * against the prediction is a linear correlation, which an error growing
+         * symmetrically about the middle of the range does not have. r^2 on 1, u
+         * and u^2 is R's bptest and car::ncvTest, and sees both cases. */
         sh[7]  += rr * rr;
         sh[8]  += rr * fs;
         sh[9]  += rr * fs * fs;
@@ -110,10 +98,8 @@ void diag_add(struct diag *d, const double *x, double resid, double fitted) {
     }
 }
 
-/* The correlation between the residual and the part of u^2 that 1 and u do not
- * explain. Partialling is the point: the residual is orthogonal to u by
- * construction, so a raw correlation with u^2 measures mostly what u already
- * accounts for. */
+/* Correlation of the residual with the part of u^2 that 1 and u do not explain:
+ * the residual is orthogonal to u, so raw u^2 measures mostly what u covers. */
 static double partial_corr(const double *b, double sr, double srr) {
     double n    = b[1];
     double su   = b[2], su2 = b[3], su3 = b[4], su4 = b[5];
@@ -135,12 +121,9 @@ static double partial_corr(const double *b, double sr, double srr) {
 }
 
 /* The cube, partialled on 1, u AND u^2. On [1, u] alone it is not
- * offset-invariant even in exact arithmetic: u^3 about a shifted origin carries
- * a 3*c*u^2 term that [1, u] cannot absorb, so the probe was dominated by an
- * even component orthogonal to the odd residual it exists to find. The case
- * that showed it: a cubic of amplitude 25 against noise 1, undetected at an
- * offset of 10. Solving the 2x2 normal equations for u^3 on [u, u^2] (both
- * already centred) restores it. */
+ * offset-invariant even in exact arithmetic: u^3 about a shifted origin carries a
+ * 3*c*u^2 term [1, u] cannot absorb, leaving an even component orthogonal to the
+ * odd residual sought. The 2x2 normal equations for u^3 on [u, u^2] restore it. */
 static double partial_corr3(const double *b, double sr, double srr) {
     double n   = b[1];
     double su  = b[2], su2 = b[3], su3 = b[4], su4 = b[5], su5 = b[6], su6 = b[7];
@@ -168,13 +151,10 @@ static double partial_corr3(const double *b, double sr, double srr) {
     return covrz / sqrt(varz * srr_c);
 }
 
-/* The spread check: how much of the squared residual's own variation is
- * explained by the prediction and its square. R^2 of that auxiliary regression
- * is the Breusch-Pagan score, and sqrt of its F is reported so the number sits
- * on the same scale as the other probes.
- *
- * On [1, u] alone this would still be blind to a symmetric pattern, which is
- * why u^2 is in it. */
+/* The spread check: how much of the squared residual's variation the prediction
+ * and its square explain. That auxiliary R^2 is the Breusch-Pagan score; sqrt of
+ * its F is reported, on the same scale as the other probes. u^2 is in it because
+ * [1, u] alone is blind to a symmetric pattern. */
 static double spread_stat(const double *sh, double n) {
     double sw = sh[1], sww = sh[7], swu = sh[8], swu2 = sh[9];
     double su = sh[5], su2 = sh[6], su3 = sh[10], su4 = sh[11];
@@ -196,63 +176,39 @@ static double spread_stat(const double *sh, double n) {
     if (explained <= 0.0) return 0.0;
     r2 = explained / sww_c;
     if (r2 >= 1.0) return DIAG_T_CAP;
-    /* F on 2 and n-3, reported as its square root, and clamped at the same
-     * place t_of clamps for exactly the same reason. DIAG_T_CAP is a SENTINEL
-     * meaning "the relation is exact", not a large measurement, and
-     * diag_result picks the worst finding by magnitude. Unclamped, this
-     * returned 5.7e5 at a jitter of 1e-5 and 6.5e7 at 1e-7 on a spread that is
-     * merely strong, so the sentinel at 9999 sorted BELOW them: a group whose
-     * spread is exactly quadratic was outranked by any group that was only
-     * close to it. t_of carries the same note; this function was written after
-     * it and did not inherit the fix. */
+    /* F on 2 and n-3, as its square root, clamped where t_of clamps.
+     * DIAG_T_CAP is a sentinel meaning "exact" and diag_result picks by
+     * magnitude: unclamped, a strong spread runs above 9999 and outranks it. */
     {   double f = sqrt((r2 / 2.0) / ((1.0 - r2) / (n - 3.0)));
         return (f > DIAG_T_CAP) ? DIAG_T_CAP : f;
     }
 }
 
-/* A correlation carries no sense of how much data stands behind it. The t
- * statistic does, which is why the threshold is on t and not on r: a fixed
- * correlation bound is a fixed effect size, and its sensitivity never improves
- * however much data arrives. */
-/* df is n minus what the MODEL already spent, p + 1, minus one more for the
- * probe itself. It was n - 3, which is right only when p = 1, and every
- * example that exercised this file has one term. At n = 15 with 8 terms that
- * inflated the statistic by 1.55x. */
+/* A correlation carries no sense of how much data stands behind it; a t does.
+ * df is n minus what the model spent, p + 1, minus one for the probe. */
 static double t_of(double r, double n, int nvars) {
     double denom = 1.0 - r * r;
     double df    = n - (double)nvars - 2.0;
     if (df <= 0.0) return 0.0;
-    /* Capped: an exact relation would otherwise print a t of 1e9, which reads
-     * as a number rather than as "exactly". The bound is 1e-12 and not the
-     * 1e-15 it was, because 1e-15 sits BELOW the rounding floor of the sums
-     * that produced r: on an exactly quadratic residual the same probe returned
-     * 9.0e7, 8.6e7, 7.3e7 and 9999 at four offsets of the same column, which is
-     * rounding noise in 1 - r^2 and nothing else. A test that compared those
-     * four failed, correctly, and the fault was here. */
+    /* Capped: an exact relation would print a t of 1e9, which reads as a number
+     * rather than "exactly". 1e-12 and not 1e-15, which sits below the rounding
+     * floor of the sums that produced r, where 1 - r^2 is noise. */
     if (denom <= 1e-12) return (r < 0.0 ? -DIAG_T_CAP : DIAG_T_CAP);
     {   double t = r * sqrt(df) / sqrt(denom);
-        /* Clamped at the same place. The cap used to be reachable only through
-         * the branch above, while ordinary data produced 40387 and 1237430, so
-         * the sentinel meaning "exact" sorted BELOW values meaning "strong",
-         * and diag_result picks by |t|. */
+        /* Same clamp, so the sentinel meaning "exact" is never outranked by a
+         * value meaning "strong": diag_result picks by |t|. */
         if (t >  DIAG_T_CAP) t =  DIAG_T_CAP;
         if (t < -DIAG_T_CAP) t = -DIAG_T_CAP;
         return t;
     }
 }
 
-/* The bound |t| must pass, given how many probes are being read.
- *
- * DIAG_T alone is a bound for ONE test. Each group runs 2*nvars + 2 of them
- * and the summary takes the maximum over every group, so a file of 580 groups
- * of 35 terms reads 41,760 probes and reports the largest. The maximum of m
- * independent normals grows like sqrt(2 ln m), so a fixed bound is not a fixed
- * error rate: on correctly specified data with normal noise, that shape
- * produced a warning every single time.
- *
- * sqrt(DIAG_T^2 + 2 ln m) is DIAG_T at m = 1 and rises the way the maximum
- * does. It is not a multiple-comparison procedure with a stated level; it is a
- * bound that stops the report being certain on data that is fine. */
+/* The bound |t| must pass, given m probes. DIAG_T alone bounds ONE test; each
+ * group runs 2*nvars + 2 and the summary maximises over groups, so 580 groups of
+ * 35 terms is 41,760 probes. The maximum of m independent normals grows like
+ * sqrt(2 ln m), and a fixed bound warned every time on correctly specified data
+ * with normal noise. sqrt(DIAG_T^2 + 2 ln m) is DIAG_T at m = 1 and rises with
+ * the maximum. Not a multiple-comparison procedure with a stated level. */
 double diag_bound(int nvars, long long groups) {
     double m = (double)(2 * nvars + 2) * (double)(groups > 0 ? groups : 1);
     if (m <= 1.0) return DIAG_T;
@@ -285,8 +241,8 @@ void diag_result(const struct diag *d, double bound, struct diag_result *out) {
     if (fabs(best) < bound) { out->curved_term = -1; out->curved_pow = 0; }
     else out->curved_t = best;
 
-    /* The same probe against the fitted value. A per-term probe cannot see an
-     * omitted interaction or an odd power; this can. */
+    /* The same probe against the fitted value, which sees an omitted interaction
+     * or an odd power that a per-term probe cannot. */
     t = t_of(partial_corr(FIT(d), sh[0], sh[1]), n, d->nvars);
     if (fabs(t) >= bound) out->fitted_t = t;
 

@@ -1,18 +1,10 @@
 /* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
 /* los.c: see los.h.
  *
- * One of this program's three heap users is here: the coefficient table, one
- * struct los_model per group, held in the hash table for the life of the run.
- * It is bounded by the number of GROUPS in the table, never by the number of
- * cases scored, and it is freed on every path by los_free(). The schema is a
- * fixed array. Cases themselves are stack objects, processed one at a time and
- * forgotten: scoring ten cases and scoring ten million cost the same memory.
- *
- * The others are hash.c's group index and, while `-t` fits every group, one
- * accumulator per group in process.c. This comment used to say "nothing else
- * allocates", which was false when it was written, and then named params.c,
- * which was true until that file was deleted and false afterwards. A count is a
- * claim like any other, and this one has now been wrong in both directions. */
+ * One of the program's three heap users: the coefficient table, one struct
+ * los_model per group, bounded by groups and never by cases scored, freed on
+ * every path by los_free(). The other two are hash.c's group index and, while
+ * `-t` fits every group, one accumulator per group in process.c. */
 #include "los.h"
 #include "resolve.h"
 #include "csv.h"
@@ -31,9 +23,6 @@
 
 static char reason[RESOLVE_PATH_MAX + 512] = "";
 
-/* Why the last load failed. The caller used to print one sentence ("X is not
- * a coefficient table") for about ten distinct causes, with the real one
- * visible only under -d. */
 const char *los_error(void) { return reason; }
 
 static int refuse(const char *fmt, ...) LINEARR_PRINTF(1, 2);
@@ -49,11 +38,8 @@ static int refuse(const char *fmt, ...) {
 static struct hash *models;
 static char         var_name[LOS_MAX_VARS][LOS_NAME_MAX];
 
-/* Where each column of a TRAINING row lives. Positionally the response is
- * field 1 and the terms follow it, which is what these hold unless --response
- * names a column somewhere else. Nothing in the data can say which column is
- * the response, so a file written in another order fits perfectly well and
- * answers a different question; naming it is the only way to be sure. */
+/* Where each column of a training row lives: response at field 1, terms after
+ * it, unless --response names a column somewhere else. */
 static int          resp_field = 1;
 static int          term_field[LOS_MAX_VARS];
 static int          nvars;
@@ -63,9 +49,7 @@ static char         response[LOS_NAME_MAX];
 
 static int ci_equal(const char *a, const char *b) {
     for (; *a && *b; a++, b++) {
-        /* unsigned char, so a byte >= 0x80 is not implementation-defined here
-         * (MISRA 10.3); both operands are widened the same way either way, but
-         * "works by symmetry" is not a thing to leave in a header comparison. */
+        /* unsigned char: >= 0x80 is not implementation-defined (MISRA 10.3). */
         int ca = (unsigned char)*a, cb = (unsigned char)*b;
         if (ca >= 'A' && ca <= 'Z') ca += 'a' - 'A';
         if (cb >= 'A' && cb <= 'Z') cb += 'a' - 'A';
@@ -87,10 +71,7 @@ int los_schema_set(const char *const *names, int n) {
             debug("los: column %d has an empty or over-long name", i + 1);
             return -1;
         }
-        /* Two columns a user cannot tell apart are refused rather than ranked.
-         * Lookup by name is case-insensitive, so "A" and "a" collide: with both
-         * present, `linearr G a=1` silently set column "A" and there was no way
-         * to address the other one at all. */
+        /* Case-insensitive lookup: with both "A" and "a" one is unreachable. */
         for (j = 0; j < i; j++)
             if (ci_equal(names[i], names[j])) {
                 debug("los: columns %d and %d are both '%s' (names are matched "
@@ -98,8 +79,7 @@ int los_schema_set(const char *const *names, int n) {
                 return -1;
             }
     }
-    /* Only once every name is known good, so a rejected header leaves the
-     * previous schema intact rather than half-replaced. */
+    /* Only when every name is good: a rejected header keeps the old schema. */
     for (i = 0; i < n; i++)
         strcpy(var_name[i], names[i]);          /* length checked above */
     nvars = n;
@@ -109,14 +89,7 @@ int los_schema_set(const char *const *names, int n) {
     return 0;
 }
 
-/* The same, from a WHOLE training header, with the response named rather than
- * assumed to be column 2. header[0] is the group; the named column is the
- * response; every other column is a term, in the order it appears.
- *
- * Returns 0, -1 for the reasons los_schema_set gives, -2 if the name is not in
- * the header, and -3 if it names the group column. The caller distinguishes
- * them because "no such column" and "that is the group" want different advice.
- */
+/* See los.h. Returns 0; -1 as los_schema_set; -2 unknown name; -3 the group. */
 int los_schema_set_response(const char *const *header, int n,
                             const char *want) {
     const char *names[LOS_MAX_VARS];
@@ -166,29 +139,20 @@ void los_set_response_name(const char *name) {
     strcpy(response, name);                 /* checked on the line above */
 }
 
-/* Every power of ten up to 1e22 is exactly representable as a double. Past
- * that they are not, which is where the fast path below stops. */
+/* Powers of ten to 1e22 are exact as doubles; past that the fast path stops. */
 static const double pow10_exact[] = {
     1e0,  1e1,  1e2,  1e3,  1e4,  1e5,  1e6,  1e7,  1e8,  1e9,  1e10, 1e11,
     1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22
 };
 #define POW10_MAX ((int)(sizeof pow10_exact / sizeof pow10_exact[0]) - 1)
 
-/* A plain integer or short decimal, read without strtod, or -1 to say "not
- * mine" so the general parser gets it. Reading a training file costs more than
- * fitting it, and strtod is why: it is correctly rounded and fully general,
- * handling exponents, hexadecimal, inf, nan and the locale's decimal point,
- * and it gets called once per field to read what is usually the single
- * character '0' or '1'.
- *
- * This is exact, not approximate, which is the only version of it worth
- * having: a mantissa under 10^16 is below 2^53 and converts to double with no
- * rounding at all, and 10^frac is exact for frac <= 22. IEEE division of two
- * exactly represented values is correctly rounded by definition, and the
- * correctly rounded quotient IS what strtod returns for the same digits. So
- * where this path answers, it answers with strtod's bits. Anything else --
- * exponents, hex, over-long mantissas, leading spaces, trailing junk; it
- * declines, and nothing about those cases changes. */
+/* A plain integer or short decimal without strtod, or -1 for "not mine". A
+ * training file costs more to read than to fit, and strtod is why: fully
+ * general, called per field to read what is usually '0' or '1'. Exact, not
+ * approximate: a mantissa under 10^16 is below 2^53 and converts with no
+ * rounding, 10^frac is exact for frac <= 22, and IEEE division of two exact
+ * values is correctly rounded -- that quotient is what strtod returns for the
+ * same digits. Declines exponents, hex, over-long mantissas, spaces, junk. */
 static int fast_num(const char *s, double *out) {
     const char        *p = s;
     unsigned long long m = 0;
@@ -218,12 +182,8 @@ static int fast_num(const char *s, double *out) {
     return 0;
 }
 
-/* strtod that refuses what atof would have accepted silently: an empty field,
- * trailing text, and the three the earlier version of this comment claimed to
- * catch and did not. strtod happily returns nan for "nan", inf for "inf" and
- * for 1e400 (with ERANGE), and reads "0x10" as 16. Each of those loaded into a
- * coefficient table without complaint, scored "prediction=nan", and exited 0.
- * A number that is not finite is not a number we can publish. */
+/* strtod that refuses what atof accepts silently: an empty field, trailing
+ * text, hexadecimal, non-finite. strtod reads "nan", "inf", 1e400, "0x10". */
 int los_parse_number(const char *s, double *out, const char **why) {
     char *end;
     double v;
@@ -231,17 +191,10 @@ int los_parse_number(const char *s, double *out, const char **why) {
     if (why) *why = "is not a finite number";
     if (s[0] == '\0') return -1;
     if (fast_num(s, out) == 0) return 0;
-    /* Hexadecimal, which strtod accepts and this function's own comment lists
-     * among the things it exists to refuse. C99 added 0x10 and the binary
-     * exponent form 0X1p4 to strtod, so a field reading 0x10 loaded quietly as
-     * 16. Nothing writes a CSV that way on purpose: it is a mis-export, or a
-     * hash, or an identifier that landed in a numeric column, and reading it
-     * as a number is how one becomes a coefficient. Decimal exponents (1e3)
-     * stay: those are ordinary in exported data.
-     *
-     * The scan skips what strtod skips. csv_split trims spaces, but strtod
-     * also steps over tabs and the rest of isspace, so a field reading
-     * <tab>0x1p4 sailed past a check on s[0] and loaded as 16 anyway. */
+    /* Hexadecimal, both 0x10 and C99's 0X1p4: a mis-export, a hash, or an
+     * identifier in a numeric column. Decimal exponents (1e3) stay. The scan
+     * skips what strtod skips -- csv_split trims spaces, strtod also steps over
+     * tabs and the rest of isspace, so testing s[0] would let <tab>0x1p4 by. */
     {   const char *t = s;
         while (*t == ' ' || *t == '\t' || *t == '\n'
             || *t == '\v' || *t == '\f' || *t == '\r') t++;
@@ -252,11 +205,8 @@ int los_parse_number(const char *s, double *out, const char **why) {
             return -1;
         }
     }
-    /* No ERANGE test. strtod sets it for gradual UNDERFLOW as well as for
-     * overflow, so 1e-320 -- finite, representable, and a perfectly good
-     * coefficient -- was refused as "not a finite number", which was also a
-     * lie about it. Overflow needs no help from errno: strtod returns
-     * +-HUGE_VAL and the isfinite below has always caught 1e400. */
+    /* No ERANGE test: strtod sets it for gradual underflow too, and 1e-320 is a
+     * perfectly good coefficient. Overflow returns +-HUGE_VAL, caught below. */
     v = strtod(s, &end);
     while (*end == ' ') end++;
     if (*end != '\0') return -1;
@@ -280,10 +230,7 @@ static int load_coefficients(const char *path) {
 
     if (!fp) return refuse("cannot open %s", path);
 
-    /* Leading comments precede a header, and one of them is not decoration:
-     * `# response: NAME` is what the file predicts, written by -t from the
-     * training header. Without it a coefficient file says group,intercept,km,
-     * stops and nothing in it says the answer is in minutes. */
+    /* `# response: NAME`, among the leading comments, is what -t wrote. */
     response[0] = '\0';
     while ((n = csv_next(fp, line, sizeof line)) == 2) {
         const char *p = line;
@@ -304,10 +251,8 @@ static int load_coefficients(const char *path) {
     }
     n = csv_split(line, field, CSV_MAX_FIELDS);
     if (n < 3) {
-        /* One field usually means the file is not comma-separated at all.
-         * Excel writes semicolons wherever the comma is the decimal mark, and
-         * blaming the header sends the reader to inspect a header that is
-         * visibly correct. */
+        /* One field usually means the file is not comma-separated at all:
+         * Excel writes semicolons wherever the comma is the decimal mark. */
         if (n == 1 && (strchr(field[0], ';') || strchr(field[0], '\t')))
             refuse("%s has no commas in its header, but does have %s. It looks "
                    "%s-separated; this program reads commas only", path,
@@ -318,9 +263,7 @@ static int load_coefficients(const char *path) {
                    "this one has %d column%s", path, n, n == 1 ? "" : "s");
         goto cleanup;
     }
-    /* A "header" whose every field is a number is not a header. It used to be
-     * adopted as the schema, so the terms were named "6.4832" and "0", and the
-     * error a user finally saw complained about a missing TERM. */
+    /* A "header" of numbers is not a header: it would name a term "6.4832". */
     {   int numeric = 1, k;
         double tmp;
         for (k = 1; k < n; k++)
@@ -331,8 +274,7 @@ static int load_coefficients(const char *path) {
             goto cleanup;
         }
     }
-    /* The header IS the model's column order: whatever it names, in that order,
-     * is what x[] and b[] mean from here on. */
+    /* The header is the model's column order: what x[] and b[] mean. */
     if (los_schema_set((const char *const *)(field + 2), n - 2) != 0) {
         refuse("%s does not name %d usable terms: they must be non-empty, under "
                "%d characters, and distinct ignoring case", path, n - 2, LOS_NAME_MAX);
@@ -363,9 +305,7 @@ static int load_coefficients(const char *path) {
                    path, rows + 1, GROUP_MAX - 1);
             goto cleanup;
         }
-        /* Two rows for one group is a table its author did not mean to write.
-         * Last-one-wins scored the second silently, so the file and the answer
-         * disagreed and nothing said so. */
+        /* Two rows for one group: refused, not silently resolved. */
         if (hash_get(models, group) != NULL) {
             refuse("%s names group '%s' twice", path, group);
             goto cleanup;
@@ -417,9 +357,8 @@ int los_load_trims(const char *path) {
     fp = fopen(path, "r");
     if (!fp) return refuse("cannot open %s", path);
 
-    /* Read the first line, and only DISCARD it if it is a header. It used to be
-     * eaten unconditionally, so a headerless trim table silently lost its first
-     * group's trim addition: a wrong number, quietly, for one group only. */
+    /* Discard the first line only if it is a header: a headerless trim table
+     * must not lose its first group's trim addition. */
     while ((n = csv_next(fp, line, sizeof line)) == 2)
         ;
     if (n < 0) {
@@ -450,8 +389,7 @@ int los_load_trims(const char *path) {
                    path, field[0], field[1]);
             goto cleanup;
         }
-        /* A trim for a group with no coefficients is not an error: the trim
-         * table may be the wider of the two. It has nothing to attach to. */
+        /* A trim for an unknown group: the trim table may be the wider one. */
         m = hash_get(models, field[0]);
         if (m) { m->trim_addition = v; have_trims = 1; }
     }
@@ -488,27 +426,16 @@ void los_free(void) {
     models = NULL;
 }
 
-/* Both parsers split a private copy: csv_split works in place, and the caller's
+/* Both parsers split a private copy: csv_split works in place, the caller's
  * line is const. Bounded by CSV_LINE_MAX, on the stack, allocating nothing. */
-/* Why the last parse_row() refused a line. One sentence, already naming the
- * column and what was in it.
- *
- * Every failure below used to return a bare -1, and the caller printed the same
- * sentence for all of them: "expected a group, a value, and N terms". An empty
- * field, a row one column short, the word NA, a category name, a quoted number
- * and a semicolon-separated row all produced that, on a file with millions of
- * rows and no indication of which column was at fault. It reads as the program
- * crashing, and it is not: it refused, and refused without saying what it
- * wanted. */
 static char parse_why[512];
 
 const char *los_parse_error(void) {
     return parse_why[0] ? parse_why : "the row could not be read";
 }
 
-/* A field's name, for the message: the group, the response, or a term. Copied
- * into the caller's bounded buffer rather than returned as a pointer, so the
- * message that uses it has a length the compiler can see. */
+/* A field's name for the message: the group, the response, or a term. Copied
+ * into the caller's bounded buffer, so the message has a visible length. */
 static void field_label(char *out, size_t outsz, int idx, int xoff) {
     const char *name = "a column";
     if (idx == 0) name = "the group column";
@@ -523,8 +450,7 @@ static void field_label(char *out, size_t outsz, int idx, int xoff) {
     (void)snprintf(out, outsz, "%.*s", (int)outsz - 1, name);
 }
 
-/* Enough of a field to recognise it, with the rest elided. A message that
- * quotes a whole 400-character line is not a message. */
+/* Enough of a field to recognise it, the rest elided. */
 static void show_field(char *out, size_t outsz, const char *s) {
     size_t n = strlen(s);
     if (n == 0) { (void)snprintf(out, outsz, "empty"); return; }
@@ -556,10 +482,7 @@ static int parse_row(const char *line, struct los_case *c, double *los,
 
     n = csv_split(buf, field, CSV_MAX_FIELDS);
     if (n != nvars + xoff) {
-        /* A wrong count is usually a separator, not a missing column, and the
-         * header check already says this for the header. It said nothing for
-         * the rows, so a file with a comma header and semicolon data got the
-         * generic sentence. */
+        /* A wrong count is usually a separator, not a missing column. */
         if (n == 1 && (strchr(field[0], ';') || strchr(field[0], '\t')))
             (void)snprintf(parse_why, sizeof parse_why,
                            "it has no commas, but does have %s. The header is "
@@ -571,11 +494,7 @@ static int parse_row(const char *line, struct los_case *c, double *los,
                            "it has more than the %d fields this build splits",
                            CSV_MAX_FIELDS);
         else if (strchr(line, '"') || strchr(line, '\''))
-            /* A quoted field holding a comma splits into two, and a quoted
-             * field holding a line break leaves the rest on the next line.
-             * Both arrive here as a wrong field count, and reporting only the
-             * count sends the reader to look for a missing column that is
-             * not missing. */
+            /* A quoted comma or line break arrives as a wrong field count. */
             (void)snprintf(parse_why, sizeof parse_why,
                            "it has %d field%s and the header names %d, and the "
                            "row contains a quote. A quoted field holding a "
@@ -592,20 +511,12 @@ static int parse_row(const char *line, struct los_case *c, double *los,
         return -1;
     }
 
-    /* Quoting. csv.c splits on commas and nothing else, so a quoted field
-     * arrives with its quotes still on it. A quoted NUMBER then fails to parse,
-     * with a message about the number; a quoted GROUP NAME did not fail at all,
-     * and "A" became a group distinct from A with nothing said. A silent wrong
-     * answer is the worst of the three outcomes, so quoting is refused here
-     * rather than half-handled. */
+    /* csv.c splits on commas only, so a quoted field keeps its quotes: a quoted
+     * number will not parse and a quoted group becomes a different group. */
     for (i = 0; i < n; i++) {
         size_t len = strlen(field[i]);
-        /* First OR last, and both quote characters at both ends: a field that
-         * merely ENDS in a quote is the same fault, A" and A became two groups
-         * silently, and this guard was written for exactly that -- then checked
-         * a trailing '"' and not a trailing '\'', so A' and A went on doing it.
-         * An INTERIOR apostrophe is still left alone, since O'Brien is a name
-         * and not a quoting attempt. */
+        /* Either end, either quote character: A" and A would be two groups. An
+         * interior apostrophe is left alone; O'Brien is a name. */
         if (field[i][0] == '"' || field[i][0] == '\'' ||
             (len > 0 && (field[i][len - 1] == '"' ||
                          field[i][len - 1] == '\''))) {
@@ -663,9 +574,7 @@ int los_parse_training(const char *line, struct los_case *c, double *los) {
     return parse_row(line, c, los, 2);
 }
 
-/* The two bounded appends the formatters are built from: each writes into the
- * space that is left, and a result that does not fit is an error rather than a
- * truncation nobody sees. */
+/* The formatters' bounded appends: overflow is an error, not truncation. */
 static int append_str(char *out, size_t outsz, size_t *used, const char *s) {
     int w = snprintf(out + *used, outsz - *used, "%s", s);
     if (w < 0 || (size_t)w >= outsz - *used) return -1;
@@ -673,24 +582,12 @@ static int append_str(char *out, size_t outsz, size_t *used, const char *s) {
     return 0;
 }
 
-/* Coefficients are written to 12 significant digits.
- *
- * Not fixed decimal places: at four decimals every coefficient below 5e-5 was
- * written as 0.0000, so a fit that reported R2=1.0000 wrote a constant model to
- * disk and the round trip of fit, redirect, score produced a different model
- * from the one that was fitted.
- *
- * Not the full 17 digits either, which is what a double needs to be reproduced
- * exactly. That printed 5 as 4.999999999999999 and 1.5 as 1.4999999999999998,
- * which is the binary representation showing through and not a measurement:
- * the twelfth significant digit of a coefficient is already far below the
- * residual standard deviation of any fit that produced it. A table of exact
- * values should read as exact values.
- *
- * Twelve digits prints 5 as 5, 2.5 as 2.5, and 1.5e-06 as 1.5e-06, and the
- * value read back differs from the fitted double by at most one part in 1e12.
- * --scale governs the PREDICTION, where the rounding is part of the
- * published answer; it has no business here. */
+/* Coefficients are written to 12 significant digits. Not fixed decimals: at
+ * four, every coefficient below 5e-5 writes as 0.0000 and fit-then-score round
+ * trips to a different model. Not the 17 an exact double needs either: that
+ * prints 5 as 4.999999999999999, and the twelfth digit is already far below the
+ * residual SD of any fit. The read-back differs from the fitted double by at
+ * most one part in 1e12. --scale governs the prediction, not this. */
 static int append_num(char *out, size_t outsz, size_t *used, double v) {
     int w = snprintf(out + *used, outsz - *used, ",%.12g", v);
     if (w < 0 || (size_t)w >= outsz - *used) return -1;
@@ -742,14 +639,12 @@ double los_round(double v, int scale) {
     if (!isfinite(v)) return v;
     for (i = 0; i < scale; i++) p *= 10.0;
 
-    /* v*p overflowed to inf for a perfectly finite v (1.8e304 at scale 4),
-     * and the infinity was then printed as a prediction. Nothing useful is lost
-     * by declining to round a number with no fractional part left to round. */
+    /* v*p overflows to inf for a finite v (1.8e304 at scale 4). A number that
+     * large has no fractional part left to round. */
     if (fabs(v) > DBL_MAX / p) return v;
 
-    /* round() is round-half-away-from-zero and correctly rounded. The old
-     * floor(v*p + 0.5) form did the rounding twice: the addition itself rounds,
-     * so 0.49999999999999994, the largest double below one half, became
-     * exactly 1.0 before floor() ever saw it, and rounded up. */
+    /* round() is round-half-away-from-zero and correctly rounded. floor(v*p +
+     * 0.5) rounds twice: the addition turns 0.49999999999999994, the largest
+     * double below one half, into 1.0 before floor() sees it. */
     return round(v * p) / p;
 }

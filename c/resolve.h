@@ -1,29 +1,24 @@
 /* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
-/* resolve.h: find a data file the program needs.
- *
- * A tool that only works from its own source directory is not installed, it is
- * merely built. `linearr` used to fail from anywhere else, because it opened
- * "example/coefficients.csv" relative to the current directory and nowhere else.
- *
- * So a name is looked for in three places, in this order:
+/* resolve.h: find a data file the program needs. A name is looked for in three
+ * places, in order:
  *   1. relative to the current directory: your files win, always;
  *   2. beside the program itself: a build tree, or an unpacked release;
  *   3. <bindir>/../share/linearr: where `make install` puts them.
- * An absolute path is used as given, and a symlinked binary is resolved first,
- * because linking one binary into a bin directory is how people install one. */
+ * An absolute path is used as given. A symlinked binary is resolved first,
+ * linking one into a bin directory being how people install one. */
 #ifndef RESOLVE_H
 #define RESOLVE_H
 
 #include <stddef.h>
 
-/* Fill out[outsz] with a readable path for `name`, and return 0. Returns -1 if
- * neither location has it, in which case out gets a human-readable account of
- * where it looked; the caller can put that straight in the error. */
+/* Fill out[outsz] with a readable path for `name` and return 0. Returns -1 if
+ * no location has it, leaving in out a human-readable account of where it
+ * looked, fit to go straight into the caller's error. */
 int resolve_file(const char *name, char *out, size_t outsz);
 
 /* The directory the running program sits in, or NULL if it cannot be worked
- * out. Derived from g_prog (argv[0]): a path if it has a '/', otherwise the
- * first match on PATH, which is the case for an installed binary. */
+ * out. From g_prog (argv[0]): its own path if it has a '/', otherwise the first
+ * match on PATH. */
 const char *resolve_program_dir(void);
 
 #endif /* RESOLVE_H */

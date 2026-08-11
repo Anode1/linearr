@@ -2,8 +2,7 @@
 /* csv.c: see csv.h. */
 
 /* Before any header: glibc resolves <features.h> on the first standard header
- * it sees, and a feature macro defined after that does nothing. process.c had
- * exactly this and lost its monotonic clock for it. */
+ * it sees, and a feature macro defined after that does nothing. */
 #if !defined(_WIN32)
 #define _POSIX_C_SOURCE 200809L   /* getc_unlocked, flockfile */
 #endif
@@ -16,8 +15,7 @@
 #include <string.h>
 
 /* One byte at a time is only affordable unlocked: getc takes and drops the
- * stream lock per character, and at 121 MB that is the fit. The lock is taken
- * once around the line instead. */
+ * stream lock per character. The lock is taken once around the line instead. */
 #if defined(_WIN32)
 #define CSV_GETC(fp)    _getc_nolock(fp)
 #define CSV_LOCK(fp)    ((void)0)
@@ -29,9 +27,7 @@
 #endif
 
 /* Excel's "CSV UTF-8" writes three invisible bytes at the start of the file.
- * They are not part of any field, and left in place they attach to the first
- * value: a case file scored from stdin then reported that group '001' was not
- * in a table where '001' plainly is, with nothing on screen to explain it. */
+ * Left in place they attach to the first value. */
 static void skip_bom(char *buf) {
     const unsigned char *u = (const unsigned char *)buf;
     if (u[0] == 0xEF && u[1] == 0xBB && u[2] == 0xBF)
@@ -61,13 +57,10 @@ int csv_read_line(FILE *fp, char *buf, size_t bufsz, int *eof) {
 
     *eof = 0;
     CSV_LOCK(fp);
-    /* This is the program's whole read path, and one byte at a time costs about
-     * 20% against fgets on a 121 MB file: 0.55 s to 0.67 s at 2,000,000 rows by
-     * 8 terms. What it buys is the byte COUNT, which fgets cannot report and
-     * without which a NUL in the last line of an unterminated file is
-     * indistinguishable from a short line. Hoisting this bounds test out of the
-     * loop was measured and changed nothing; the cost is getc, so the way to
-     * spend it back would be bulk reads and a reader that owns its own buffer. */
+    /* The whole read path. A byte at a time costs about 20% against fgets on a
+     * 121 MB file: 0.55 s to 0.67 s at 2,000,000 rows by 8 terms. It buys the
+     * byte COUNT, without which a NUL in the last line of an unterminated file
+     * looks like a short line. */
     while ((c = CSV_GETC(fp)) != EOF && c != '\n') {
         if (c == '\0') nul = 1;
         if (n + 1 < bufsz) buf[n++] = (char)c;
@@ -103,11 +96,9 @@ int csv_next(FILE *fp, char *buf, size_t bufsz) {
     }
 }
 
-/* The trimming is rtrim/ltrim's, done here against the end this loop already
- * knows: the comma it just replaced. Calling rtrim() meant a strlen() per
- * field to re-find that end, and ltrim() meant a memmove() to shift a field
- * left when advancing the pointer says the same thing. At 37 fields a row that
- * was 370 million strlen calls over a ten-million-row file. */
+/* rtrim/ltrim's trimming against the end this loop knows, the comma it just
+ * replaced: rtrim() would cost a strlen() per field to re-find it, ltrim() a
+ * memmove() where advancing the pointer says the same. */
 int csv_split(char *line, char **field, int maxf) {
     int n = 0;
     char *p = line;

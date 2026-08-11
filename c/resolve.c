@@ -1,14 +1,9 @@
 /* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
-/* resolve.c: see resolve.h. Everything here is a fixed stack buffer; the
- * result is copied into the caller's. */
-/* _XOPEN_SOURCE 700, not _POSIX_C_SOURCE 200809L, and the difference is not
- * cosmetic: glibc guards realpath() with __USE_XOPEN_EXTENDED, which only
- * _XOPEN_SOURCE sets. Under -O2 the fortifying header declared it anyway, so
- * the release build was clean and `make ut` (built with -g) warned about an
- * implicit declaration: an implicitly declared realpath returns int, and the
- * pointer it really returns was being truncated to 32 bits before the test
- * against NULL. 700 implies POSIX.1-2008, so access() and stat() are still
- * declared. */
+/* resolve.c: see resolve.h. Fixed stack buffers; the result is copied out. */
+/* _XOPEN_SOURCE 700, not _POSIX_C_SOURCE 200809L: glibc guards realpath() with
+ * __USE_XOPEN_EXTENDED, which only _XOPEN_SOURCE sets, and an implicitly
+ * declared realpath returns int, truncating the pointer to 32 bits. 700 implies
+ * POSIX.1-2008, so access() and stat() stay declared. */
 #define _XOPEN_SOURCE 700
 
 #include "resolve.h"
@@ -21,13 +16,9 @@
 #include <unistd.h>
 #include <sys/stat.h>
 
-/* The last directory separator. Windows argv[0] is normally C:\...\linearr.exe
- * and _fullpath gives backslashes back, so looking only for '/' meant the
- * "beside the program" lookup this file exists for never happened there: the
- * whole path was taken as a file name and searched for inside each PATH entry.
- * On POSIX a backslash is a legal character in a name, but it cannot appear in
- * a path that a Windows shell produced, so checking both is safe on one and
- * necessary on the other. */
+/* The last directory separator. Windows argv[0] is C:\...\linearr.exe and
+ * _fullpath returns backslashes, so '/' alone finds none and the whole path
+ * reads as a bare file name. Checking both is safe on POSIX. */
 static char *last_sep(const char *p) {
     char *a = strrchr(p, '/');
 #ifdef _WIN32
@@ -37,10 +28,7 @@ static char *last_sep(const char *p) {
     return a;
 }
 
-/* Windows has every function this file needs under another name, and lacks
- * exactly one. Cross-compiled with mingw-w64, all thirteen sources
- * compiled and the link failed on realpath alone, twice. These few lines are
- * the whole difference between "no Windows build" and an .exe. */
+/* Windows has these under other names, and lacks realpath; _fullpath stands in. */
 #ifdef _WIN32
 #include <stdlib.h>
 #define PATH_SEP ';'                 /* and a PATH entry contains a colon    */
@@ -55,11 +43,7 @@ static char *realpath(const char *path, char *out) {
 #define X_OK_MODE X_OK
 #endif
 
-/* Readable AND a regular file. Without the second half, naming a FIFO as
- * -c's or -t's argument made the program block forever on open with no
- * output and no diagnostic, indistinguishable from a hang. Directories,
- * /dev/zero and unreadable files were already handled; the FIFO was the one
- * input that could take the process away and not give it back. */
+/* Readable AND regular: a FIFO given to -c or -t blocks forever on open. */
 static int readable(const char *path) {
     struct stat st;
     if (access(path, R_OK) != 0) return 0;
@@ -67,8 +51,7 @@ static int readable(const char *path) {
     return S_ISREG(st.st_mode) != 0;
 }
 
-/* Where the program itself lives. Worked out once and remembered, because it
- * involves walking PATH and nothing about it changes during a run. */
+/* Where the program lives. Worked out once: it walks PATH and cannot change. */
 const char *resolve_program_dir(void) {
     static char dir[RESOLVE_PATH_MAX];
     static int  tried;
@@ -83,9 +66,8 @@ const char *resolve_program_dir(void) {
 
     slash = last_sep(g_prog);
     if (slash) {                                  /* invoked by a path */
-        /* Through the symlink first: installing one binary by linking it into
-         * a bin directory is normal, and dirname(argv[0]) then pointed at the
-         * link's directory, where the data files are not. */
+        /* Through the symlink: a binary linked into a bin directory leaves
+         * dirname(argv[0]) pointing where the data files are not. */
         char real[RESOLVE_PATH_MAX];
         const char *use = g_prog;
         if (realpath(g_prog, real) != NULL) use = real;
@@ -100,8 +82,8 @@ const char *resolve_program_dir(void) {
         return dir;
     }
 
-    /* Invoked by bare name: the installed case. Walk PATH for the first entry
-     * that holds an executable of that name: the same one the shell ran. */
+    /* Bare name, the installed case: the first PATH entry holding an executable
+     * of that name is the one the shell ran. */
     path = getenv("PATH");
     if (!path) return NULL;
     while (*path) {
@@ -162,8 +144,7 @@ int resolve_file(const char *name, char *out, size_t outsz) {
             return 0;
         }
         /* 3. the installed layout: <bindir>/../share/linearr/<name>, so
-         * `make install` can put the binary on PATH and its data where data
-         * goes, instead of demanding they sit in one directory. */
+         * `make install` can put the binary on PATH and its data elsewhere. */
         w = snprintf(cand, sizeof cand, "%s/../share/linearr/%s", dir, name);
         if (w > 0 && (size_t)w < sizeof cand && readable(cand)) {
             w = snprintf(out, outsz, "%s", cand);
@@ -173,8 +154,7 @@ int resolve_file(const char *name, char *out, size_t outsz) {
         }
     }
 
-    /* Not found: hand back where we looked, so the caller's error can say it
-     * instead of leaving the user to guess. */
+    /* Not found: hand back where we looked, for the caller's error. */
     if (dir && strcmp(dir, ".") != 0)
         (void)snprintf(out, outsz, "'%s' (looked in the current directory, in %s, and "
                  "in %s/../share/linearr)", name, dir, dir);

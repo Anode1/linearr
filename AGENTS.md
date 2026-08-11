@@ -73,6 +73,14 @@ refactor:
 binary prints are CLAIMS, and they go stale exactly like a README.** When you
 change behaviour, they move with the code; when you audit, they are in scope.
 
+**A claim, and nothing else.** Write the constraint, the unit, the bound, or the
+measurement that decided a threshold. Do not write the history: what the code
+used to do, which version broke, and who found it are in `git log`, dated and
+searchable, and a comment that repeats them is a second copy that will rot. A
+block over about eight lines is either a data table or an essay to cut. The
+test: does this sentence mean anything to someone opening the file for the first
+time, knowing nothing of its past? If not, it is not a claim about the code.
+
 This is not a style note. Two defects in this repository's short history were
 found by reading a claim against the code rather than by running anything:
 

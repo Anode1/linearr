@@ -1,8 +1,7 @@
 /* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
-/* main.c, the CLI front end: parse options, get the input (arguments, or
- * lines from stdin so it works as a filter), run process(), print the result.
- * The scaffolding stays; the model lives in process.c, los.c and regress.c.
- * This is the only file that exits: the modules return -1 and let it decide. */
+/* main.c, the CLI front end: parse options, read the input (arguments, or stdin
+ * as a filter), run process(), print the result. The model is in process.c,
+ * los.c and regress.c. The only file that exits; the modules return -1. */
 #define _POSIX_C_SOURCE 200809L  /* isatty */
 
 #include "common.h"
@@ -24,10 +23,6 @@
 
 static void usage(FILE *out, const char *prog) {
     (void)fprintf(out,
-        /* -c is not optional and the synopsis used to omit it, so three of
-         * these four lines failed exactly as printed: `linearr 001 term=1`
-         * answers "no coefficient table". The body of this same help text
-         * says -c is required, which made the page disagree with itself. */
         "usage: %s -c MODEL.CSV GROUP [TERM=VALUE ...]  score one case\n"
         "       %s -c MODEL.CSV < cases.csv             score a stream\n"
         "       %s -t TRAIN.CSV [-g GROUP]              fit the coefficients\n"
@@ -79,12 +74,10 @@ static void usage(FILE *out, const char *prog) {
         prog, prog, prog, prog, prog);
 }
 
-/* "1 terms and 1 groups" reads as unfinished work, and this program asks to be
- * trusted with numbers. */
+/* "1 terms and 1 groups" reads as unfinished work. */
 static const char *s_(long n) { return (n == 1) ? "" : "s"; }
 
-/* Score one line; report a bad one and keep going, so a bad row in a batch does
- * not throw away the rest of the file. */
+/* Score one line; a bad one is reported and the rest of the file goes on. */
 static int score(const char *input) {
     char out[LINEARR_MAX_OUTPUT];
     debug("scoring '%s'", input);
@@ -106,9 +99,7 @@ static int score_named(const char *group, char *const *assign, int n) {
     return 0;
 }
 
-/* What a run will hold. Asked often enough to be worth answering without a
- * trial run, and the only figure in this program that depends on the problem
- * rather than on the model alone. */
+/* The only figure that depends on the problem rather than the model alone. */
 static void print_bytes(const char *label, double b) {
     if (b < 1024.0)                     (void)printf("%s%.0f bytes\n", label, b);
     else if (b < 1024.0 * 1024)         (void)printf("%s%.1f KB\n", label, b / 1024.0);
@@ -135,16 +126,12 @@ static void print_footprint(int terms, long long groups) {
                  "the same figures cover a thousand rows and a trillion.\n");
 }
 
-/* --terms: the answer to "what am I supposed to type?". Without it the only way
- * to learn the model's column names was to open the CSV and count. */
+/* --terms: what the loaded file expects to be typed. */
 static void print_terms(void) {
     int i, n = process_nterms();
 
     (void)printf("%d term%s and %lld group%s in %s\n", n, s_(n), process_ngroups(),
            s_(process_ngroups()), process_coef_path());
-    /* What the model predicts, when the file says so. A table of coefficients
-     * with no response named cannot be identified a week later, and -t writes
-     * the name in for exactly that reason. */
     if (los_response_name()[0] != '\0')
         (void)printf("it predicts: %s\n", los_response_name());
     for (i = 0; i < n; i++)
@@ -152,19 +139,9 @@ static void print_terms(void) {
     (void)printf("\nname them: GROUP %s=1 ...\n", n > 0 ? process_term_name(0) : "TERM");
 }
 
-/* What the file was read AS, before what came of it. The layout is fixed
- * -- column 1 the group, column 2 the response, the rest terms -- and a file
- * written in another order fits perfectly well and answers a question nobody
- * asked. Nothing in the data can say which column is the response, so the
- * program says which one it took, every time, where a reader will see it
- * without being told to look.
- *
- * "Every time" is why this is a function. It lived inside train_all(), so the
- * fits that go through train() -- `-g NAME` without --residuals, and the
- * pooled `-g '*'` -- printed no such line, while the README said it was
- * printed first on every fit. The one path that silently skipped the check
- * against reading the wrong column was the one that fits a single named
- * group. */
+/* What the file was read as, printed on every fit. Column 1 is the group,
+ * column 2 the response, the rest terms. Nothing in the data says which is the
+ * response, so a file in another order fits and answers another question. */
 static void print_reading(void) {
     if (los_response_name()[0] == '\0') return;
     (void)fprintf(stderr, "reading: column 1 is the group, '%s' is the "
@@ -176,10 +153,7 @@ static void print_reading(void) {
                                            : ". Use -y NAME if that is the wrong column");
 }
 
-/* Every group in one pass. This is the default for -t now, because "one fitted
- * line per group" is what the model IS: the old default pooled every row into a
- * single line labelled '*', and getting a real table meant one invocation and
- * one full re-read of the training file per group. */
+/* Every group in one pass: the default for -t. */
 static int train_all(const char *path, const char *only,
                      const char *resid_file, const char *stats_file) {
     struct fit_summary sum;
@@ -191,8 +165,7 @@ static int train_all(const char *path, const char *only,
         if (!resid) die("cannot write %s: %s", resid_file, strerror(errno));
     }
     if (stats_file) {
-        /* "-" is stdout, as it is stdin for -t. It used to open a FILE named
-         * "-", and one of those reached the repository. */
+        /* "-" is stdout, as it is stdin for -t. */
         stats = (strcmp(stats_file, "-") == 0) ? stdout : fopen(stats_file, "w");
         if (!stats) die("cannot write %s: %s", stats_file, strerror(errno));
     }
@@ -202,11 +175,7 @@ static int train_all(const char *path, const char *only,
         (void)fprintf(stderr, "cannot fit: %s\n", process_error());
         return -1;
     }
-    /* A residual file truncated by a full disk is worse than none: it looks
-     * like a model that fits. This was unchecked, so `--residuals /dev/full`
-     * wrote nothing and exited 0. That is the defect fixed for stdout a few
-     * commits earlier, in a comment congratulating itself; the test that caught
-     * it for stdout tested stdout, and the residual file went unexamined. */
+    /* A residual file truncated by a full disk looks like a model that fits. */
     if (resid) {
         if (fflush(resid) != 0 || ferror(resid) || fclose(resid) != 0)
             die("cannot write %s: %s", resid_file, strerror(errno));
@@ -221,14 +190,7 @@ static int train_all(const char *path, const char *only,
             (void)fprintf(stderr, "per-group statistics: %s\n", stats_file);
     }
     print_reading();
-    /* One vocabulary. With a single group the aggregates ARE that group's
-     * figures, so calling them "worst" and "least" told a reader who had
-     * already written -g that there might be others. Worse, the same fit
-     * printed a different line depending on whether --residuals was given,
-     * because that routes through this path: `R2=0.6662, resid SD=1.237, df=9`
-     * one way and `1 group, least df=9, worst resid SD=1.237` the other, with
-     * R2 simply absent. A flag whose job is to write a file must not change
-     * what the summary says. */
+    /* With one group the aggregates are its own figures, not "worst". */
     {
         int many = (sum.groups != 1);
         if (many) (void)fprintf(stderr, "fit: %lld groups, %lld row%s",
@@ -253,11 +215,7 @@ static int train_all(const char *path, const char *only,
         (void)fprintf(stderr, "warning: at least one group has no residual degrees of "
                         "freedom; its line passes through every row by "
                         "construction. Fit those groups on more rows.\n");
-    /* A group with no R2 was simply skipped by the worst-of aggregation, so this
-     * path -- which is every fit of more than one group, and every fit at all
-     * with --residuals or --stats -- printed a clean summary and said nothing.
-     * Only the single-group path warned, so whether a reader was told depended
-     * on which flag they had passed. */
+    /* The worst-of aggregation above skips a group with no R2; counted here. */
     if (sum.groups_flat_y > 0)
         (void)fprintf(stderr, "warning: %lld group%s no R2, because the response "
                         "does not vary there: R2 is 0/0, which is undefined and "
@@ -286,11 +244,9 @@ static int train_all(const char *path, const char *only,
                       "that no single term shows. (Not a missing column: one "
                       "of those leaves a residual this cannot see.)\n",
                       sum.fitted_t);
-    /* Not an unconditional claim of heteroskedasticity when the shape is also
-     * wrong: a missing interaction leaves residuals whose SIZE tracks the
-     * fitted value, so this probe fires on data of perfectly constant variance
-     * -- 167 times in 200 on one such design. When both are reported the mean
-     * is the thing to fix, and this figure cannot be read until it is. */
+    /* Not an unconditional claim of heteroskedasticity: a missing interaction
+     * leaves residuals whose size tracks the fitted value, so this probe fires
+     * on constant variance -- 167 times in 200 on one design. Fix the mean. */
     if (sum.spread_t != 0.0)
         (void)fprintf(stderr, "warning: the size of the residual moves with the "
                       "prediction (t=%.1f), so the residual SD above is not a "
@@ -332,21 +288,15 @@ static int train(const char *path, const char *group) {
         fprintf(stderr, ", cond=%.3g (%s%s)", info.condition, process_solver(),
                 info.pinned > 0 ? ", over the terms kept" : "");
     (void)fprintf(stderr, "\n");
-    /* R2 cannot see this failure, and neither can the residual file: an
-     * ill-conditioned design fits its own sample beautifully, and predicts
-     * inside that sample beautifully too. What it gets wrong is the individual
-     * COEFFICIENTS -- and so anything extrapolated, and any reading of which
-     * term matters. That is why it has to be said out loud rather than left to
-     * a figure of merit, and why the sentence here used to be wrong about it. */
+    /* Neither R2 nor the residual file sees this: an ill-conditioned design
+     * fits its own sample well. What it gets wrong is the coefficients. */
     if (info.condition > 1e8)
         (void)fprintf(stderr, "warning: the design is ill-conditioned (cond=%.3g). "
                         "The trailing digits of these coefficients are noise; "
                         "%srescale your columns, or drop a near-duplicate "
                         "one.\n", info.condition,
                         strcmp(process_solver(), "QR") == 0 ? "" : "try --qr, ");
-    /* Which of the two, rather than both with an "or": they are different
-     * events with different remedies, and the reader is the one person who
-     * cannot tell them apart from here. */
+    /* Which of the two, not both: different events, different remedies. */
     if (info.r2 == REGRESS_R2_FLAT_Y)
         (void)fprintf(stderr, "warning: no R2 here, because the response does not "
                         "vary: R2 is 0/0, which is undefined and not zero. The "
@@ -358,8 +308,7 @@ static int train(const char *path, const char *group) {
                         "response%s.\n",
                         strcmp(process_solver(), "QR") == 0 ? ""
                         : ", or use --qr, which does not form that difference");
-    /* Said plainly, because an R2 of 1 from a saturated fit reads like success
-     * and is the easiest way to publish a model that knows nothing. */
+    /* An R2 of 1 from a saturated fit reads like success. */
     if (info.df <= 0)
         (void)fprintf(stderr, "warning: no residual degrees of freedom; this line "
                         "passes through every row by construction, and its R2 "
@@ -367,17 +316,8 @@ static int train(const char *path, const char *group) {
     return 0;
 }
 
-/* Load the model, or stop with the reason. Scoring cannot proceed without it,
- * and a table that will not open is one fatal condition, not a complaint to
- * repeat per row. */
-/* A scale, read the way --footprint reads its term count and for the same
- * reason: atoi cannot tell "abc" from 0. `--scale abc` therefore published a
- * prediction rounded to no decimals at all and exited 0, and `--scale
- * 4294967300` wrapped through undefined behaviour to 4. Rounding here is part
- * of the answer rather than presentation -- the trim point is built on the
- * ROUNDED prediction -- so a scale the caller never asked for is a wrong
- * published figure, not a cosmetic default. process.c says it plainly: what
- * the caller asked for and what the program does cannot differ silently. */
+/* A scale, read as --footprint reads its term count: atoi cannot tell "abc"
+ * from 0. The trim point is built on the rounded prediction. */
 static int scale_arg(const char *s, const char *opt) {
     char *end;
     long v;
@@ -389,10 +329,9 @@ static int scale_arg(const char *s, const char *opt) {
     return (int)v;
 }
 
+/* Load the model, or stop: one fatal condition, not a complaint per row. */
 static void need_model(void) {
-    /* As wide as process_error()'s own buffer. At 512 this truncated exactly the
-     * messages worth reading: resolve_file's, which name every directory it
-     * looked in, and which are the ones a reader needs whole. */
+    /* As wide as process_error()'s buffer: resolve_file lists directories. */
     char err[RESOLVE_PATH_MAX + 512];
     if (process_init(err, sizeof err) != 0) die("%s", err);
 }
@@ -435,9 +374,8 @@ int main(int argc, char **argv) {
             case 'y': response_named = 1; process_use_response(optarg); break;
             case 'g': group = optarg; break;
             case 'T': want_terms = 1; break;
-            case 'F': {   /* atoi cannot tell "abc" from 0, and 0 fell through
-                           * every branch to the stdin path, which then died
-                           * about a missing coefficient table. */
+            case 'F': {   /* atoi cannot tell "abc" from 0, and 0 falls through
+                           * every branch to the stdin path. */
                           char *end;
                           long v = strtol(optarg, &end, 10);
                           if (*end != '\0' || v < 1 || v > REGRESS_MAX_VARS)
@@ -466,11 +404,7 @@ int main(int argc, char **argv) {
         }
     }
 
-    /* Absent or unreadable, the defaults in process.c apply; that is not an
-     * error, so the program runs from anywhere with the tables beside it. */
-
-    /* Silently ignoring an option is how a user comes to believe something
-     * happened. Each of these used to be accepted and dropped. */
+    /* Silently ignoring an option makes a user believe something happened. */
     if (group && !train_file)
         die("-g names a group to fit, so it needs -t TRAIN.CSV");
     if (stats_file && !train_file)
@@ -479,22 +413,14 @@ int main(int argc, char **argv) {
         die("--residuals writes one row per TRAINING row, so it needs -t");
     if (want_terms && train_file)
         die("--terms lists the loaded model; it cannot be combined with -t");
-    /* Both of these reach only the fitter. Scoring reads its schema and its
-     * coefficients out of the table named by -c, so naming a response column
-     * or choosing a solver has nothing to act on, and both were accepted and
-     * dropped -- the same silence the three refusals above exist to prevent,
-     * in two options that were added later and did not get the treatment. */
+    /* Both reach only the fitter; scoring's schema comes from -c's table. */
     if (response_named && !train_file)
         die("-y names the column to predict when fitting, so it needs -t "
             "TRAIN.CSV. Scoring takes its columns from the table given to -c");
     if (want_qr && !train_file)
         die("--qr chooses the solver that does the fitting, so it needs -t "
             "TRAIN.CSV. Scoring only multiplies out coefficients already fitted");
-    /* And the reciprocals, which the rule above always covered and the code did
-     * not. --footprint answers a question about a SHAPE and reads no data, so
-     * `-t train.csv --footprint 8` printed the table and never fitted the file,
-     * exit 0; and the rounding options reach only the scorer, which is the
-     * identical reason -y and --qr are refused just above. */
+    /* The reciprocals: --footprint reads no data, rounding is the scorer's. */
     if (footprint_terms > 0 && train_file)
         die("--footprint reports what a shape would hold and reads no data, so "
             "it cannot be combined with -t");
@@ -506,23 +432,18 @@ int main(int argc, char **argv) {
             "Fitting writes unrounded coefficients: the rounding belongs to the "
             "figure they produce", scoring_opt_name);
     if (footprint_terms > 0) {
-        /* An optional group count follows, so the common question ("how much
-         * for 400,000 groups of 24 terms?") is one command and no arithmetic. */
+        /* An optional group count follows the term count. */
         if (optind < argc) {
             char *end;
             errno = 0;
             footprint_groups = strtoll(argv[optind], &end, 10);
-            /* ERANGE, because strtoll saturates: --footprint 24 99999999999999999999
-             * silently became LLONG_MAX and printed a total for a file nobody
-             * has. The old `long` truncated on LLP64 as well. */
+            /* ERANGE, because strtoll saturates to LLONG_MAX. */
             if (*end != '\0' || errno == ERANGE || footprint_groups < 1)
                 die("--footprint's group count must be a whole number, 1 or more");
             optind++;
         }
     }
-    /* Anything left over was typed for a reason and did nothing:
-     * `linearr -t train.csv extra` fitted the file and ignored `extra`, which
-     * is how a mistyped option becomes an operand and disappears. */
+    /* An operand these commands do not read is a mistyped option. */
     if ((train_file || want_terms || footprint_terms > 0) && optind < argc)
         die("'%s' is not used by this command", argv[optind]);
 
@@ -532,18 +453,12 @@ int main(int argc, char **argv) {
     } else if (footprint_terms > 0) {
         print_footprint(footprint_terms, footprint_groups);
     } else if (train_file) {
-        /* -g with --residuals used to be refused, because the single-group
-         * path had never been wired for the second pass. The refusal was the
-         * easier fix and the wrong one: the residuals of ONE group are exactly
-         * what you want when a summary line has told you which group is
-         * wrong. */
+        /* The two-pass path fits one named group as well as all of them. */
         bad = ((group && !resid_file && !stats_file) ? train(train_file, group)
                      : train_all(train_file, group, resid_file, stats_file)) != 0;
     } else if (optind < argc) {
         need_model();
-        /* A comma in the first argument means the row form, and then every
-         * argument is a row. Otherwise it is a group, and what follows are its
-         * term=value assignments. */
+        /* A comma in the first argument means the row form, else TERM=VALUE. */
         if (strchr(argv[optind], ',')) {
             int i;
             for (i = optind; i < argc; i++)
@@ -553,21 +468,14 @@ int main(int argc, char **argv) {
                               argc - optind - 1) != 0;
         }
     } else if (isatty(STDIN_FILENO)) {
-        /* Nothing to read and a terminal on stdin: the user typed the bare
-         * command and wants to know what it does. Reading stdin here made the
-         * program sit there silently looking hung, and only showed the usage
-         * after a Ctrl-C: the worst possible first impression. A filter still
-         * gets its filter behaviour below, because a pipe is not a terminal. */
+        /* A terminal on stdin and nothing to read: the bare command. A pipe is
+         * not a terminal, so a filter still gets the loop below. */
         usage(stdout, argv[0]);
     } else {
         need_model();
         for (;;) {
-            /* csv.c's reader, which files use: it counts the bytes it stored,
-             * so a NUL and an over-long line are told apart without the
-             * sentinel this loop used to carry, and it has already consumed
-             * the line, so nothing has to be drained. The two readers were
-             * the same problem solved twice, and one of them solved it
-             * wrongly for the last line of a file. */
+            /* csv.c's reader, the one files use: it counts the bytes stored, so
+             * a NUL and an over-long line differ, and it consumes the line. */
             int eof, rv = csv_read_line(stdin, line, sizeof line, &eof);
 
             if (eof || rv == CSV_ERR_IO) break;
@@ -577,10 +485,8 @@ int main(int argc, char **argv) {
                 bad = 1;
                 continue;
             }
-            /* Excel's "CSV UTF-8" puts three invisible bytes at the start of
-             * the file. Left in place they join the first group name, and the
-             * program then reports that a group is missing from a table it is
-             * plainly in. */
+            /* Excel's "CSV UTF-8" writes three invisible bytes at the file
+             * start; left in place they join the first group name. */
             if ((unsigned char)line[0] == 0xEF && (unsigned char)line[1] == 0xBB &&
                 (unsigned char)line[2] == 0xBF)
                 memmove(line, line + 3, strlen(line + 3) + 1);
@@ -588,16 +494,13 @@ int main(int argc, char **argv) {
             if (score(line) != 0) bad = 1;
         }
         if (ferror(stdin)) die("cannot read stdin: %s", strerror(errno));
-        /* An empty pipe is not an error: `grep ... | linearr` matching nothing
-         * is an ordinary outcome, and a filter that lectures about it is noise. */
+        /* An empty pipe is not an error: `grep | linearr` may match none. */
     }
 
     process_free();
 
-    /* Every printf above was unchecked, so `linearr -t train.csv > model.csv` on
-     * a full disk or over quota wrote nothing, said nothing, and exited 0,
-     * installing an empty coefficient table while reporting success. stdout is
-     * an output the caller is relying on; a failure to produce it is a failure. */
+    /* A failure to write stdout is a failure: `-t train.csv > model.csv` on a
+     * full disk must not install an empty coefficient table and exit 0. */
     if (fflush(stdout) != 0 || ferror(stdout))
         die("cannot write output: %s", strerror(errno));
 

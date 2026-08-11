@@ -77,9 +77,15 @@ The rules the code already follows, so new code matches:
 - **Discarded return values carry a `(void)` cast** (MISRA 17.7). `main` checks
   `ferror(stdout)` once at the end because the individual writes are unchecked;
   the casts record that this was intended.
-- **A comment is a claim.** Header comments, source comments, the Makefile, and
-  the usage text go stale exactly like a README. When behaviour changes they move
-  with it. See `AGENTS.md`.
+- **A comment is a claim, and a short one.** Header comments, source comments,
+  the Makefile and the usage text go stale exactly like a README; when behaviour
+  changes they move with it. Write the constraint, the unit, the bound, or the
+  measurement that decided a threshold — what the code cannot show for itself.
+  Do not narrate: what the code used to do, which version broke, and who found
+  it belong in `git log`, where they are searchable, dated, and cannot go stale.
+  A block longer than about eight lines is either a data table or an essay to
+  cut. The test is whether a sentence means anything to someone opening the file
+  for the first time, knowing nothing of its past. See `AGENTS.md`.
 
 The full rationale, stack-first and bounded-memory to the avionics and
 medical-device standard (NASA Power of Ten, MISRA C:2012 rule 21.3), is written

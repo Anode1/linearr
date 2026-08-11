@@ -1,18 +1,12 @@
 /* Copyright (c) 2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
-/* los.h, the worked example: length of stay as a linear function of what was
- * done to the patient and who they are.
+/* los.h, the worked example: length of stay as a linear function of the case.
  *
  *   LOS = b0 + b1*term1 + ... + bp*termp
  *
  * One fitted line per group, plus that group's trim addition: the day count
- * past which a stay stops being typical.
- *
- * THE TERMS ARE NOT COMPILED IN. The column names, and how many there are, come
- * from the header line of the coefficient or training file, so adding a term to
- * the polynomial is adding a column to a CSV: no edit here, no rebuild. That is
- * what makes this a length-of-stay program only by its example data: point it
- * at a different table with different columns and it fits and scores that
- * instead. The ceiling is LOS_MAX_VARS. */
+ * past which a stay stops being typical. The terms are not compiled in: the
+ * column names and their count come from the coefficient or training file's
+ * header, so adding a term is adding a CSV column. Ceiling LOS_MAX_VARS. */
 #ifndef LOS_H
 #define LOS_H
 
@@ -20,8 +14,8 @@
 
 #include <stddef.h>
 
-/* The model's own ceiling. It must not exceed the fitter's REGRESS_MAX_VARS,
- * which process.c asserts at compile time. Override both together. */
+/* Must not exceed the fitter's REGRESS_MAX_VARS, which process.c asserts at
+ * compile time. Override both together. */
 #ifndef LOS_MAX_VARS
 #define LOS_MAX_VARS 256        /* terms, excluding the intercept   */
 #endif
@@ -45,24 +39,22 @@ struct los_model {
 
 /* Adopt n column names as the schema, replacing any previous one. Returns 0, or
  * -1 if n is out of range, or a name is empty, too long, or a duplicate of
- * another ignoring case. The names are only read, and the type says so. */
+ * another ignoring case. */
 int         los_schema_set(const char *const *names, int n);
 
-/* The same from a whole training header, with the response named instead of
- * assumed to be column 2. header[0] is the group, the named column is the
- * response, and every other column is a term in the order it appears.
- * Returns 0; -1 as los_schema_set does; -2 if the name is not in the header;
- * -3 if it names the group column. */
+/* The same from a whole training header, the response named rather than assumed
+ * to be column 2. header[0] is the group, the named column the response, every
+ * other column a term in the order it appears. Returns 0; -1 as los_schema_set
+ * does; -2 if the name is not in the header; -3 if it names the group. */
 int         los_schema_set_response(const char *const *header, int n,
                                     const char *want);
 
 int         los_nvars(void);            /* 0 until a schema is set */
 const char *los_var_name(int i);        /* NULL if i is out of range */
 
-/* The index of a term by name, or -1 if the schema has no such column. This is
- * what lets a case be written as "icu_indicator=1" instead of counting commas
- * to the seventeenth field. Case-insensitive, because a column name is a label
- * a human typed, not an identifier. */
+/* The index of a term by name, or -1 if the schema has no such column. Lets a
+ * case be written "icu_indicator=1" rather than by field number.
+ * Case-insensitive: a column name is a label, not an identifier. */
 int         los_var_index(const char *name);
 
 /* How many groups the loaded table holds. */
@@ -72,33 +64,25 @@ long long   los_ngroups(void);
 
 /* Load the coefficient table. Its header is
  *   group,intercept,<one column per term>
- * and its term columns BECOME the schema. Returns 0, or -1 if the file will not
- * open or a row is malformed. Calling it again replaces the table and schema. */
+ * and its term columns become the schema. Returns 0, or -1 if the file will not
+ * open or a row is malformed. Calling it again replaces table and schema. */
 int los_load(const char *coef_path);
 
-/* Load group,trim_addition rows onto the table already loaded, so a caller that
- * has no trim table, or does not want one, simply does not call this and every
- * trim addition stays 0. Returns 0, or -1 if there is no table yet, the file
- * will not open, or a row is malformed. A group in this file that the
- * coefficient table does not have is skipped, not an error: the trim table is
- * allowed to be the wider of the two. */
+/* Load group,trim_addition rows onto the table already loaded. Not calling this
+ * leaves every trim addition 0. Returns 0, or -1 if there is no table yet, the
+ * file will not open, or a row is malformed. A group here that the coefficient
+ * table does not have is skipped, not an error: the trim table may be wider. */
 int los_load_trims(const char *trim_path);
 
-/* Whether any trim table was loaded. Printing "trim=" when none was is noise
- * that reads as a second quantity; without a table it is only the prediction
- * again. */
+/* Whether any trim table was loaded. Without one the trim point is only the
+ * prediction again. */
 int los_has_trims(void);
 
-/* The response's name, from the training header, or "" if none was read. A
- * coefficient file that does not say what it predicts cannot be identified a
- * week later; group,intercept,mark is the header of a model that predicts
- * hours, and nothing in it says so. */
+/* The response's name, from the training header, or "" if none was read. */
 const char *los_response_name(void);
 
 /* Why the last los_parse_training() or los_parse_case() refused a line: one
- * sentence naming the column and what was in it. Valid until the next call.
- * Every refusal used to return a bare -1 and the caller printed one generic
- * sentence for all of them, which on a large file is not a diagnosis. */
+ * sentence naming the column and what was in it. Valid until the next call. */
 const char *los_parse_error(void);
 
 /* Remember the response column's name, for the `# response:` line a fitted
@@ -108,14 +92,11 @@ void los_set_response_name(const char *name);
 /* Why the last los_load/los_load_trims returned -1. Never NULL. */
 const char *los_error(void);
 
-/* The program's one number parser: what a CSV field and what a TERM=VALUE
- * assignment must both pass. Exported because process.c had a second copy, and
- * the two had drifted apart on trailing whitespace -- "2<tab>" was refused in a
- * file and accepted as a=2<tab> -- which is the disagreement between the two
- * forms of a case that both files argue at length must not exist. Refuses an
- * empty field, trailing text, hexadecimal, and any value that is not finite.
- * Returns 0, or -1 with *why (unless why is NULL) set to a clause naming the
- * fault, to follow the value: "'%s' %s". */
+/* The program's one number parser: a CSV field and a TERM=VALUE assignment both
+ * pass it. There is exactly one because the file form and the named form of a
+ * case must not disagree about what is a number. Refuses an empty field,
+ * trailing text, hexadecimal, and any non-finite value. Returns 0, or -1 with
+ * *why (unless NULL) set to a clause naming the fault: "'%s' %s". */
 int los_parse_number(const char *s, double *out, const char **why);
 
 /* The model for a group, or NULL if the table does not have it. */
@@ -131,7 +112,7 @@ void los_free(void);
 int los_parse_case(const char *line, struct los_case *c);
 
 /* Parse one training row, "group,value,x1,...,xp": the case with the observed
- * length of stay in front of the terms. Returns 0 or -1, as above. */
+ * value in front of the terms. Returns 0 or -1, as above. */
 int los_parse_training(const char *line, struct los_case *c, double *los);
 
 /* Write the coefficient file's header line for the current schema. */
@@ -150,9 +131,8 @@ double los_predict(const struct los_model *m, const struct los_case *c);
 /* The trim point: the prediction plus the group's trim addition. */
 double los_trim_point(const struct los_model *m, double prediction);
 
-/* Round half away from zero to `scale` digits, NOT what printf's %.*f does,
- * which rounds half to even, so a published figure could differ in the last
- * digit. The rounded number is the answer, not its presentation. */
+/* Round half away from zero to `scale` digits. Not printf's %.*f, which rounds
+ * half to even, so a published figure could differ in the last digit. */
 double los_round(double v, int scale);
 
 #endif /* LOS_H */
