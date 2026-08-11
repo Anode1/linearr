@@ -1241,6 +1241,32 @@ static void test_diag_spread(void) {
     }
     diag_result(&d, DIAG_T, &r);
     CHECK(r.spread_t == 0.0, "diag spread: and a constant one is not");
+
+    /* DIAG_T_CAP is a sentinel meaning "exact", not a measurement, and
+     * diag_result picks the worst finding by magnitude. spread_stat returned
+     * its F unclamped, so a spread that is merely very strong outranked one
+     * that is exactly quadratic: t_of carries the same note and the same fix,
+     * and this probe was written later without inheriting it. Driven here
+     * across four decades of jitter, the reported figure must stay inside the
+     * cap at every one. */
+    {   double jitter[4];
+        int k;
+        jitter[0] = 1e-3; jitter[1] = 1e-5; jitter[2] = 1e-7; jitter[3] = 1e-9;
+        for (k = 0; k < 4; k++) {
+            unsigned long seed = 99UL;
+            diag_init(&d, 1, t_diag);
+            for (i = 1; i <= 200; i++) {
+                double u = 1.0 + i * 0.37, e;
+                seed = seed * 6364136223846793005UL + 1442695040888963407UL;
+                e = 0.01 * u * (1.0 + jitter[k] * (double)((seed >> 33) % 1000));
+                x[0] = u;
+                diag_add(&d, x, (i % 2) ? e : -e, u);
+            }
+            diag_result(&d, DIAG_T, &r);
+            CHECK(fabs(r.spread_t) <= DIAG_T_CAP,
+                  "diag spread: the reported figure never exceeds the cap");
+        }
+    }
 }
 
 static void test_diag_offsets(void) {

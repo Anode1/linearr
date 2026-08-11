@@ -196,8 +196,18 @@ static double spread_stat(const double *sh, double n) {
     if (explained <= 0.0) return 0.0;
     r2 = explained / sww_c;
     if (r2 >= 1.0) return DIAG_T_CAP;
-    /* F on 2 and n-3, reported as its square root. */
-    return sqrt((r2 / 2.0) / ((1.0 - r2) / (n - 3.0)));
+    /* F on 2 and n-3, reported as its square root, and clamped at the same
+     * place t_of clamps for exactly the same reason. DIAG_T_CAP is a SENTINEL
+     * meaning "the relation is exact", not a large measurement, and
+     * diag_result picks the worst finding by magnitude. Unclamped, this
+     * returned 5.7e5 at a jitter of 1e-5 and 6.5e7 at 1e-7 on a spread that is
+     * merely strong, so the sentinel at 9999 sorted BELOW them: a group whose
+     * spread is exactly quadratic was outranked by any group that was only
+     * close to it. t_of carries the same note; this function was written after
+     * it and did not inherit the fix. */
+    {   double f = sqrt((r2 / 2.0) / ((1.0 - r2) / (n - 3.0)));
+        return (f > DIAG_T_CAP) ? DIAG_T_CAP : f;
+    }
 }
 
 /* A correlation carries no sense of how much data stands behind it. The t

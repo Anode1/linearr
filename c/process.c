@@ -768,6 +768,13 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
     int    rc = -1, n, nvars = 0;
     long long rows = 0, seen = 0, groups = 0;
     int    first_stat = 1;
+    /* -g '*' means pool every row into one line named '*', which is what it
+     * means in process_train. Here it was read as a literal group code, so a
+     * pooled fit that worked without --residuals became "no rows in group *"
+     * with it: adding a flag that asks for MORE output made a working fit stop
+     * working, and it was the pooled fit -- the one whose residuals a reader
+     * most wants, since pooling is what a wrong shape hides in. */
+    const int pool = (only != NULL && strcmp(only, "*") == 0);
 
     /* Checked before anything is read or written: the refusal used to arrive
      * after the coefficient table had already gone to stdout. */
@@ -800,7 +807,12 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             fail("%s row %lld: %s", csv_path, seen, los_parse_error());
             goto cleanup;
         }
-        if (only && strcmp(c.group, only) != 0) continue;
+        if (pool) {
+            /* one accumulator, whatever the row said its group was */
+            (void)strcpy(c.group, "*");        /* one byte into GROUP_MAX */
+        } else if (only && strcmp(c.group, only) != 0) {
+            continue;
+        }
         g = hash_get(index, c.group);
         if (!g) {
             g = xmalloc(process_group_bytes(nvars));
@@ -967,6 +979,7 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
             double los, yhat;
             if (n == 2) continue;
             if (los_parse_training(line, &c, &los) != 0) continue;
+            if (pool) (void)strcpy(c.group, "*");   /* as the first pass did */
             g = hash_get(index, c.group);
             if (!g) continue;
             yhat = g->beta[0];
