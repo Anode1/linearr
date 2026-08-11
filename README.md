@@ -29,7 +29,10 @@ measurements, and a number you care about. It finds the straight line through
 them that leaves the smallest total error, counting each miss squared. The
 coefficients are how much each measurement moves the answer. The method is
 Legendre and Gauss, around 1805, and it still fits wherever the relationship is
-close to linear.
+close to linear. (For relationships that are not, use a random forest, gradient
+boosting or a neural network — the author has neural network, random forest and
+genetic algorithm implementations for those cases:
+[open an issue](https://github.com/Anode1/linearr/issues).)
 
 In three situations the fit succeeds and the answer is not what it looks like:
 the data cannot tell two columns apart, no residual freedom is left, or the
