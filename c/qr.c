@@ -293,6 +293,19 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
     for (i = 0; i <= p; i++)
         if (!isfinite(beta[i])) { debug("qr: coefficient %d is not finite", i); return -1; }
 
+    /* The response overflowed. The colscale machinery keeps the COLUMNS from
+     * ever being squared, but the response is squared twice over -- cyy for
+     * R2 and the rotated-out residual for rss -- so a y near 1e160 sends both
+     * to inf while every added row passed isfinite. Unchecked, the fit came
+     * back rc=0 reporting resid SD=inf and R2=NaN, and the advice regress.c
+     * gives for its own overflow ("use --qr") walked the caller straight into
+     * this one. Same refusal, same words, from either solver. */
+    if (!isfinite(q->cyy) || !isfinite(q->rss + drop_rss)) {
+        debug("qr: the response overflowed its sums of squares (its values "
+              "are near 1e160 or beyond); rescale that column");
+        return -3;
+    }
+
     if (fit) {
         fit->pinned = (p + 1) - rank;          /* slopes only: the intercept is kept */
         fit->df     = q->n - rank;

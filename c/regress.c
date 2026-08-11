@@ -133,13 +133,27 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
          * So it says which column and what to do, instead of failing far from
          * the cause. Refusing is the right answer here: pinning the column
          * would report CONSTANT or COLLINEAR, and the column is neither. */
-        if (!isfinite(cii)) {
+        if (!isfinite(cii) || !isfinite(r->cxy[i])) {
             debug("regress: term %d overflowed its cross-products (its values "
                   "are near 1e160 or beyond); rescale that column, or use --qr, "
                   "which does not square them", i + 1);
             return -2;
         }
         d[i] = (cii > 0.0) ? sqrt(cii) : 0.0;
+    }
+    /* The RESPONSE side of the same overflow, which the check above cannot
+     * see: cyy is y's own sum of squares about its mean, accumulated the same
+     * way the diagonals are, and a y near 1e160 sends it to inf while every
+     * input passes isfinite. Unchecked, it rode the same NaN road the pivot
+     * bug rode: sse = inf - inf = NaN, every guard below compares NaN, which
+     * is false, and the fit came back rc=0 with r2, rss and sigma all NaN.
+     * Note the remedy differs from -2's: --qr does not square the COLUMNS,
+     * but it squares the response into its running residual, so it overflows
+     * on the same file and is not the escape hatch here. */
+    if (!isfinite(r->cyy)) {
+        debug("regress: the response overflowed its cross-products (its "
+              "values are near 1e160 or beyond); rescale that column");
+        return -3;
     }
     for (i = 0; i < p; i++) {
         const double *ci = row_of(r->c, p, i);

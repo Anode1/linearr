@@ -161,7 +161,10 @@ struct regress_fit {
  * Returns 0; -1 if nothing was added or the fit is not finite; -2 if a term's
  * cross-products overflowed while being accumulated, which is a column near
  * 1e160 or beyond and is the one failure a caller can act on (rescale it, or
- * use the QR, which does not square). Note what is
+ * use the QR, which does not square the columns); -3 if the RESPONSE's sums
+ * overflowed the same way -- there the QR is no remedy, because both solvers
+ * square the response for its residual, and rescaling is the only cure.
+ * Note what is
  * NOT refused: fewer rows than terms. That is ordinary here (25 terms and 15
  * rows, because a group never sees most interventions), and pinning answers
  * it. Judge that case by fit->df, which goes to zero when the line is passing

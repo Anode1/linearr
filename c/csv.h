@@ -27,4 +27,12 @@ int csv_next(FILE *fp, char *buf, size_t bufsz);
  * than maxf fields. An empty field yields an empty string, never NULL. */
 int csv_split(char *line, char **field, int maxf);
 
+/* A comment line (csv_next returned 2) that splits into exactly `want` fields
+ * has the shape of a data row: almost certainly data whose group code starts
+ * with '#', not a comment. Every reader that skips comments must ask this
+ * first and refuse on yes, for the reason csv_next's contract gives: a
+ * swallowed row is a group short with nothing on screen. Splits in place, so
+ * the line is consumed by the check. */
+int csv_comment_is_data_shaped(char *line, int want);
+
 #endif /* CSV_H */

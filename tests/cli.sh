@@ -65,6 +65,17 @@ case "$out" in *"cannot score"*) ok ;; *) no "bad row message: got [$out]" ;; es
 check "bad row does not stop the batch" \
     "$(printf '%s\n001,1,2\n%s\n' "$CASE1" "$CASE1" 2>/dev/null | score 2>/dev/null | wc -l | tr -d ' ')" "2"
 
+# A row holding a NUL byte, specifically. The drain for over-long lines assumed
+# the newline was still unread, which is true only when fgets stopped on a full
+# buffer; for a NUL-bearing row fgets had already consumed the newline, so the
+# drain ate the ENTIRE NEXT ROW: a case silently never scored, in a batch whose
+# exit code 1 pointed at the wrong row. And the refusal called it "too long".
+check "a NUL row does not swallow the row after it" \
+    "$(printf 'A,1\000junk\n%s\n%s\n' "$CASE1" "$CASE1" | score 2>/dev/null | wc -l | tr -d ' ')" "2"
+case "$(printf 'A,1\000junk\n%s\n' "$CASE1" | score 2>&1 >/dev/null)" in
+    *"NUL byte"*) ok ;; *) no "and the refusal names the NUL, not the length" ;;
+esac
+
 # -h
 check "-h exit" "$("$bin" -h >/dev/null 2>&1; echo $?)" "0"
 case "$("$bin" -h 2>&1)" in usage:*) ok ;; *) no "-h prints usage" ;; esac
@@ -72,7 +83,6 @@ case "$("$bin" -h 2>&1)" in usage:*) ok ;; *) no "-h prints usage" ;; esac
 # Every synopsis line -h prints must work exactly as printed. Three of the four
 # omitted the mandatory -c and failed with "no coefficient table", so the page
 # contradicted its own body, which says -c is required.
-"$bin" -h 2>&1 | sed -n 's/^usage: *//p;s/^       //p' | grep -q . && :
 for form in "-c $DEMO_COEF 001 icu_indicator=1" \
             "-c $DEMO_COEF --terms" \
             "-t $root/example/simple-train.csv"; do
@@ -231,6 +241,39 @@ case "$out" in *--qr*) ok ;; *) no "and names the remedy: got [$out]" ;; esac
 check "while --qr fits the same file" \
     "$(cd "$tmp" && "$bin" -t huge.csv --qr >/dev/null 2>&1; echo $?)" "0"
 
+# The RESPONSE overflowing is different: both solvers square the response for
+# its residual, so --qr is no remedy, and unguarded it returned exit 0 with
+# resid SD=inf and a NaN R2 -- coefficients published, nothing refused.
+awk 'BEGIN{print "group,y,a";
+     for(i=0;i<20;i++) printf "A,%.17g,%d\n", (i%2? 1e160:-1e160), i}' \
+    > "$tmp/hugey.csv"
+for opt in "" "--qr"; do
+    set +e
+    out=$(cd "$tmp" && "$bin" -t hugey.csv $opt 2>&1 >/dev/null); rc=$?
+    set -e
+    check "an overflowing response is refused${opt:+ under $opt}" "$rc" "1"
+    case "$out" in *response*overflow*) ok ;;
+        *) no "and names the response: got [$out]" ;; esac
+done
+
+# A training row whose group starts with '#' must be refused, not read as a
+# comment. The coefficient loader has always refused exactly this; the two
+# training readers skipped it, so the file fitted MINUS that group, exit 0,
+# nothing on screen -- the silent swallow csv.h's contract exists to prevent.
+printf 'group,y,a\nA,1,1\nA,2,2\n#B,9,9\nA,3,3\n' > "$tmp/hashgrp.csv"
+for opt in "" "--residuals /dev/null"; do
+    set +e
+    out=$(cd "$tmp" && "$bin" -t hashgrp.csv $opt 2>&1 >/dev/null); rc=$?
+    set -e
+    check "a '#'-group training row is refused${opt:+ (with --residuals)}" "$rc" "1"
+    case "$out" in *"shape of a data row"*) ok ;;
+        *) no "and says why: got [$out]" ;; esac
+done
+# while a prose comment, which is what '#' is for, still reads as one
+printf '# note\ngroup,y,a\nA,1,1\nA,2,2\nA,3,3\n# end\n' > "$tmp/okcomment.csv"
+check "a prose comment still reads as a comment" \
+    "$(cd "$tmp" && "$bin" -t okcomment.csv >/dev/null 2>&1; echo $?)" "0"
+
 # Hexadecimal is refused, which los.c's own comment always claimed. C99 gave
 # strtod 0x10 and 0X1p4, so such a field loaded quietly as 16: a mis-export or
 # an identifier in a numeric column becoming a coefficient. Decimal exponents
@@ -245,6 +288,24 @@ done
 printf 'group,intercept,a\nG,0,1e3\n' > "$tmp/exp.csv"
 check "a decimal exponent still reads" \
     "$(cd "$tmp" && "$bin" -c exp.csv G a=1)" "G prediction=1000.0000"
+
+# The refusal must skip what strtod skips. csv_split trims spaces, but strtod
+# also steps over tabs, so a field reading <tab>0x1p4 sailed past a check on
+# the first character and scored prediction=16 with exit 0.
+printf 'group,intercept,a\nG,0,\t0x1p4\n' > "$tmp/tabhex.csv"
+set +e
+(cd "$tmp" && "$bin" -c tabhex.csv G a=1 >/dev/null 2>&1); rc=$?
+set -e
+check "a tab-prefixed hex field is refused" "$rc" "1"
+
+# And the named form must agree with the file form: a=0x10 scored
+# prediction=32 while the same value in a CSV field was refused.
+for v in a=0x10 "a=$(printf '\t')0x1p4"; do
+    set +e
+    (cd "$tmp" && "$bin" -c exp.csv G "$v" >/dev/null 2>&1); rc=$?
+    set -e
+    check "hex in the named form ($v) is refused" "$rc" "1"
+done
 
 # -y and --qr reach the fitter only: scoring takes its schema and its
 # coefficients from the table named by -c, so both had nothing to act on and
@@ -547,6 +608,15 @@ set +e
 "$bin" -t example/anscombe.csv -g nosuch --residuals "$tmp/a3.csv" >/dev/null 2>&1; rc=$?
 set -e
 check "-g naming no group is an error" "$rc" "1"
+
+# --residuals WITH -g '*'. The star means "pool every row", as it does without
+# --residuals; it was read here as a literal group code, so a pooled fit that
+# worked became "no rows in group *" the moment its residuals were asked for.
+"$bin" -t example/anscombe.csv -g '*' --residuals "$tmp/apool.csv" >/dev/null 2>&1
+check "-g '*' with --residuals pools every row" \
+    "$(awk 'END{print NR-1}' "$tmp/apool.csv")" "44"
+check "and every residual row is the pool's" \
+    "$(awk -F, 'NR>1 && $1!="*"' "$tmp/apool.csv" | wc -l | tr -d ' ')" "0"
 
 # --- the certified sets ----------------------------------------------------
 # example/longley.csv and example/wampler1.csv carry answers somebody else

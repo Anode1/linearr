@@ -487,8 +487,13 @@ int main(int argc, char **argv) {
         usage(stdout, argv[0]);
     } else {
         need_model();
-        while (fgets(line, sizeof line, stdin)) {
+        for (;;) {
             size_t n;
+            /* A sentinel on the last byte, so the two ways line[n] can be the
+             * terminator below are told apart: fgets overwrites it only when
+             * it fills the whole buffer. */
+            line[sizeof line - 1] = 'x';
+            if (!fgets(line, sizeof line, stdin)) break;
             /* Excel's "CSV UTF-8" puts three invisible bytes at the start of
              * the file. Left in place they join the first group name, and the
              * program then reports that a group is missing from a table it is
@@ -498,18 +503,27 @@ int main(int argc, char **argv) {
                 memmove(line, line + 3, strlen(line + 3) + 1);
             n = strcspn(line, "\r\n");
 
-            /* No line ending and not at end of file means the line did not fit.
-             * Reading on would score the REMAINDER as a case of its own: one
-             * physical line produced two confident predictions on stdout, with
-             * only the first half reported as an error. csv_next has always
-             * guarded this for files; stdin did not. Drain to the newline and
-             * refuse the whole line. */
+            /* No line ending and not at end of file means the line did not
+             * fit, OR the line holds a NUL byte. These need opposite
+             * handling, and conflating them lost a row: for a too-long line
+             * fgets stopped on a full buffer and the newline is still
+             * unread, so drain to it; for a NUL-bearing line fgets already
+             * consumed the newline, and the old unconditional drain ate the
+             * ENTIRE NEXT LINE -- a case that was never scored, reported as
+             * nothing, in a batch whose other rows all answered. */
             if (line[n] == '\0' && !feof(stdin)) {
-                int ch;
-                while ((ch = fgetc(stdin)) != EOF && ch != '\n')
-                    ;
-                (void)fprintf(stderr, "cannot score: a line longer than %d bytes\n",
-                        MAX_INPUT - 1);
+                if (line[sizeof line - 1] == '\0' &&
+                    line[sizeof line - 2] != '\n') {
+                    int ch;                     /* full buffer: a long line */
+                    while ((ch = fgetc(stdin)) != EOF && ch != '\n')
+                        ;
+                    (void)fprintf(stderr,
+                            "cannot score: a line longer than %d bytes\n",
+                            MAX_INPUT - 2);
+                } else {                        /* newline already consumed */
+                    (void)fprintf(stderr,
+                            "cannot score: a line holding a NUL byte\n");
+                }
                 bad = 1;
                 continue;
             }

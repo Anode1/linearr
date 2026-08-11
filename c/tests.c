@@ -721,6 +721,27 @@ static void test_qr(void) {
                       "qr scale: the unscaled column keeps its coefficient");
             }
         }
+
+        /* A RESPONSE so large that squaring it overflows. colscale protects
+         * the columns; nothing protected cyy or the rotated-out residual, so
+         * this returned 0 with rss=inf, sigma=inf and r2=NaN -- the same
+         * NaN-comparisons-are-false road the pivot test once rode. Both
+         * solvers must refuse it as -3, and neither may leave a non-finite
+         * figure behind a return of 0. */
+        {   struct regress rn;
+            struct regress_fit fn;
+            qr_init(&q, 1, t_store);
+            regress_init(&rn, 1, t_store2);
+            for (i = 0; i < 20; i++) {
+                x[0] = (double)i;
+                qr_add(&q, x, (i % 2) ? 1.0e160 : -1.0e160);
+                regress_add(&rn, x, (i % 2) ? 1.0e160 : -1.0e160);
+            }
+            CHECK(qr_solve(&q, t_beta, t_scratch, &fq) == -3,
+                  "qr: an overflowing response is refused, not published");
+            CHECK(regress_solve(&rn, t_beta, t_scratch, &fn) == -3,
+                  "regress: an overflowing response is refused, not published");
+        }
     }
 
     /* A column that never varies is dropped, as in the normal equations. */

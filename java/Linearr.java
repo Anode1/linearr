@@ -130,7 +130,29 @@ public class Linearr {
         String    line;
 
         while ((line = reader.readLine()) != null) {
-            if (line.length() == 0 || line.charAt(0) == '#') continue;
+            if (line.length() == 0) continue;
+            if (line.charAt(0) == '#') {
+                /* A data-shaped '#' line is a training row whose group starts
+                 * with '#', not a comment, as the C refuses it. Skipped here,
+                 * it fitted the file MINUS that group with nothing on screen.
+                 * Before the header nothing knows a row's shape, so the check
+                 * begins where the C's does: after the header is read. */
+                if (names != null) {
+                    int nf = 0;
+                    for (int at = 0; at <= line.length(); ) {
+                        nf++;
+                        at = Csv.endOfField(line, at) + 1;
+                    }
+                    if (nf == p + 2) {
+                        System.err.println("cannot fit: " + args[0] + " has a "
+                            + "line beginning with '#' that has the shape of a "
+                            + "data row: a group code cannot start with '#', "
+                            + "because the line reads as a comment");
+                        System.exit(1);
+                    }
+                }
+                continue;
+            }
 
             if (names == null) {                /* the header names the terms */
                 Vector hdr = new Vector();
@@ -206,10 +228,14 @@ public class Linearr {
                         + "number. Export without quoting");
                 if (field == 0) {
                     group = line.substring(a, b);
-                    if (group.length() == 0)
-                        refuse(args[0], seen, "the group column is empty, which "
-                            + "is empty or longer than the 32 characters a group "
-                            + "name may have");
+                    /* The C's bound and the C's words: GROUP_MAX is 32 with its
+                     * NUL, so 31 characters. This refused only the empty name,
+                     * with a garbled message saying 32, and a 40-character
+                     * group the C refuses was accepted and published here. */
+                    if (group.length() == 0 || group.length() > 31)
+                        refuse(args[0], seen, "the group column is "
+                            + showField(group) + ", which is empty or longer "
+                            + "than the 31 characters a group name may have");
                 } else {
                     double v = Csv.parse(line, from, to);
                     if (v != v)
@@ -268,8 +294,29 @@ public class Linearr {
 
         for (Enumeration e = order.elements(); e.hasMoreElements(); ) {
             Group g = (Group) e.nextElement();
-            if (!g.r.solve(beta, scratch, fit)) {
-                System.err.println("cannot fit group " + g.name);
+            int srv = g.r.solve(beta, scratch, fit);
+            if (srv != 0) {
+                /* The C's solve_failure(), word for word: the two
+                 * implementations' stderr is diffed, and "cannot fit group X"
+                 * with no cause was already quietly less helpful than the C
+                 * on the same file. The -2 advice names --qr because the C's
+                 * does; this program has no such flag, but its job here is to
+                 * check the C's answer, words included. */
+                if (srv == -2)
+                    System.err.println("cannot fit: group '" + g.name + "': a "
+                        + "term's values are so large that squaring them "
+                        + "overflowed (near 1e160 or beyond). Rescale that "
+                        + "column, or use --qr, which does not square them. "
+                        + "Run with -d to see which term");
+                else if (srv == -3)
+                    System.err.println("cannot fit: group '" + g.name + "': the "
+                        + "response's values are so large that squaring them "
+                        + "overflowed (near 1e160 or beyond). Rescale that "
+                        + "column; --qr squares the response too, so it is not "
+                        + "the remedy here");
+                else
+                    System.err.println("cannot fit: group '" + g.name + "': the "
+                        + "result is not a finite line");
                 System.exit(1);
             }
             sb.setLength(0);

@@ -235,10 +235,17 @@ static int parse_num(const char *s, double *out) {
      * 16. Nothing writes a CSV that way on purpose: it is a mis-export, or a
      * hash, or an identifier that landed in a numeric column, and reading it
      * as a number is how one becomes a coefficient. Decimal exponents (1e3)
-     * stay: those are ordinary in exported data. */
-    if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) return -1;
-    if ((s[0] == '-' || s[0] == '+') && s[1] == '0'
-        && (s[2] == 'x' || s[2] == 'X')) return -1;
+     * stay: those are ordinary in exported data.
+     *
+     * The scan skips what strtod skips. csv_split trims spaces, but strtod
+     * also steps over tabs and the rest of isspace, so a field reading
+     * <tab>0x1p4 sailed past a check on s[0] and loaded as 16 anyway. */
+    {   const char *t = s;
+        while (*t == ' ' || *t == '\t' || *t == '\n'
+            || *t == '\v' || *t == '\f' || *t == '\r') t++;
+        if (*t == '-' || *t == '+') t++;
+        if (t[0] == '0' && (t[1] == 'x' || t[1] == 'X')) return -1;
+    }
     errno = 0;
     v = strtod(s, &end);
     if (errno == ERANGE) return -1;             /* 1e400, and denormal underflow */
@@ -253,14 +260,6 @@ static int copy_group(char *dst, size_t dstsz, const char *src) {
     if (src[0] == '\0' || strlen(src) >= dstsz) return -1;
     strcpy(dst, src);                           /* checked on the line above */
     return 0;
-}
-
-/* A line that begins with '#' but has exactly the shape of a data row is almost
- * certainly data whose group code starts with '#', not a comment. Saying so
- * beats dropping the row and reporting one group fewer than the file has. */
-static int comment_is_data_shaped(char *line, int want) {
-    char *field[CSV_MAX_FIELDS];
-    return csv_split(line, field, CSV_MAX_FIELDS) == want;
 }
 
 static int load_coefficients(const char *path) {
@@ -338,7 +337,7 @@ static int load_coefficients(const char *path) {
         double v;
 
         if (n == 2) {
-            if (comment_is_data_shaped(line, nvars + 2)) {
+            if (csv_comment_is_data_shaped(line, nvars + 2)) {
                 refuse("%s has a line beginning with '#' that has the shape of a "
                        "data row: a group code cannot start with '#', because "
                        "the line reads as a comment", path);

@@ -163,11 +163,18 @@ The fit accumulates `X'X` and solves it. That is what bounds the memory, and it
 squares the condition number of the design, so a near-collinear or badly scaled
 problem loses about twice the digits it needs to. `--qr` rotates each row into a
 triangular factor instead, with Givens rotations, one row at a time. It squares
-nothing. It is still streaming. Its factor is `p^2 + 7p + 6` doubles against the
+nothing of the design (the response's spread is still accumulated as squares,
+by both solvers, so a response near 1e160 overflows either one and is refused).
+It is still streaming. Its factor is `p^2 + 7p + 6` doubles against the
 normal equations' `p^2 + 2p`, so the accumulator is larger by `5p + 6`: at 24
-terms, 750 doubles against 624. Counting what a caller actually has to
-allocate reverses that, because the elimination needs a `p^2 + p` workspace
-that the rotation does not: 750 against 1224 at 24 terms.
+terms, 750 doubles against 624. Counting what a caller actually has to allocate
+keeps that order, because both solves need a workspace -- `p^2 + 3p + 2` for the
+QR to re-triangularise the kept columns after pivoting, `p^2 + p` for the
+elimination: 1400 against 1224 at 24 terms, about 14% more. An earlier version
+of this paragraph said the QR side was smaller, which was true only before
+column pivoting gave its solve a workspace; the figures now come from
+`qr_storage()`, `qr_scratch()`, `regress_storage()` and
+`regress_solve_storage()`, which are what the callers allocate.
 
 On `example/nearly-the-same.csv`, where two columns differ in the sixth decimal
 and the answer is `1 + 2*x1 + 3*x2`:

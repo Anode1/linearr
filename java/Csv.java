@@ -39,6 +39,11 @@ public final class Csv {
         while (from < to && line.charAt(from) == ' ') from++;
         while (to > from && line.charAt(to - 1) == ' ') to--;
         if (from >= to) return Double.NaN;
+        /* A trailing control character (a tab, say) is refused, as los.c
+         * refuses it: strtod stops there and the C's trailing scan skips
+         * spaces only. parseDouble would trim it and accept, so "2<tab>"
+         * fitted here while the C refused the same file. */
+        if (line.charAt(to - 1) <= ' ') return Double.NaN;
 
         int  i = from;
         boolean neg = false;
@@ -72,15 +77,26 @@ public final class Csv {
          * accepts the 0x1p4 form, and a CSV field written that way is a
          * mis-export or an identifier in a numeric column, not the number 16.
          * The two implementations are diffed against each other by
-         * scripts/java-check.sh, so a difference here is a failing gate. */
+         * scripts/java-check.sh, so a difference here is a failing gate.
+         * The scan first skips what parseDouble trims (every char at or below
+         * space): the bounds above trimmed spaces only, so a field reading
+         * <tab>0x1p4 sailed past a check at `from` and parsed as 16 anyway. */
         {   int p = from;
+            while (p < to && line.charAt(p) <= ' ') p++;
             if (p < to && (line.charAt(p) == '-' || line.charAt(p) == '+')) p++;
             if (p + 1 < to && line.charAt(p) == '0'
                 && (line.charAt(p + 1) == 'x' || line.charAt(p + 1) == 'X'))
                 return Double.NaN;
         }
         try {
-            return Double.parseDouble(line.substring(from, to));
+            /* Not finite is not a number here, as parse_num refuses it: strtod
+             * sets ERANGE for 1e400 and reads "Infinity" as inf, and the C
+             * refuses the file. parseDouble returns the infinity, and this
+             * returned it too, so the row was silently SKIPPED by add() and
+             * the Java fitted a subset the C had refused outright. */
+            double v = Double.parseDouble(line.substring(from, to));
+            return (v == Double.POSITIVE_INFINITY || v == Double.NEGATIVE_INFINITY)
+                ? Double.NaN : v;
         } catch (NumberFormatException e) {
             return Double.NaN;
         }

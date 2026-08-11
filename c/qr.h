@@ -22,8 +22,11 @@
  * 750 doubles against 1224), which was true only while qr_solve needed no
  * workspace at all. Column pivoting gave it one, to re-triangularise the kept
  * columns, and the sentence was not revisited. What the QR does not do is
- * square anything, so the digits lost are the design's own condition number
- * rather than its square: that is what the extra 14% buys.
+ * square the COLUMNS, so the digits lost are the design's own condition number
+ * rather than its square: that is what the extra 14% buys. The response it
+ * squares like everything else -- cyy for R2 and the rotated-out residual for
+ * rss -- so a y near 1e160 overflows either solver, and is refused as such
+ * rather than rescued here (see qr_solve).
  *
  * What it is NOT: a strictly better solver. It does not centre the data, and a
  * reviewer found that without column scaling its rank test deleted a
@@ -126,7 +129,11 @@ int qr_add(struct qr *q, const double *x, double y);
  * So: compare a cond= against other runs of the SAME solver, not across the
  * two. The summary line says which produced it for that reason.
  *
- * Returns 0, or -1 if nothing was added or the result is not finite. */
+ * Returns 0; -1 if nothing was added or the result is not finite; -3 if the
+ * RESPONSE's sums of squares overflowed while being accumulated (a y near
+ * 1e160 or beyond). The columns cannot overflow here -- that is what colscale
+ * buys -- but the response is squared for its residual by this solver and the
+ * other alike, so the only cure is rescaling the response column. */
 int qr_solve(const struct qr *q, double *beta, double *scratch,
              struct regress_fit *fit);
 

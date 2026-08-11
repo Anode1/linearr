@@ -195,16 +195,26 @@ static int  tables_loaded;
  * not have. It used to be reported as "the result is not a finite line", which
  * is true and useless, and which blamed the whole fit for one column. */
 static const char *solve_failure(int rv, const char *group) {
-    static char msg[256];
+    static char msg[320];
     if (rv == -2)
         (void)snprintf(msg, sizeof msg,
-                       "cannot fit group '%s': a term's values are so large "
+                       "group '%s': a term's values are so large "
                        "that squaring them overflowed (near 1e160 or beyond). "
                        "Rescale that column, or use --qr, which does not square "
                        "them. Run with -d to see which term", group);
+    else if (rv == -3)
+        /* The advice differs from -2's, and saying why matters: --qr keeps
+         * the COLUMNS from being squared, but both solvers square the
+         * response for its residual, so the remedy that saves an overflowing
+         * term does nothing for an overflowing response. */
+        (void)snprintf(msg, sizeof msg,
+                       "group '%s': the response's values are so "
+                       "large that squaring them overflowed (near 1e160 or "
+                       "beyond). Rescale that column; --qr squares the "
+                       "response too, so it is not the remedy here", group);
     else
         (void)snprintf(msg, sizeof msg,
-                       "cannot fit group '%s': the result is not a finite line",
+                       "group '%s': the result is not a finite line",
                        group);
     return msg;
 }
@@ -488,6 +498,18 @@ int process_named(const char *group, char *const *assign, int n,
 
         /* Trim, because csv_split does and the two forms of a case must not
          * disagree: "a=1 " was refused while "G,1 " was accepted. */
+        /* Hexadecimal is refused, as los.c refuses it in a CSV field, for the
+         * same rule: the two forms must not disagree, and a=0x10 scored
+         * prediction=32 while the file form of the same case was refused.
+         * The scan skips what strtod skips, so a=<tab>0x10 is caught too. */
+        {   const char *t = eq + 1;
+            while (*t == ' ' || *t == '\t' || *t == '\n'
+                || *t == '\v' || *t == '\f' || *t == '\r') t++;
+            if (*t == '-' || *t == '+') t++;
+            if (t[0] == '0' && (t[1] == 'x' || t[1] == 'X'))
+                return fail("'%s' is hexadecimal, which is not a number here: "
+                            "write the value in decimal", eq + 1);
+        }
         errno = 0;
         v = strtod(eq + 1, &end);
         while (*end == ' ' || *end == '\t') end++;
@@ -662,7 +684,19 @@ int process_train(const char *csv_path, const char *group,
      * file may be any size; the fitter's footprint is the same either way. */
     while ((n = csv_next(fp, line, sizeof line)) > 0) {
         double los;
-        if (n == 2) continue;
+        if (n == 2) {
+            /* The check the coefficient loader has always run, and this reader
+             * did not: a '#' line that splits into a data row's fields is a
+             * training row whose group starts with '#', and skipping it fitted
+             * the file MINUS that group, exit 0, nothing on screen. */
+            if (csv_comment_is_data_shaped(line, nvars + 2)) {
+                fail("%s has a line beginning with '#' that has the shape of a "
+                     "data row: a group code cannot start with '#', because "
+                     "the line reads as a comment", csv_path);
+                goto cleanup;
+            }
+            continue;
+        }
         seen++;
         if (los_parse_training(line, &c, &los) != 0) {
             fail("%s row %lld: %s", csv_path, seen, los_parse_error());
@@ -820,7 +854,18 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
      * file may be any size; only the number of GROUPS costs memory. */
     while ((n = csv_next(fp, line, sizeof line)) > 0) {
         double los;
-        if (n == 2) continue;
+        if (n == 2) {
+            /* As in process_train: a data-shaped '#' line is a swallowed row,
+             * not a comment. The residual second pass keeps its plain skip,
+             * because this refusal has already run before it can start. */
+            if (csv_comment_is_data_shaped(line, nvars + 2)) {
+                fail("%s has a line beginning with '#' that has the shape of a "
+                     "data row: a group code cannot start with '#', because "
+                     "the line reads as a comment", csv_path);
+                goto cleanup;
+            }
+            continue;
+        }
         seen++;
         if (los_parse_training(line, &c, &los) != 0) {
             fail("%s row %lld: %s", csv_path, seen, los_parse_error());

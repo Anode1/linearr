@@ -95,9 +95,14 @@ public final class Regress {
     }
 
     /** Solve into beta[nvars+1]; beta[0] is the intercept. Fills fit if given.
-     *  scratch must hold nvars*(nvars+1) doubles; the caller owns it, as in C. */
-    public boolean solve(double[] beta, double[] scratch, Fit fit) {
-        if (n == 0) return false;
+     *  scratch must hold nvars*(nvars+1) doubles; the caller owns it, as in C.
+     *  Returns the C's codes, not a boolean: 0; -1 if nothing was added or the
+     *  fit is not finite; -2 if a term's cross-products overflowed; -3 if the
+     *  response's did. A boolean lost the -2/-3 distinction, so the Java's
+     *  refusal could not say what the C's says, and the two implementations'
+     *  stderr is diffed. */
+    public int solve(double[] beta, double[] scratch, Fit fit) {
+        if (n == 0) return -1;
         final int p = nvars, stride = p + 1;
         double pivmax = 0.0, pivmin = 0.0;
         int rank = 0;
@@ -113,8 +118,18 @@ public final class Regress {
          * pinned: correctly, it is collinear with the intercept. */
         for (int i = 0; i < p; i++) {
             double cii = c[i * p + i];
+            /* An overflowed cross-product, as regress.c refuses it: a column
+             * near 1e160 squares to inf while it is accumulated, and a NaN
+             * born of it fails every comparison below, so unchecked it rode
+             * to the end and out as a published NaN. */
+            if (!isFinite(cii) || !isFinite(cxy[i])) return -2;
             d[i] = (cii > 0.0) ? Math.sqrt(cii) : 0.0;
         }
+        /* And the response's own sum of squares, whose overflow the check
+         * above cannot see: sse = inf - inf = NaN, and every guard below
+         * compares NaN, which is false. regress.c returns -3 here and the
+         * caller says rescaling is the only cure. */
+        if (!isFinite(cyy)) return -3;
         for (int i = 0; i < p; i++) {
             for (int j = 0; j < p; j++)
                 scratch[i * stride + j] =
@@ -162,7 +177,7 @@ public final class Regress {
         beta[0] = my;                            /* the intercept, from the means */
         for (int i = 0; i < p; i++) beta[0] -= beta[i + 1] * mean[i];
 
-        for (int i = 0; i <= p; i++) if (!isFinite(beta[i])) return false;
+        for (int i = 0; i <= p; i++) if (!isFinite(beta[i])) return -1;
 
         if (fit != null) {
             fit.pinned = p - rank;
@@ -206,7 +221,7 @@ public final class Regress {
                 fit.r2 = -1.0;                   /* the response never varies */
             }
         }
-        return true;
+        return 0;
     }
 
     private static boolean isFinite(double v) {

@@ -2,6 +2,7 @@
 /* csv.c: see csv.h. */
 #include "csv.h"
 #include "utils.h"
+#include "constants.h"
 
 #include <string.h>
 
@@ -54,4 +55,9 @@ int csv_split(char *line, char **field, int maxf) {
         p = comma + 1;
     }
     return n;
+}
+
+int csv_comment_is_data_shaped(char *line, int want) {
+    char *field[CSV_MAX_FIELDS];
+    return csv_split(line, field, CSV_MAX_FIELDS) == want;
 }
