@@ -324,6 +324,25 @@ static int train(const char *path, const char *group) {
 /* Load the model, or stop with the reason. Scoring cannot proceed without it,
  * and a table that will not open is one fatal condition, not a complaint to
  * repeat per row. */
+/* A scale, read the way --footprint reads its term count and for the same
+ * reason: atoi cannot tell "abc" from 0. `--scale abc` therefore published a
+ * prediction rounded to no decimals at all and exited 0, and `--scale
+ * 4294967300` wrapped through undefined behaviour to 4. Rounding here is part
+ * of the answer rather than presentation -- the trim point is built on the
+ * ROUNDED prediction -- so a scale the caller never asked for is a wrong
+ * published figure, not a cosmetic default. process.c says it plainly: what
+ * the caller asked for and what the program does cannot differ silently. */
+static int scale_arg(const char *s, const char *opt) {
+    char *end;
+    long v;
+
+    if (s[0] == '\0') die("%s takes 0 to 9 decimal places", opt);
+    v = strtol(s, &end, 10);
+    if (*end != '\0' || v < 0 || v > 9)
+        die("%s takes 0 to 9 decimal places", opt);
+    return (int)v;
+}
+
 static void need_model(void) {
     char err[512];
     if (process_init(err, sizeof err) != 0) die("%s", err);
@@ -374,10 +393,10 @@ int main(int argc, char **argv) {
                                   REGRESS_MAX_VARS);
                           footprint_terms = (int)v;
                       } break;
-            case 'S': if (process_set_scale(atoi(optarg)) != 0)
+            case 'S': if (process_set_scale(scale_arg(optarg, "--scale")) != 0)
                           die("--scale takes 0 to 9 decimal places");
                       break;
-            case 'Z': if (process_set_trim_scale(atoi(optarg)) != 0)
+            case 'Z': if (process_set_trim_scale(scale_arg(optarg, "--trim-scale")) != 0)
                           die("--trim-scale takes 0 to 9 decimal places");
                       break;
             case 'c': process_use_coef(optarg); break;

@@ -198,6 +198,22 @@ set +e
 set -e
 check "--scale outside 0..9 is refused" "$rc" "1"
 
+# Out of range was the only form caught, because the value was read with atoi,
+# which cannot tell "abc" from 0. Every one of these published a prediction
+# rounded to a scale nobody asked for and exited 0: "abc" and "" gave 0
+# decimals, "3.9" gave 3, and "4294967300" wrapped to 4. Rounding is part of
+# the answer here, so a scale the caller did not ask for is a wrong number.
+for bad in abc 3.9 4294967300 '' -1 ' '; do
+    set +e
+    (cd "$tmp" && "$bin" -c coef.csv --scale "$bad" 'A,10,3' >/dev/null 2>&1); rc=$?
+    set -e
+    check "--scale '$bad' is refused, not silently rounded" "$rc" "1"
+    set +e
+    (cd "$tmp" && "$bin" -c coef.csv --trim-scale "$bad" 'A,10,3' >/dev/null 2>&1); rc=$?
+    set -e
+    check "--trim-scale '$bad' is refused, not silently rounded" "$rc" "1"
+done
+
 # the build's own claims
 # Twice now this Makefile has said it did something and not done it: the default
 # goal was `modeclean`, so a bare `make` deleted the build and exited 0; and
