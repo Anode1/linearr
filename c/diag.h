@@ -48,11 +48,15 @@
  * they are not, it is too large, and the checks will describe correlated noise
  * as a shape. Measured over 100 correctly specified fits of 300 rows each:
  *
- *      independent noise              0 of 100 produced a warning
- *      AR(1), rho = 0.85             20 of 100 produced a warning
+ *      independent noise                          0 of 100 warned
+ *      AR(1) rho=0.85, x independent of row order  0 of 100 warned
+ *      AR(1) rho=0.85, x IS the row index         53 of 100 warned
  *
- * Twenty per cent is the cost of reading a time series row by row and calling
- * the rows independent. There is no fix inside a one-pass residual check; a
+ * The design decides it, and the earlier version of this table gave one figure
+ * without saying which design produced it. Correlated noise only fools these
+ * checks when the correlation lines up with a COLUMN, which on a series in time
+ * -- where the x axis is the order itself -- it does by construction. That is
+ * the case the caveat is about, and there it is half the time, not a fifth. There is no fix inside a one-pass residual check; a
  * Durbin-Watson statistic would name the cause but not repair the t. So: on
  * data with an order to it -- a series in time, a sequence down a well, repeat
  * measurements on the same subject -- treat a curvature warning as a reason to
@@ -70,8 +74,11 @@
  * because a fixed correlation is a fixed EFFECT SIZE: the previous 0.4 floor
  * meant the check's sensitivity never improved with more data, and at n=10,000
  * it stayed silent on curvature that RESET rejected at F=332. A t bound scales
- * the way the evidence does. 3.5 leaves room for several terms being probed at
- * once without a correction of its own. */
+ * the way the evidence does. 3.5 is the FLOOR, not the bound: several terms
+ * being probed at once is corrected for, by diag_bound() below, which raises
+ * this with the number of probes the file will run. The sentence here used to
+ * say 3.5 left room for that "without a correction of its own", which stopped
+ * being true when diag_bound was written. */
 #define DIAG_T 3.5
 
 /* Every reported t is clamped here, so the value that means "exact" is the

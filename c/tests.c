@@ -203,7 +203,7 @@ static void test_csv(void) {
  * program used to blow a small stack.
  *
  * Sized for the LARGER of the two solvers, not for regress alone. It was the
- * regress formula, which is smaller than qr_storage() once column pivoting
+ * regress formula, which is smaller than qr_storage() once column scaling
  * added four vectors of nvars+1 -- the same undersizing that let qr_init()
  * write 8 KB past process.c's buffer. Every qr test here passes small nvars,
  * so nothing reached the end of it; a test at the ceiling does, which is what
@@ -816,7 +816,7 @@ static void test_qr(void) {
     CHECK(qr_solve(&q, t_beta, t_scratch, &fq) == 0, "qr: solves for the bound flag");
     CHECK(fq.sigma_is_bound == 0, "qr: reports a residual value, never a bound");
 
-    /* Storage. qr_storage() grew four vectors of nvars+1 when column pivoting
+    /* Storage. qr_storage() grew four vectors of nvars+1 when column scaling
      * arrived, and the single static buffer both solvers share did not: at the
      * ceiling qr_init() memset 8 KB past its end, silently, and the release
      * build then printed a plausible table. process.c now asserts the sizing at

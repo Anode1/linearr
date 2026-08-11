@@ -23,7 +23,8 @@ one pass and one core and a second pass for anything needing a second look.
 Both are claims about implementation, not about tools. The tools this does not
 replace have decades of statistics behind them that this has not; the places
 this goes that they cannot are three: as something to check an implementation
-against, since it reproduces the NIST certified values to eleven digits (see
+against, since it reproduces NIST's Norris and Longley to eleven digits -- not
+the whole NIST suite, and Wampler1's coefficients only to eight (see
 [Checked against answers somebody else
 certified](NUMERICS.md#checked-against-answers-somebody-else-certified)); on embedded and
 small ARM targets where no interpreter is going to be installed; and in cloud

@@ -8,12 +8,19 @@
 #include <math.h>
 #include <string.h>
 
-/* Rank tolerance on the EQUILIBRATED matrix, whose diagonal is all ones. A
- * pivot this small means the column is a linear combination of the others to
- * within twelve digits. Because the matrix is scaled first, this is a pure
- * rank statement and carries no units, which is the whole point; the absolute
- * version of this constant deleted well-identified columns for being measured
- * in the wrong unit. */
+/* Rank tolerance on the EQUILIBRATED matrix, whose diagonal is all ones.
+ * Because the matrix is scaled first this is a pure rank statement carrying no
+ * units, which is the whole point; the absolute version of this constant
+ * deleted well-identified columns for being measured in the wrong unit.
+ *
+ * What the number MEANS, since the old sentence here said twelve digits and
+ * that is the wrong scale: the pivot is a residual VARIANCE fraction, 1 - R^2
+ * of that column on the others, so 1e-12 in variance is 1e-6 in the column's
+ * own units. Six digits, not twelve. Worth knowing beside qr.c's own
+ * QR_RANK_EPS, which is 1e-9 as a fraction of a NORM: on one scale these are
+ * 1e-6 against 1e-9, so this solver pins about a thousand times more readily
+ * than the QR does, which is most of why the two disagree on a design that is
+ * nearly rank deficient. */
 #define RANK_EPS 1e-12
 
 

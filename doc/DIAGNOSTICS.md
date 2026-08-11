@@ -14,7 +14,13 @@ those eleven numbers can see it. Only their order can.
 
 **Per term, for a curve.** The correlation between the residual and the part of
 the term's square that the fit has not already used, and separately its cube,
-since a cubic bend is invisible to a square. On `example/curve.csv`, an exact
+since a cubic bend is invisible to a square. "Not already used" means with
+respect to that term alone: the square is taken about the column's centre and
+the linear part removed, not partialled on the other terms as well. So this is
+not the t you would get by adding `x^2` to the model and refitting, and its
+null is not exactly the distribution the printed t is judged against — it is
+close enough to rank the terms and, measured over 200 correctly specified fits,
+it is conservative rather than trigger-happy. On `example/curve.csv`, an exact
 parabola fitted with a line:
 
     $ ./linearr -t example/curve.csv --residuals r.csv
@@ -34,16 +40,41 @@ strong.
 how an interaction between two terms shows up when no single term looks bent.
 
 **On the spread.** How much of the squared residual's own variation the
-prediction and its square account for: the score test `bptest` and
-`car::ncvTest` use, reported as the square root of its F so it sits on the same
-scale as the others. It was a linear correlation of the residual's SIZE against
+prediction and its square account for, reported as the square root of its F so
+it sits on the same numeric scale as the others. It is the Breusch-Pagan
+family, in its studentized (Koenker) form, and it is not either of R's two:
+`bptest` regresses the squared residuals on the ORIGINAL regressors and refers
+`n*R2` to a chi-square, and `car::ncvTest` uses the fitted value with one degree
+of freedom and a normality assumption. This regresses on the fitted value and
+its square and refers an F on 2. It was a linear correlation of the residual's SIZE against
 the prediction, and a linear correlation cannot see an error that grows
 symmetrically about the middle of the range, which is the textbook picture of
 the thing. Measured on 200 correctly specified fits it produces no warning, and
 it now catches both the monotone and the symmetric case.
 
-None is a hypothesis test and none reports a p-value. Each is a correlation
-turned into a t statistic, reported when |t| passes 3.5. Nothing is reported
+**It cannot separate a spread from a wrong mean**, and nothing on one pass can.
+A missing interaction leaves residuals whose size tracks the fitted value, so
+this probe fires on data of perfectly constant variance: 167 times in 200 on
+one such design, alongside 155 shape warnings. When both are reported, the mean
+is what to fix; this figure is not readable until it is, and the warning says
+so when it sees the pair.
+
+None is a hypothesis test and none reports a p-value. The first two are a
+correlation turned into a t; the third is an F on 2 and n-3 degrees of freedom,
+reported as its square root so the three sit on one numeric scale — which is a
+convenience of presentation and not an equal standard of evidence, since the
+same printed value is a stiffer requirement for the spread check than for the
+other two.
+
+**The bound is not a fixed 3.5.** It is `sqrt(3.5^2 + 2*ln m)`, where `m` is
+how many probes the file will run: `(2*terms + 2) * groups`. That is 3.87 for
+one term in one group, 4.22 on Anscombe's quartet, and about 6.8 at 24 terms
+over 400,000 groups. The multiple testing this program does is therefore
+handled — a fixed 3.5 warned on clean data as soon as a file was wide enough —
+and it has a consequence worth knowing: **a warning is a property of the file,
+not of the group.** The same group, fitted alone and fitted inside a large
+file, can warn in one and stay silent in the other, because the bar rose with
+the number of questions asked. Nothing is reported
 below ten rows, or when the residuals are already negligible against the
 response's own spread; that second guard exists because `example/routes.csv`
 fits to 1e-7 and correlating rounding error against anything measures the
@@ -57,11 +88,22 @@ model the logarithm of the response or to weight the rows, and this program does
 neither. That is where R or Python is the right tool.
 
 **Where the checks are wrong.** The t statistic assumes the rows are
-independent. On a series in time, or repeat measurements of the same subject,
-it is too large: over 100 correctly specified fits of 300 rows, independent
-noise produced no warning and AR(1) noise at rho=0.85 produced 20. On ordered
-data, read a curvature warning as a reason to look at the residual file, not as
-a conclusion.
+independent. When they are not it is too large, and how much too large depends
+entirely on the design — which the earlier version of this paragraph gave one
+number for without saying so. Over 100 correctly specified fits of 300 rows:
+
+| noise | design | warned |
+| --- | --- | --- |
+| independent | any | 0 of 100 |
+| AR(1), rho=0.85 | `x` independent of the row order | 0 of 100 |
+| AR(1), rho=0.85 | `x` **is** the row index | 53 of 100 |
+
+Correlated noise only fools these checks when the correlation lines up with a
+column, which on a series in time is what the x axis *is*. So: on data with an
+order to it — a series in time, a sequence down a well, repeat measurements on
+the same subject — read a curvature warning as a reason to look at the residual
+file, not as a conclusion. On data whose columns have nothing to do with the
+row order, correlated noise costs nothing here.
 
 **Per-group figures, not just the worst of each.** The summary reports the
 least df, the worst residual SD and the worst conditioning over the whole file,

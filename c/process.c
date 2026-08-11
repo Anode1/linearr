@@ -79,7 +79,7 @@ typedef char header_fits_in_line[
  * depends on the data, so one buffer serves both.
  *
  * "Big enough" was a comment and not a check, and it stopped being true when
- * the QR gained column pivoting: qr_storage() grew four vectors of p+1, for
+ * the QR gained column scaling: qr_storage() grew four vectors of p+1, for
  * each column's range and its running 2-norm, and this figure did not. At the
  * default ceiling qr_init() then memset 8 KB past the end of this array. The
  * release build printed a plausible table and exited 0; only ASan saw it, and

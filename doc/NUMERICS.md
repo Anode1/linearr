@@ -62,9 +62,17 @@ digits are not reproducible across platforms either: the same source on macOS
 returns 2.00015811817, because the two maths libraries round differently and
 this design amplifies the difference. That is what an ill-conditioned fit is. A method that does not
 form the cross-products first, such as QR or SVD, would separate the two
-columns. R2 does not detect this: an ill-conditioned fit still describes its own
-training sample closely, so its in-sample error stays small while its
-predictions do not. The `cond=` figure is the diagnostic, and a warning is
+columns. R2 does not detect this, and neither does the residual file: on this
+very fit the coefficients are wrong by 1.1e-05 while the worst in-sample
+PREDICTION is wrong by 3.3e-12. That is the shape of the damage and it is worth
+being precise about, because an earlier version of this sentence said the
+predictions suffer too, and the example file beside it says otherwise. What
+near-collinearity destroys is the individual coefficients -- how much of the
+effect belongs to x1 and how much to x2 -- and with them any extrapolation
+beyond the region the columns actually span. Inside that region the fitted
+surface is pinned down by the data and predicts well. So: if you are publishing
+COEFFICIENTS, this matters enormously; if you are scoring rows that look like
+the training rows, much less. The `cond=` figure is the diagnostic, and a warning is
 printed above 1e8.
 
 ## The textbook case: Anscombe's quartet
@@ -168,10 +176,10 @@ Its factor is `p^2 + 7p + 6` doubles against the
 normal equations' `p^2 + 2p`, so the accumulator is larger by `5p + 6`: at 24
 terms, 750 doubles against 624. Counting what a caller actually has to allocate
 keeps that order, because both solves need a workspace -- `p^2 + 3p + 2` for the
-QR to re-triangularise the kept columns after pivoting, `p^2 + p` for the
+QR to re-triangularise the columns its rank test kept, `p^2 + p` for the
 elimination: 1400 against 1224 at 24 terms, about 14% more. An earlier version
 of this paragraph said the QR side was smaller, which was true only before
-column pivoting gave its solve a workspace; the figures now come from
+the rank test's re-triangularisation gave its solve a workspace; the figures now come from
 `qr_storage()`, `qr_scratch()`, `regress_storage()` and
 `regress_solve_storage()`, which are what the callers allocate.
 
@@ -182,18 +190,39 @@ condition number in the textbook sense: each is a ratio of pivots, on
 differently scaled matrices, meant as an order-of-magnitude alarm. They are not comparable
 to each other, which is why the summary names the solver, and no fixed
 relationship holds between them: on that file they are 5.34e+10 and
-2.78e+06.
+2.4e+06.
 
-`--qr` is not a strictly better solver. It does not centre the data, and two
-consequences follow. Its rank test needs a looser tolerance and still cannot
-separate a dependent column from an independent one once the columns sit near
-1e9, where `cond=` reports the trouble but the rank test does not cut. And its
-`cond=` is not comparable with the default's, because one describes columns
-about their means and the other does not. The cost in time, measured at 300k
-rows by 20 terms, is about 7 percent.
+The warning threshold is nevertheless one number, 1e8, for both. It was chosen
+for the default solver, where squaring makes 1e8 the point at which the second
+half of the digits is gone; under `--qr` read it as indicative only, and read
+its absence as no evidence at all, since a column the rank test deleted
+contributes no pivot to the ratio.
 
-The algorithm is Gentleman's 1974 row-wise updating QR, which R's `biglm` has
-used for two decades. Nothing about the method is new here.
+`--qr` is not a strictly better solver. It does not centre the data, and the
+consequences run in both directions. On a column of 30 rows carrying a large
+offset, `y = 3 + 2*(x - offset)`:
+
+| offset | `--qr` | the default |
+| --- | --- | --- |
+| 1e9 | keeps the column, slope right to 7 digits, `cond=1.16e+08` and warned | exact |
+| 1e10 | **deletes it**: `pinned A: collinear x`, `R2=0.0000`, and **no `cond=` printed at all** | exact |
+
+Below about 1e9 a dependent column may be kept and `cond=` says so. Above about
+1e10 an INDEPENDENT column may be deleted instead — and `cond=` cannot report
+that one, because it is a ratio over the pivots that survived, so the figure a
+reader would check is missing exactly when it is needed. The verdict printed
+there says `collinear`, which is a claim about the data; what happened is that
+the factorisation could not see the column. Centre such a column, or use the
+default solver, which is exact on all three.
+
+Its `cond=` is also not comparable with the default's, because one describes
+columns about their means and the other does not. The cost in time, measured at
+300k rows by 20 terms, is about 7 percent.
+
+The algorithm is Gentleman's 1974 row-wise updating QR. R's `biglm` solves the
+same problem the same way, though not with the same rotation: it uses Miller's
+AS274, the square-root-free variant that carries a separate scale vector, where
+this is plain Givens with a `hypot`. Nothing about the method is new here.
 
 ### Checked against answers somebody else certified
 
@@ -227,9 +256,11 @@ agree, which is every digit printed.
     A,-3482258.6346,15.0618722714,-0.0358191792926,-2.02022980382,-1.03322686717,-0.0511041056535,1829.15146461
 
 The certified intercept is -3482258.63459582 and the coefficient on year
-1829.15146461355. All seven agree to eleven digits, which is as many as the
-output prints. The plain solver manages it because it accumulates centered
-co-moments rather than raw cross-products.
+1829.15146461355. All seven agree to eleven digits. The output prints twelve, so the eleventh
+is where this arithmetic stops and not where the printer does. The plain solver
+gets that far because it accumulates centered co-moments rather than raw
+cross-products: the raw design's condition number here is 4.9e9, and squaring
+THAT would leave nothing at all, while centered and scaled it is 110.
 
 **Wampler1** separates the two solvers. Every certified coefficient is 1 and the
 certified residual is exactly 0, so anything else is the solver's own error with

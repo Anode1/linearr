@@ -332,13 +332,16 @@ int qr_solve(const struct qr *q, double *beta, double *scratch,
          * which is exact, not an estimate. tests.c checks it against a fit of
          * the same data with the redundant column removed by hand.
          *
-         * WHERE THAT IS STILL WRONG, stated. Both halves describe the LEAST
-         * SQUARES solution of the kept columns. When a pivot survives the rank
-         * test by a hair, back substitution divides by that near-zero diagonal
-         * and the beta returned is not that solution, while this figure still
-         * reports the residual the solution would have had. It is then BELOW
-         * what any beta can achieve, so it cannot be read as a bound either
-         * way. Thirty rows, x1 exactly 3 + (x0-1e9)/2 with x0 near 1e9:
+         * WHERE THAT IS STILL WRONG, stated. When a pivot survives the rank
+         * test by a hair, this figure comes out BELOW what any beta can
+         * achieve, so it cannot be read as a bound in either direction. The
+         * mechanism is not the one this comment used to give: it blamed back
+         * substitution, and back substitution cannot do it, because in exact
+         * arithmetic q->rss IS the minimum over the columns kept and nothing
+         * downstream can push it under that. What actually happens is that
+         * q->rss has itself lost digits, accumulated through a rotation whose
+         * pivot was at rounding level -- about 15% of its value on the design
+         * below. Thirty rows, x1 exactly 3 + (x0-1e9)/2 with x0 near 1e9:
          *
          *     reported by this            rss 57.53   resid SD 1.46
          *     the residual file, same run rss 61.28   resid SD 1.506

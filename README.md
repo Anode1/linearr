@@ -1,6 +1,6 @@
 # linearr: least squares in C, as simple as the method actually is
 
-### It reports the three ways the fit can mislead you, and the memory is O(1) in the number of rows
+### It reports three of the ways the fit can mislead you, and the memory is O(1) in the number of rows
 
 Ordinary least squares (OLS) as a command-line program. Reads a CSV and returns
 the coefficients; reads a case and returns a prediction.
@@ -53,7 +53,11 @@ coefficient unchecked.
 
 In three situations the fit succeeds and the answer is not what it looks like:
 the data cannot tell two columns apart, no residual freedom is left, or the
-arithmetic has run out of digits. The program reports all three.
+arithmetic has run out of digits. The program reports all three. They are not
+the only ways a regression misleads -- leverage, an omitted variable, rows that
+are not independent and a prediction outside the range the data covers are all
+real and none of them is checked here -- but these three the program can see
+from what it holds, so it says them.
 [`doc/NUMERICS.md`](doc/NUMERICS.md) works through each with the example data.
 
 ## Anscombe's quartet
@@ -68,13 +72,15 @@ Three things it does that a small OLS implementation usually does not, each
 demonstrated in its own section below:
 
 - **The arithmetic is checkable.** It reproduces the NIST reference values for
-  Norris and Longley to eleven digits, and Wampler1's exact quintic to nine
-  under the default solver and ten under `--qr`. It agrees with R's `lm()` to
-  1e-6 or better on every example, and to 1e-11 on most of them. Both run in
-  `make check`, and `lm()` solves by a different method, so the agreement can
-  just be checked.
+  Norris and Longley to eleven digits, and Wampler1's exact quintic to eight
+  under the default solver and nine under `--qr`. Against R's `lm()`, which
+  solves by a different method, `--qr` agrees to 1e-11 on most examples and
+  1e-6 on all of them, and that is the gate `make check` holds it to. The
+  default solver is measured in the same table and deliberately not gated: on
+  `nearly-the-same.csv`, the file that exists to show what squaring costs, it
+  reaches only 1.1e-05.
   [Checked against answers somebody else certified](doc/NUMERICS.md#checked-against-answers-somebody-else-certified)
-- **It reads the residuals.** R2 and a residual SD are averages over the
+- **It reads the residuals.** R2 and a residual SD are summaries of the
   residuals and cannot see structure in them. This names the term whose square
   explains what is left, tests the fitted value for a missing interaction, and
   tests whether the error grows with the prediction.
@@ -206,31 +212,45 @@ elastic net), categorical encoding, imputation, cross-validation,
 weighted least squares, or inference: standard errors, confidence intervals,
 prediction intervals, p-values. None of that is here. An empty field or an `NA`
 is refused with the row and the term named, rather than filled in or quietly
-dropped, which is a refusal and not a treatment of missing data. The residual standard
-deviation is reported, as `resid SD=` in the fit summary: the typical distance
-between the fit and the rows it was fitted to, in the response's own units. It
-is an in-sample figure and a floor, not an estimate of the error on a new row. R2 is
-a ratio and does not give it. The worked example involves a modelling choice
-that should be stated: length of stay is a skewed,
-non-negative, count-like response, and unweighted OLS on raw days is not the
-standard treatment for it (a log transform or a Gamma GLM is). Nothing stops
-this tool predicting a negative stay. `scikit-learn` and `statsmodels` do all of it well, and GSL
+dropped, which is a refusal and not a treatment of missing data. The residual
+standard deviation is reported, as `resid SD=` in the fit summary: `sqrt(rss/df)`,
+in the response's own units. Under a correctly specified model that estimates
+the error SD, and it is the honest thing to quote — but it carries none of the
+uncertainty in the coefficients themselves, so the error on a new row is larger
+on average, and under the wrong shape it estimates nothing at all. R2 is a ratio
+and does not give it either. The worked example involves a modelling choice that
+should be stated: length of stay is a skewed, non-negative, count-like response,
+and unweighted OLS on raw days is not the standard treatment for it. OLS stays
+consistent for the mean if that mean really is linear; what fails is the
+constant-variance assumption, the support (nothing stops this tool predicting a
+negative stay), and any inference. A Gamma GLM with a log link is the usual
+answer. A log transform is the other one, and it has a trap this tool cannot
+help with: `exp(fitted)` is a median, not a mean, so publishing an expected
+length of stay from a log fit needs a smearing correction — which matters here,
+because the case this program is built for is a coefficient somebody else's
+process consumes as an expected value. `scikit-learn` and `statsmodels` do all of it well, and GSL
 (`gsl_multifit_linear`) or LAPACK (`dgels`) give you a fitted line in C with more
 numerical machinery behind it than this has.
 
 **One numerical caveat**, now with a remedy in the box. The default solver
-accumulates `X'X`, which squares the condition number of the design, so a badly
-scaled or near-collinear problem loses roughly twice the digits it needs to. For
-indicator columns and modestly scaled data that is usually not the limiting
-factor, and `cond=` says when it is. `--qr` solves the same fit without squaring
-anything and remains streaming; see [Two solvers](#two-solvers).
+accumulates cross-products and solves them, which squares a condition number,
+so a badly scaled or near-collinear problem loses roughly twice the digits it
+needs to. For indicator columns and modestly scaled data that is usually not
+the limiting factor, and `cond=` says when it is. `--qr` solves the same fit
+without squaring anything and remains streaming; see
+[Two solvers](#two-solvers).
 
 ## Two solvers
 
-The default accumulates `X'X`, which bounds the memory and squares the
-condition number of the design. `--qr` rotates each row into a triangular
-factor instead, one row at a time, and squares nothing. It is still streaming.
-On `example/nearly-the-same.csv`, where two columns differ in the sixth decimal
+The default accumulates the centered co-moments and equilibrates them before
+solving, which bounds the memory and squares a condition number. **Which one
+matters**: it is the condition number of the centered, column-scaled design,
+not of the raw one. Longley's raw design has a condition number of 4.9e9, whose
+square is past what a double can carry at all, and eleven digits still come
+back; centered and scaled it is 110, whose square costs about four digits of
+the sixteen there are. `--qr` rotates each row into a triangular factor
+instead, one row at a time, and squares nothing. It is still streaming. On
+`example/nearly-the-same.csv`, where two columns differ in the sixth decimal
 and the answer is `1 + 2*x1 + 3*x2`:
 
     normal equations   A,1.00000000001,2.00002262993,2.99997737008
@@ -240,10 +260,11 @@ Five correct digits against ten. The fit summary reports `cond=`; when it is
 large, `--qr` is the one to use.
 
 **Checked against answers computed elsewhere.** Norris and Longley come back to
-eleven digits against the NIST certified values; `lm()` agrees to 1e-11 on most
-examples and 1e-6 on all of them, and solves by a different method, so the
-agreement is evidence rather than the same arithmetic twice. `make check` runs
-both. [Details](doc/NUMERICS.md).
+eleven digits against the NIST certified values. Against `lm()`, which solves
+by a different method, `--qr` agrees to 1e-11 on most examples and 1e-6 on all
+of them; the default is measured beside it and reaches 1.1e-05 on the file
+above, which is the same five digits, said again. `make check` runs both, and
+gates the `--qr` column. [Details](doc/NUMERICS.md).
 
 ## Scale
 
@@ -334,13 +355,15 @@ windows-x86_64 and attaches each to the GitHub release with a SHA-256
 fit Longley on its own runner before it is uploaded. `sh scripts/dist.sh` makes
 the same bundle locally.
 
-**Only the Linux build has been run by the author.** The workflow's Linux path
-was executed step by step; the macOS, arm64 and Windows paths have not run yet
-and are untested until the first release. The Windows binary in particular:
-`x86_64-w64-mingw32-gcc` compiles every source with no warnings, but a
-cross-compiled binary cannot be executed on the machine that built it, which is
-why the workflow builds Windows on a Windows runner instead. Treat the first
-tagged release as the test.
+**Every platform passes its tests in CI; only Linux has been used by hand.**
+Each release runs the unit suite and a Longley fit on its own runner before the
+binary is uploaded, and every platform above has done so since v0.4.3. What no
+runner covers is ordinary use: the author works on Linux, so the macOS, arm64
+and Windows binaries have never been driven by a person. The Windows one is
+built on a Windows runner rather than cross-compiled, because
+`x86_64-w64-mingw32-gcc` compiles every source with no warnings and a
+cross-compiled binary still cannot be executed on the machine that built it,
+and "it links" is not "it works".
 
     make install                       # /usr/local
     make install PREFIX=$HOME/.local   # somewhere you own
@@ -365,7 +388,7 @@ The detail sits beside it, and nothing was dropped in the move:
 
 | document | what is in it |
 | --- | --- |
-| [`doc/NUMERICS.md`](doc/NUMERICS.md) | the three ways a fit misleads, worked through; Anscombe's quartet; what each solver does and where each loses digits; the certified figures term by term; what a long run costs in accuracy |
+| [`doc/NUMERICS.md`](doc/NUMERICS.md) | three ways a fit misleads, worked through; Anscombe's quartet; what each solver does and where each loses digits; the certified figures term by term; what a long run costs in accuracy |
 | [`doc/FORMATS.md`](doc/FORMATS.md) | the three files, groups, fitting and scoring in full, every input refused and its message, the rounding, and what each example file is for |
 | [`doc/ORIGIN.md`](doc/ORIGIN.md) | where this came from, the same porting offered for other tools, what it will not do, and the original 24-term model |
 | [`doc/DIAGNOSTICS.md`](doc/DIAGNOSTICS.md) | what each residual check computes, its threshold, what to do about a warning, and where the checks are wrong |

@@ -286,11 +286,20 @@ static int train_all(const char *path, const char *only,
                       "that no single term shows. (Not a missing column: one "
                       "of those leaves a residual this cannot see.)\n",
                       sum.fitted_t);
+    /* Not an unconditional claim of heteroskedasticity when the shape is also
+     * wrong: a missing interaction leaves residuals whose SIZE tracks the
+     * fitted value, so this probe fires on data of perfectly constant variance
+     * -- 167 times in 200 on one such design. When both are reported the mean
+     * is the thing to fix, and this figure cannot be read until it is. */
     if (sum.spread_t != 0.0)
         (void)fprintf(stderr, "warning: the size of the residual moves with the "
-                      "prediction (t=%.1f), so the error is not the same "
-                      "everywhere and the residual SD above is not a typical "
-                      "error at either end of the range.\n", sum.spread_t);
+                      "prediction (t=%.1f), so the residual SD above is not a "
+                      "typical error at either end of the range.%s\n",
+                      sum.spread_t,
+                      (sum.curved_term >= 0 || sum.fitted_t != 0.0)
+                      ? " The shape is wrong too, and a wrong shape produces "
+                        "this on its own: fix that first, then read this again."
+                      : " The error is not the same everywhere.");
     if (sum.max_condition > 1e8)
         (void)fprintf(stderr, "warning: at least one group is ill-conditioned "
                         "(cond=%.3g); the trailing digits of its coefficients "

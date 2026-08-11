@@ -20,8 +20,11 @@
  * regress_solve_storage(), which are what the callers actually allocate. This
  * paragraph twice said the opposite (that a caller allocates less for the QR,
  * 750 doubles against 1224), which was true only while qr_solve needed no
- * workspace at all. Column pivoting gave it one, to re-triangularise the kept
- * columns, and the sentence was not revisited. What the QR does not do is
+ * workspace at all. The re-triangularisation of the columns its rank test keeps
+ * gave it one, and the sentence was not revisited. (That step is not column
+ * pivoting, which this factorisation does not do: the columns are rotated in
+ * the order they arrive. It buys what pivoting would buy on a rank-deficient
+ * design, which is why the two get confused.) What the QR does not do is
  * square the COLUMNS, so the digits lost are the design's own condition number
  * rather than its square: that is what the extra 14% buys. The response it
  * squares like everything else -- cyy for R2 and the rotated-out residual for

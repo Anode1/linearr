@@ -151,6 +151,17 @@ the same through a pipe rather than a file. Nothing lands on disk.
 **The row count is bounded by time, not by memory.** Measured at 10,000,000
 rows: 2.04 s, 2.0 MB, no more than at two million. That is 4.9 million rows a second.
 
+**Two cautions about the times above, not about the memory.** They were taken
+on a laptop, and a laptop's clock speed depends on how warm it already is: the
+same binary on the same file on the same machine has since been measured at
+0.56 s and at 1.00 s in one sitting, so treat the wall-clock figures as the
+right order of magnitude rather than as a number to compare a patch against.
+And they predate the byte-by-byte line reader, which csv.c gained so that a NUL
+in a file could be seen at all; measured against the version before it, on the
+same machine within the same minute, that costs about 6% where each row buys
+eight terms of arithmetic and about 20% on a read-dominated file. The memory
+figures are unaffected, and they are the claim this page exists to test.
+
 The same file fitted by a streaming Python and by R, so the extrapolation has
 something to be compared against: Python reads 215,000 rows a second in 10 MB,
 and R's `read.csv` plus `lm()` reads 570,000 a second. What decides where R's
