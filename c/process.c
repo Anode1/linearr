@@ -189,6 +189,26 @@ static int  tables_loaded;
  * unchanged, but the fact survives the redirect and a human reading the table
  * can see which zeroes are claims and which are silences. Returns 0 if there was
  * nothing to say. */
+/* Why a solve failed, in the caller's words. -2 is the one cause a user can act
+ * on: a column so large that its cross-products overflowed while they were
+ * being accumulated, which the normal equations cannot survive and the QR does
+ * not have. It used to be reported as "the result is not a finite line", which
+ * is true and useless, and which blamed the whole fit for one column. */
+static const char *solve_failure(int rv, const char *group) {
+    static char msg[256];
+    if (rv == -2)
+        (void)snprintf(msg, sizeof msg,
+                       "cannot fit group '%s': a term's values are so large "
+                       "that squaring them overflowed (near 1e160 or beyond). "
+                       "Rescale that column, or use --qr, which does not square "
+                       "them. Run with -d to see which term", group);
+    else
+        (void)snprintf(msg, sizeof msg,
+                       "cannot fit group '%s': the result is not a finite line",
+                       group);
+    return msg;
+}
+
 static int format_pinned(const char *group, const struct regress_fit *f,
                          int nvars, char *out, size_t outsz) {
     size_t used = 0;
@@ -663,9 +683,8 @@ int process_train(const char *csv_path, const char *group,
         goto cleanup;
     }
 
-    if (fitter_solve(&r, fit_beta, fit_scratch, &f) != 0) {
-        fail("cannot fit group '%s': the result is not a finite line", label);
-        goto cleanup;
+    {   int srv = fitter_solve(&r, fit_beta, fit_scratch, &f);
+        if (srv != 0) { fail("%s", solve_failure(srv, label)); goto cleanup; }
     }
     pinned = f.pinned;
 
@@ -890,9 +909,8 @@ int process_train_residuals(const char *csv_path, const char *only, FILE *out,
         struct regress_fit f;
         struct los_model   fitted;
 
-        if (fitter_solve(&g->r, fit_beta, fit_scratch, &f) != 0) {
-            fail("cannot fit group '%s': the result is not a finite line", g->group);
-            goto cleanup;
+        {   int srv = fitter_solve(&g->r, fit_beta, fit_scratch, &f);
+            if (srv != 0) { fail("%s", solve_failure(srv, g->group)); goto cleanup; }
         }
         /* Keep this group's line. The residual pass needs it after every group
          * has been solved, and fit_beta is one shared buffer the next group

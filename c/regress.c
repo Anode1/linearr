@@ -119,6 +119,26 @@ int regress_solve(const struct regress *r, double *beta, double *scratch,
      * scale 0 and is pinned, correctly: it is collinear with the intercept. */
     for (i = 0; i < p; i++) {
         double cii = row_of(r->c, p, i)[i];
+        /* An overflowed cross-product, and the fit stops here rather than
+         * further on. A column near 1e160 squares to inf while it is being
+         * accumulated, so cii is already inf by the time the solve sees it;
+         * sqrt(inf) is inf, every scaled entry becomes inf/inf = NaN, and the
+         * pivot test at the bottom compares NaN, which is false, so the NaN
+         * travelled to the end and the WHOLE fit was refused as "not a finite
+         * line" -- including the columns that were perfectly good. qr.c carries
+         * colscale/colss precisely so that squaring cannot overflow, and fits
+         * such a design correctly; this solver cannot, because the information
+         * was lost when the sums were formed, not when they were solved.
+         *
+         * So it says which column and what to do, instead of failing far from
+         * the cause. Refusing is the right answer here: pinning the column
+         * would report CONSTANT or COLLINEAR, and the column is neither. */
+        if (!isfinite(cii)) {
+            debug("regress: term %d overflowed its cross-products (its values "
+                  "are near 1e160 or beyond); rescale that column, or use --qr, "
+                  "which does not square them", i + 1);
+            return -2;
+        }
         d[i] = (cii > 0.0) ? sqrt(cii) : 0.0;
     }
     for (i = 0; i < p; i++) {

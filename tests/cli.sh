@@ -215,6 +215,22 @@ set +e
 set -e
 check "--scale outside 0..9 is refused" "$rc" "1"
 
+# A column near 1e160 squares to infinity while the cross-products are being
+# accumulated, so the normal equations lose it before the solve sees it and
+# used to refuse the WHOLE fit as "not a finite line", blaming every column for
+# one. The QR does not square and fits the same file.
+awk 'BEGIN{print "group,y,a,b";
+     for(i=0;i<20;i++) printf "A,%.17g,%.17g,%.17g\n", 3+2*(1+i), 1e160*(1+0.1*i), 1+i}' \
+    > "$tmp/huge.csv"
+set +e
+out=$(cd "$tmp" && "$bin" -t huge.csv 2>&1 >/dev/null); rc=$?
+set -e
+check "an overflowing column is refused" "$rc" "1"
+case "$out" in *overflow*) ok ;; *) no "and says so: got [$out]" ;; esac
+case "$out" in *--qr*) ok ;; *) no "and names the remedy: got [$out]" ;; esac
+check "while --qr fits the same file" \
+    "$(cd "$tmp" && "$bin" -t huge.csv --qr >/dev/null 2>&1; echo $?)" "0"
+
 # Hexadecimal is refused, which los.c's own comment always claimed. C99 gave
 # strtod 0x10 and 0X1p4, so such a field loaded quietly as 16: a mis-export or
 # an identifier in a numeric column becoming a coefficient. Decimal exponents
