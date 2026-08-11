@@ -179,7 +179,7 @@ warning, and where the checks are wrong.
 - you are teaching what a least-squares fit actually is, and want the whole of
   it readable in an afternoon (`regress.c` is about 150 lines of code).
 
-**Reach for something else when:** you need regularization (ridge, lasso,
+**Reach for something else (or reach the author :) when:** you need regularization (ridge, lasso,
 elastic net), categorical encoding, missing-value handling, cross-validation,
 weighted least squares, or inference: standard errors, confidence intervals,
 prediction intervals, p-values. None of that is here. The residual standard
