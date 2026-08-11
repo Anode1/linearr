@@ -69,6 +69,23 @@ check "bad row does not stop the batch" \
 check "-h exit" "$("$bin" -h >/dev/null 2>&1; echo $?)" "0"
 case "$("$bin" -h 2>&1)" in usage:*) ok ;; *) no "-h prints usage" ;; esac
 
+# Every synopsis line -h prints must work exactly as printed. Three of the four
+# omitted the mandatory -c and failed with "no coefficient table", so the page
+# contradicted its own body, which says -c is required.
+"$bin" -h 2>&1 | sed -n 's/^usage: *//p;s/^       //p' | grep -q . && :
+for form in "-c $DEMO_COEF 001 icu_indicator=1" \
+            "-c $DEMO_COEF --terms" \
+            "-t $root/example/simple-train.csv"; do
+    set +e
+    (cd "$tmp" && "$bin" $form >/dev/null 2>&1); rc=$?
+    set -e
+    check "the synopsis form '$(echo "$form" | cut -c1-18)...' runs" "$rc" "0"
+done
+set +e
+(cd "$tmp" && "$bin" -c "$DEMO_COEF" < "$root/example/cases.csv" >/dev/null 2>&1); rc=$?
+set -e
+check "the synopsis stream form runs" "$rc" "0"
+
 # THE regression: a bare run on a terminal
 # It must print the usage and exit at once. Reading stdin here is the bug: the
 # program looks hung. Needs a pty; if we cannot allocate one, say SKIP rather
@@ -197,6 +214,21 @@ set +e
 (cd "$tmp" && "$bin" -c coef.csv --scale 12 'A,10,3' >/dev/null 2>&1); rc=$?
 set -e
 check "--scale outside 0..9 is refused" "$rc" "1"
+
+# -y and --qr reach the fitter only: scoring takes its schema and its
+# coefficients from the table named by -c, so both had nothing to act on and
+# were accepted and dropped. The three refusals beside them in main.c exist to
+# prevent exactly that silence; these two were added later and missed it.
+for opt in "-y minutes" "--qr"; do
+    set +e
+    (cd "$tmp" && "$bin" -c coef.csv $opt 'A,10,3' >/dev/null 2>&1); rc=$?
+    set -e
+    check "$opt without -t is refused, not ignored" "$rc" "1"
+done
+set +e
+("$bin" -t "$root/example/simple-train.csv" --qr >/dev/null 2>&1); rc=$?
+set -e
+check "--qr with -t is still accepted" "$rc" "0"
 
 # Out of range was the only form caught, because the value was read with atoi,
 # which cannot tell "abc" from 0. Every one of these published a prediction

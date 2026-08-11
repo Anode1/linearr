@@ -23,10 +23,14 @@
 
 static void usage(FILE *out, const char *prog) {
     (void)fprintf(out,
-        "usage: %s [-d] [-h] GROUP [TERM=VALUE ...]     score one case\n"
-        "       %s [-d] < cases.csv                     score a stream\n"
+        /* -c is not optional and the synopsis used to omit it, so three of
+         * these four lines failed exactly as printed: `linearr 001 term=1`
+         * answers "no coefficient table". The body of this same help text
+         * says -c is required, which made the page disagree with itself. */
+        "usage: %s -c MODEL.CSV GROUP [TERM=VALUE ...]  score one case\n"
+        "       %s -c MODEL.CSV < cases.csv             score a stream\n"
         "       %s -t TRAIN.CSV [-g GROUP]              fit the coefficients\n"
-        "       %s --terms                              list the model's terms\n"
+        "       %s -c MODEL.CSV --terms                 list the model's terms\n"
         "\n"
         "  GROUP TERM=VALUE ...   name only the terms that are not zero:\n"
         "                           %s 001 icu_indicator=1 age_60plus=1\n"
@@ -372,6 +376,7 @@ int main(int argc, char **argv) {
     char line[MAX_INPUT];
     int c, bad = 0, want_terms = 0;
     int  footprint_terms = 0;
+    int  response_named = 0, want_qr = 0;
     long footprint_groups = 1;
 
     g_prog = argv[0];               /* resolve.c finds our files from this */
@@ -380,7 +385,7 @@ int main(int argc, char **argv) {
         switch (c) {
             case 'd': g_debug = 1; break;
             case 't': train_file = optarg; break;
-            case 'y': process_use_response(optarg); break;
+            case 'y': response_named = 1; process_use_response(optarg); break;
             case 'g': group = optarg; break;
             case 'T': want_terms = 1; break;
             case 'F': {   /* atoi cannot tell "abc" from 0, and 0 fell through
@@ -404,7 +409,7 @@ int main(int argc, char **argv) {
             case 'N': process_use_trim(NULL); break;
             case 'E': resid_file = optarg; break;
             case 'G': stats_file = optarg; break;
-            case 'Q': process_use_qr(1); break;
+            case 'Q': want_qr = 1; process_use_qr(1); break;
             case 'V': printf("linearr %s\nBSD 2-Clause; no warranty.\n",
                              LINEARR_VERSION); return 0;
             case 'h': usage(stdout, argv[0]); return 0;
@@ -425,6 +430,17 @@ int main(int argc, char **argv) {
         die("--residuals writes one row per TRAINING row, so it needs -t");
     if (want_terms && train_file)
         die("--terms lists the loaded model; it cannot be combined with -t");
+    /* Both of these reach only the fitter. Scoring reads its schema and its
+     * coefficients out of the table named by -c, so naming a response column
+     * or choosing a solver has nothing to act on, and both were accepted and
+     * dropped -- the same silence the three refusals above exist to prevent,
+     * in two options that were added later and did not get the treatment. */
+    if (response_named && !train_file)
+        die("-y names the column to predict when fitting, so it needs -t "
+            "TRAIN.CSV. Scoring takes its columns from the table given to -c");
+    if (want_qr && !train_file)
+        die("--qr chooses the solver that does the fitting, so it needs -t "
+            "TRAIN.CSV. Scoring only multiplies out coefficients already fitted");
     if (footprint_terms > 0) {
         /* An optional group count follows, so the common question ("how much
          * for 400,000 groups of 24 terms?") is one command and no arithmetic. */
