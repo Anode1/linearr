@@ -51,7 +51,7 @@ refactor:
   footprint formula is a data size. Collecting rows into an array to "make it
   simpler" throws this away, and it is the reason the program exists. `sh
   scripts/scale.sh` is the check: fit the same model over 10x the rows and peak
-  RSS must not move. Three things allocate, all bounded by the model or the
+  Memory must not move. Three things allocate, all bounded by the model or the
   config: the coefficient table (`los.c`), and
   one accumulator per group during a fit-everything pass (`process.c`). Adding a
   fourth needs an argument. Note also that the fitter's matrices are STATIC, not

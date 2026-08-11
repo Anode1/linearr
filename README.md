@@ -266,7 +266,7 @@ The same fit written the way each language does it when allowed to stream: read
 a line, update a fixed accumulator, forget the row. Every implementation's
 coefficients are checked against linearr's before any time is printed.
 
-| implementation | time | peak RSS |
+| implementation | time | peak memory |
 | --- | --- | --- |
 | linearr (C) | 0.11s | 2.5 MB |
 | Java | 0.36s | 104 MB |

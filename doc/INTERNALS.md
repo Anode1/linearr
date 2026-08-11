@@ -220,7 +220,7 @@ Three things that table does **not** cover:
 
 `scripts/scale.sh` exists to falsify the memory claim rather than repeat it: it
 fits the same model over row counts an order of magnitude apart and prints peak
-RSS for each. If those numbers tracked the data, the claim would be wrong and
+peak memory for each. If those numbers tracked the data, the claim would be wrong and
 this section would have to change. Run at the shape the original production
 model had (35 terms, 580 groups), output verbatim:
 
@@ -229,14 +229,14 @@ model had (35 terms, 580 groups), output verbatim:
 
     generating training data (10000 and 100000 rows) ... done (816K, 8.0M)
     FIT: the same 35-term model, 10000 rows then 100000:
-      rows         seconds  peak RSS (KB)
+      rows         seconds  peak memory (KB)
       10000        0.01 2432
       100000       0.12 2432
-      ^ RSS should be flat: 10x the data, the same memory.
+      ^ memory should be flat: 10x the data, the same memory.
 
     generating 100000 rows spread over 580 groups ... done
     FIT ALL: the same rows, one line per group:
-      groups       seconds  peak RSS (KB)
+      groups       seconds  peak memory (KB)
       1            0.12 2432
       580          0.14 11136
       ^ this one is NOT flat, and should not be: the difference is the
@@ -244,7 +244,7 @@ model had (35 terms, 580 groups), output verbatim:
 
     generating a 580-group table and cases ... done
     SCORE: 100000 cases against 580 groups:
-      cases        seconds  peak RSS (KB)
+      cases        seconds  peak memory (KB)
       100000       0.07 3584
 
     Memory grows with the GROUPS and not with the rows. What that costs here:

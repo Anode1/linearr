@@ -4,7 +4,7 @@
 # The README says memory is a function of the model and not of the data. That is
 # the kind of sentence every project writes, so this script tries to falsify it:
 # it fits the same 200-term model over row counts an order of magnitude apart and
-# prints peak RSS for each. If the numbers move with the rows, the claim is wrong
+# prints peak memory for each. If the numbers move with the rows, the claim is wrong
 # and the README has to change.
 #
 #   sh scripts/scale.sh [TERMS] [GROUPS] [SMALL_ROWS] [BIG_ROWS]
@@ -26,7 +26,7 @@ bin=$root/linearr
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-# GNU time reports peak RSS in KB with %M. Without it, report time only rather
+# GNU time reports peak memory in KB with %M. Without it, report time only rather
 # than printing a number we did not measure.
 if /usr/bin/time -f %M true 2>/dev/null; then
     have_rss=1
@@ -121,10 +121,10 @@ gen_train "$tmp/big.csv"   "$BIG"
 echo "done ($(du -h "$tmp/small.csv" | cut -f1), $(du -h "$tmp/big.csv" | cut -f1))"
 
 echo "FIT: the same $TERMS-term model, ${SMALL} rows then ${BIG}:"
-printf "  %-12s %s\n" "rows" "seconds  peak RSS (KB)"
+printf "  %-12s %s\n" "rows" "seconds  peak memory (KB)"
 printf "  %-12s %s\n" "$SMALL"  "$(run "$bin" -t "$tmp/small.csv" -g G001)"
 printf "  %-12s %s\n" "$BIG"    "$(run "$bin" -t "$tmp/big.csv"   -g G001)"
-echo "  ^ RSS should be flat: 10x the data, the same memory."
+echo "  ^ memory should be flat: 10x the data, the same memory."
 echo
 
 # And with every group fitted at once, which is where the memory actually goes.
@@ -132,7 +132,7 @@ printf "generating %s rows spread over %s groups ... " "$BIG" "$GROUPS"
 gen_train_groups "$tmp/groups.csv" "$BIG"
 echo "done"
 echo "FIT ALL: the same rows, one line per group:"
-printf "  %-12s %s\n" "groups" "seconds  peak RSS (KB)"
+printf "  %-12s %s\n" "groups" "seconds  peak memory (KB)"
 printf "  %-12s %s\n" "1"        "$(run "$bin" -t "$tmp/big.csv"    -g G001)"
 printf "  %-12s %s\n" "$GROUPS"  "$(run "$bin" -t "$tmp/groups.csv")"
 echo "  ^ this one is NOT flat, and should not be: the difference is the"
@@ -146,7 +146,7 @@ echo "done"
 
 echo "SCORE: $BIG cases against $GROUPS groups:"
 cd "$tmp"
-printf "  %-12s %s\n" "cases" "seconds  peak RSS (KB)"
+printf "  %-12s %s\n" "cases" "seconds  peak memory (KB)"
 printf "  %-12s %s\n" "$BIG" "$(run sh -c "'$bin' -c '$tmp/coef.csv' --no-trim < '$tmp/cases.csv' > /dev/null")"
 echo
 # Asked of the program rather than recomputed here. This line used to say

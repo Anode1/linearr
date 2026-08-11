@@ -105,7 +105,7 @@ run() {   # run NAME SHAPE COMMAND...
     return 0
 }
 
-echo "  implementation   shape        time     peak RSS   check"
+echo "  implementation   shape        time     peak memory  check"
 run "linearr (C)"  "streaming"  "$bin" -t "$train"
 if [ -n "$javadir" ]; then
     run "Java"     "streaming"  java -cp "$javadir" Linearr "$train"
@@ -122,7 +122,7 @@ echo "  frame     = the language's idiom materialises the file first; the memory
 echo "              figure is the cost of that idiom, not of the language."
 echo
 
-# The JVM's RSS is mostly the JVM. Capping the heap separates the runtime's
+# The JVM's memory is mostly the JVM. Capping the heap separates the runtime's
 # appetite from the algorithm's need, so the Java row cannot be read as "the
 # algorithm requires this much".
 if command -v java >/dev/null 2>&1 && [ -n "$javadir" ]; then

@@ -11,7 +11,7 @@ answer, different prices.
 
     $ sh scripts/bench.sh 8 50 500000        # 8 terms, 50 groups, 500k rows
 
-    implementation   shape        time     peak RSS   check
+    implementation   shape        time     peak memory  check
     linearr (C)      streaming    0.11s    2560 KB    agrees to 0
     Java             streaming    0.36s    106896 KB  agrees to 0
     Python           streaming    2.76s    10240 KB   agrees to 0
@@ -67,7 +67,7 @@ what does not:
 
     $ sh scripts/bench.sh 8 50 5000000
 
-    implementation   shape        time     peak RSS   check
+    implementation   shape        time     peak memory  check
     linearr (C)      streaming    1.31s    2432 KB    agrees to 0
     Java             streaming    1.98s    421088 KB  agrees to 0
     Python           streaming    28.30s   10368 KB   agrees to 0
@@ -77,7 +77,7 @@ what does not:
 
 Time is linear in the rows for all six. Memory is not:
 
-| implementation | time, 500k to 5M | peak RSS, 500k to 5M |
+| implementation | time, 500k to 5M | peak memory, 500k to 5M |
 | --- | --- | --- |
 | linearr (C) | 0.11s to 1.31s | 2.5 MB to 2.4 MB |
 | Python, streaming | 2.76s to 28.30s | 10.0 MB to 10.1 MB |
