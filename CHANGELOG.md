@@ -1,5 +1,64 @@
 # Changelog
 
+## 0.5.1
+
+Three reviewers — a statistician, a C programmer, and one asked how the project
+would read to a stranger — were turned on this after 0.5.0 shipped. What they
+found, and what the example files in this repository said when asked.
+
+- **A NUL byte in the last line of a file with no trailing newline was read as
+  data**, and the row truncated at it: four rows fitted, exit 0, from a file
+  whose last row said something else. `fgets` cannot report how many bytes it
+  wrote, so `csv.c` counts them itself now. `main.c` had solved the same
+  problem separately for stdin, and correctly; there is one reader for both.
+  The byte loop costs about 6% where each row buys eight terms of arithmetic
+  and about 20% on a read-dominated file, which is the price of the count.
+- **A CR-only file is refused** instead of being cut at the first record, which
+  read the header and threw the rest of the file away without a word.
+- **A trailing apostrophe in a group code made two groups in silence.** The
+  guard checked a leading `'` and a trailing `"`, and the comment above it says
+  in as many words that a field which merely *ends* in a quote is the same
+  fault.
+- **`1e-320` was refused as "not a finite number".** `strtod` sets `ERANGE` for
+  gradual underflow as well as for overflow; `isfinite` was always the check
+  that mattered, and it still refuses `1e400`.
+- **Five option combinations were accepted and dropped**: `-t F --footprint N`
+  printed the table and never fitted the file, `--terms --footprint`,
+  `--scale`, `--trim-scale` and `--trim` with `-t`, and a leftover operand
+  (`linearr -t train.csv bogus`). This is the rule `-y` and `--qr` were already
+  held to two lines above them in the same file.
+- **An R2 that does not exist is now said out loud on every path.** Only the
+  single-group path warned, so whether a reader was told depended on which flag
+  they had passed, and the worst-of aggregation skipped such a group entirely:
+  a file with one flat-response group printed a clean `worst R2` and said
+  nothing. The two causes — a response that never varies, and a residual that
+  lost its digits — are now separate sentinels with separate remedies.
+- **The spread warning no longer asserts heteroskedasticity when the shape is
+  also wrong.** A missing interaction fires it on data of perfectly constant
+  variance: 167 times in 200 on one design. When both are reported it now says
+  which to fix first.
+- Windows and 32-bit: `ny` was the one row counter that was not `long long`, so
+  it overflowed past 2^31 rows in one group. `MAX_INPUT` is POSIX's macro and
+  is now `LINEARR_MAX_INPUT`. `--footprint`'s group count checks `ERANGE`,
+  because `strtoll` saturates.
+- `process.c` had a second copy of the number parser, and the two had drifted
+  apart: `2<tab>` was refused in a file and accepted as `a=2<tab>`.
+
+**The documentation was wrong in three places, and the example data proved it.**
+The default solver does not accumulate `X'X`; it accumulates centered
+co-moments, so what gets squared is the condition number of the centered,
+scaled design — 110 on Longley, not 4.9e9, which is the whole reason eleven
+digits come back. An ill-conditioned fit does *not* predict badly in sample: on
+`nearly-the-same.csv` the coefficients are wrong by 1.1e-05 and the worst
+in-sample prediction by 3.3e-12. And the `--qr` caveat was backwards: past
+about 1e10 its rank test deletes an *independent* column and prints no `cond=`
+at all. Also corrected: the `lm()` agreement is a 1e-6 gate under `--qr` only,
+Wampler1 is eight digits and nine rather than nine and ten, the diagnostics'
+bound is `sqrt(3.5^2 + 2 ln m)` rather than 3.5 (so multiple testing is
+corrected for, and a warning is a property of the file rather than of the
+group), and the AR(1) false-warning rate is 0 or 53 in 100 depending on a
+design the old figure did not state.
+
 ## 0.5.0
 
 Input that was quietly accepted is now refused, and each refusal says what to
