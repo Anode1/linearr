@@ -1,6 +1,6 @@
 # linearr: least squares in C, as simple as the method actually is
 
-### It reports the three ways the fit can mislead you, and the memory does not grow with the number of rows
+### It reports the three ways the fit can mislead you, and the memory is O(1) in the number of rows
 
 Ordinary least squares (OLS) as a command-line program. Reads a CSV and returns
 the coefficients; reads a case and returns a prediction.
