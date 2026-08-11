@@ -34,6 +34,23 @@ boosting or a neural network — the author has neural network, random forest an
 genetic algorithm implementations for those cases:
 [open an issue](https://github.com/Anode1/linearr/issues).)
 
+**What `regress.c` is doing, basically.** With one term, the whole method
+streams in five lines: hold a count, two means and two sums, fold each row into
+them, and divide at the end.
+
+    n += 1
+    dx = x - mx;         dy = y - my
+    mx += dx/n;          my += dy/n
+    sxx += dx*(x - mx);  sxy += dx*(y - my)
+    slope = sxy/sxx;     intercept = my - slope*mx
+
+No row is kept, which is where the memory bound comes from, and those five
+lines agree with this program on Anscombe's first set to every digit it prints.
+Three things turn them into the 160 of `c/regress.c`: `p` terms make the last
+line a `p`x`p` solve instead of a division, a term the data cannot identify has
+to be pinned and reported rather than silently zeroed, and no value reaches a
+coefficient unchecked.
+
 In three situations the fit succeeds and the answer is not what it looks like:
 the data cannot tell two columns apart, no residual freedom is left, or the
 arithmetic has run out of digits. The program reports all three.
@@ -180,7 +197,9 @@ warning, and where the checks are wrong.
 - scoring is a pipeline stage: one row in, one line out, exit code and stderr
   behaving the way the rest of your shell does;
 - you are teaching what a least-squares fit actually is, and want the whole of
-  it readable in an afternoon (`regress.c` is about 150 lines of code).
+  it readable in an afternoon (`regress.c` is about 160 lines of code, and
+  [What `regress.c` is doing, basically](#what-least-squares-is) is the five of
+  them that are the method).
 
 **Reach for something else (or reach the author :) when:** you need regularization (ridge, lasso,
 elastic net), categorical encoding, missing-value handling, cross-validation,
