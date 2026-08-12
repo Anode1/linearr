@@ -47,7 +47,7 @@ directory: every setting is an option.
 The rules the code already follows, so new code matches:
 
 - **C99, warning-free.** Clean under `-std=c99 -Wall -Wextra`; a warning is a
-  defect. `make pedantic` is the stricter gate.
+  defect. `make pedantic` is the stricter check.
 - **A pinned term is marked.** A coefficient the data could not identify is
   written as 0, and so is an estimated no-effect. The fit therefore
   emits a `# pinned <group>: constant ... collinear ...` line beside the row, so
@@ -95,7 +95,7 @@ up in [ais](https://github.com/Anode1/ais), in
 ## Build and test
 
     make            # build ./linearr
-    make check      # all five gates below; run this before a commit
+    make check      # all five checks below; run this before a commit
     make ut         # unit tests, in place
     make cliut      # the binary driven through a shell and a pty
     make readme     # every transcript in this file, run and diffed
@@ -105,10 +105,10 @@ up in [ais](https://github.com/Anode1/ais), in
     make ut-ubsan   # the tests under UndefinedBehaviorSanitizer
     make pedantic   # strict warnings (-pedantic -Wshadow -Wstrict-prototypes ...)
     make debug      # -g -O0
-    make hooks      # run every gate and both sanitizers before each git push
+    make hooks      # run every check and both sanitizers before each git push
     make clean
 
-Each gate exists because something got past the others.
+Each check exists because something got past the others.
 
 `java` and `r` skip themselves where there is no JDK or no R, and say so rather
 than failing. That is deliberate, and it has a consequence worth knowing: CI

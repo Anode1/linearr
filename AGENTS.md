@@ -22,7 +22,7 @@ Do not change behaviour without changing these first.
 ## Build and test
 
     make          # build ./linearr
-    make check    # ut + cliut + readme + java + r: the commit gate
+    make check    # ut + cliut + readme + java + r: what must pass before a commit
     make ut       # the unit tests: the fast inner loop
     make cliut    # black-box: the built binary through a shell and a pty
     make readme   # every transcript in README.md and doc/, run and diffed
@@ -31,7 +31,7 @@ Do not change behaviour without changing these first.
     make ut-asan  # the tests under AddressSanitizer
     make ut-ubsan # the tests under UndefinedBehaviorSanitizer
     make pedantic # -pedantic -Wshadow -Wstrict-prototypes -Wmissing-prototypes ...
-    make hooks    # install the pre-push hook (every gate, then both sanitizers)
+    make hooks    # install the pre-push hook (every check, then both sanitizers)
     make clean
 
 Run the tests from the project root: they read `example/` by
@@ -170,7 +170,7 @@ is worse than one recorded as pending, because it stops being looked at.
 
 ## The development loop (test-driven)
 
-Tests are the objective gate. Never trust output you have not verified.
+Tests are the objective check. Never trust output you have not verified.
 
 1. **Lock the contract.** If the change needs new behaviour, update `README.md`
    and the relevant header first, so there is one agreed spec.
@@ -187,7 +187,7 @@ on stdin, never a terminal; it sees a return value, never an exit code; it calls
 hung, printing its usage only after a Ctrl-C, while all 118 unit tests were
 green, because none of them could have been the one to notice. That class of
 behaviour goes in `tests/cli.sh`. When you fix something a user hit and no test
-failed, the first question is which gate could not have caught it.
+failed, the first question is which check could not have caught it.
 
 Red -> green -> refactor. Every change keeps the whole suite green.
 

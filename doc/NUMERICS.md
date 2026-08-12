@@ -310,7 +310,7 @@ The two columns differ by six orders of magnitude on `nearly-the-same.csv`,
 which is the file that exists to show what forming `X'X` costs. `make r` runs
 this and skips itself where R is not installed.
 
-Only the `--qr` column is a gate. The default column is printed and not tested,
+Only the `--qr` column is validated. The default column is printed and not tested,
 because squaring the condition number is what that solver does and a threshold
 on it would be a threshold on the documented behaviour.
 

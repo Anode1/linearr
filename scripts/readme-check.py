@@ -14,7 +14,7 @@ Every block of the form
 is run from the repository root and compared line by line with what the program
 prints. A line consisting only of "..." skips to the end of the block, for
 transcripts that are deliberately abridged. Exit status is non-zero if any block
-disagrees, so `make readme` is a gate and not a report.
+disagrees, so `make readme` validates and does not merely report.
 
 Blocks run in the order they appear in the file, in one directory, so a block
 may read a file an earlier block wrote: the README shows `--residuals r.csv`
@@ -45,7 +45,7 @@ FOLLOW_ON = ("sort ", "cat ", "head ", "wc ")
 # stopped at the first blank line; this says so on purpose instead.
 #
 # The claims inside them that ARE deterministic -- the per-group and total
-# memory a shape costs -- are gated separately, by `./linearr --footprint`
+# memory a shape costs -- are validated separately, by `./linearr --footprint`
 # transcripts, which is why those exist as their own blocks.
 MEASURES_A_MACHINE = ("sh scripts/bench.sh", "sh scripts/scale.sh")
 
@@ -143,7 +143,7 @@ def check_one(path, checked, failed):
             continue                             # only our own commands are run
         checked += 1
         # A transcript holding this checkout's own absolute path passes here and
-        # nowhere else, so the gate would go green for the author and red for
+        # nowhere else, so the check would go green for the author and red for
         # every clone and for CI. That is worse than an unchecked transcript,
         # because it reads as verified. It happened: a -y example pasted a
         # file-not-found message carrying the author's home directory, and the
@@ -162,7 +162,7 @@ def check_one(path, checked, failed):
             print("  TIMEOUT  %s:%d  %s" % (path, lineno, cmd))
             failed += 1
             continue
-        # A gate that skips itself where a tool is missing prints that it
+        # A check that skips itself where a tool is missing prints that it
         # skipped, and its transcript documents what it prints when the tool
         # IS there. Comparing the two on a machine without R or a JDK fails
         # for the wrong reason, which is how the README came to hold a block
@@ -181,7 +181,7 @@ def check_one(path, checked, failed):
 
 if __name__ == "__main__":
     # Every document, not only the README: moving a transcript into doc/ must
-    # not quietly move it out of the gate.
+    # not quietly move it out of the checks.
     args = sys.argv[1:]
     if not args:
         args = ["README.md"] + sorted(

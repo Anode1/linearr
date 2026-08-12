@@ -104,7 +104,7 @@ and the intercept recovered from the means.
     java -cp classes Linearr ../example/train.csv
 
 `make java` fits every example with both and diffs the output, so "the two
-produce identical coefficient files" is a gate rather than a claim. Reusing the
+produce identical coefficient files" is validated rather than claimed. Reusing the
 record instead of allocating one per row is why its memory is flat in the rows:
 `String.split()` in that loop would allocate an array and a string per field,
 five million short-lived objects over 500,000 rows, and the heap grown to hold
@@ -178,7 +178,7 @@ different figures, and a server core will beat a laptop one. Read the ratios
 between the rows, which hold, rather than the seconds, which do not. `sh
 scripts/bench.sh` and `sh scripts/scale.sh` produce your own.
 
-**These timings are not gated.** Every other transcript in this file is run and
+**These timings are not validated.** Every other transcript in this file is run and
 diffed by `make readme`; this one cannot be, because a wall-clock figure differs
 between machines and between runs. Read the ratios, not the digits, and run
 `sh scripts/bench.sh` yourself if the ratios matter to you.

@@ -2,7 +2,7 @@
 # fig-lm.py: draw the coefficient agreement against lm(), one row per example.
 #
 # Reads the table scripts/r-check.sh prints, on stdin, so the picture cannot
-# disagree with the gate that produced it. No R, no rows, no figure: it exits
+# disagree with the check that produced it. No R, no rows, no figure: it exits
 # non-zero rather than drawing a stale one.
 #
 #   sh scripts/r-check.sh | python3 scripts/fig-lm.py doc/img/lm-agreement.svg

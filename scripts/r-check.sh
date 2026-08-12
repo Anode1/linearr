@@ -2,7 +2,7 @@
 # r-check.sh: fit every example with R's lm() as well, and compare.
 #
 # The README claimed agreement with lm() to the printed digit. Nothing tested
-# it, no gate could fail if it stopped being true, and a reviewer repeated it
+# it, no check could fail if it stopped being true, and a reviewer repeated it
 # back as a property of the test suite. A claim about another program's output
 # has to be run against that program or dropped.
 #
@@ -85,7 +85,7 @@ for f in example/*.csv; do
     #
     # Counted with tr | wc -w and not wc -l: tr turns N fields into N-1
     # newlines, so the first version of this dropped every THREE-column file,
-    # which is anscombe.csv and curve.csv, from both gates. It reported
+    # which is anscombe.csv and curve.csv, from both checks. It reported
     # agreement on what was left and said nothing about what it had skipped.
     [ "$(printf '%s' "$head" | tr ',' ' ' | wc -w)" -ge 3 ] || { skip=$((skip+1)); continue; }
     # The refusal examples are meant to fail; they are not fits to compare.
@@ -94,7 +94,7 @@ for f in example/*.csv; do
 
     set +e
     q=$(Rscript --vanilla "$tmp/cmp.R" "$f" "$tmp/qr.csv" 1e-6 2>"$tmp/rerr"); qrc=$?
-    # Reported, not gated, and the difference matters: the default solver
+    # Reported, not validated, and the difference matters: the default solver
     # squares the condition number, so on nearly-the-same.csv it is five orders
     # of magnitude further from lm() than --qr is, and that is the documented
     # behaviour rather than a regression. A tolerance of 1 means this column

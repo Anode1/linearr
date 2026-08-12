@@ -5,7 +5,7 @@ result of specific defects rather than taste.
 
 ## Before you send anything
 
-    make check        # all five gates: ut, cliut, readme, java, r
+    make check        # all five checks: ut, cliut, readme, java, r
     make pedantic     # must be warning-free
     make ut-asan
     make ut-ubsan

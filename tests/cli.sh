@@ -445,7 +445,7 @@ if command -v make >/dev/null 2>&1; then
     # The TEST build must be warning-free too. It compiles every source afresh
     # with -DUNIT_TEST, so it sees code the object build never does, and it had
     # six warnings while the README's first style rule says a warning is a
-    # defect. Checking one of the two builds is half a gate. In the scratch
+    # defect. Checking one of the two builds is half a check. In the scratch
     # copy, never in the live tree: an earlier version of this check ran
     # `make clean` where the binary under test lives and deleted it mid-run.
     # `|| true`: grep -c exits 1 when the count is zero, and under `set -e` that

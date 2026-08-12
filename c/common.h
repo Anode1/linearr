@@ -1,12 +1,12 @@
 /* Copyright (c) 2001-2026 Vasili Gavrilov. BSD 2-Clause; see LICENSE. */
-/* common.h, the primitives shared by every module: fatal exit, gated debug,
+/* common.h, the primitives shared by every module: fatal exit, debug switched by -d,
  * checked allocation. Functions, not macros: they type-check and grep. */
 #ifndef COMMON_H
 #define COMMON_H
 
 #include <stddef.h>
 
-extern int g_debug;                 /* set by -d; gates debug() */
+extern int g_debug;                 /* set by -d; enables debug() */
 
 /* argv[0], set by main. resolve.c finds the files that shipped beside the
  * program with it, so it must be set before anything opens one. */

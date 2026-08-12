@@ -1,5 +1,5 @@
 #!/bin/sh
-# pre-push: run both test gates and the sanitizer suite before every push, so
+# pre-push: run both test suites and the sanitizers before every push, so
 # a broken CLI or a memory/UB bug can't reach the remote (or turn CI red).
 # Mirrors .github/workflows/sanitizers.yml.
 # Enable:       make hooks           (points core.hooksPath at scripts/hooks)

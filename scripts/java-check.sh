@@ -52,7 +52,7 @@ for f in example/*.csv; do
     #
     # Counted with tr | wc -w and not wc -l: tr turns N fields into N-1
     # newlines, so the first version of this dropped every THREE-column file,
-    # which is anscombe.csv and curve.csv, from both gates. It reported
+    # which is anscombe.csv and curve.csv, from both checks. It reported
     # agreement on what was left and said nothing about what it had skipped.
     [ "$(printf '%s' "$head" | tr ',' ' ' | wc -w)" -ge 3 ] || { skip=$((skip+1)); continue; }
     # The Java fits every group in one pass and takes no options, so compare it

@@ -75,8 +75,8 @@ demonstrated in its own section below:
   Norris and Longley to eleven digits, and Wampler1's exact quintic to eight
   under the default solver and nine under `--qr`. Against R's `lm()`, which
   solves by a different method, `--qr` agrees to 1e-11 on most examples and
-  1e-6 on all of them, and that is the gate `make check` holds it to. The
-  default solver is measured in the same table and deliberately not gated: on
+  1e-6 on all of them, and that is what `make check` validates it against. The
+  default solver is measured in the same table and deliberately not validated: on
   `nearly-the-same.csv`, the file that exists to show what squaring costs, it
   reaches only 1.1e-05.
   [Checked against answers somebody else certified](doc/NUMERICS.md#checked-against-answers-somebody-else-certified)
@@ -268,7 +268,7 @@ eleven digits against the NIST certified values. Against `lm()`, which solves
 by a different method, `--qr` agrees to 1e-11 on most examples and 1e-6 on all
 of them; the default is measured beside it and reaches 1.1e-05 on the file
 above, which is the same five digits, said again. `make check` runs both, and
-gates the `--qr` column. [Details](doc/NUMERICS.md).
+validates the `--qr` column. [Details](doc/NUMERICS.md).
 
 ## Scale
 
@@ -408,7 +408,7 @@ The detail sits beside it, and nothing was dropped in the move:
 | [`doc/ORIGIN.md`](doc/ORIGIN.md) | where this came from, the same porting offered for other tools, what it will not do, and the original 24-term model |
 | [`doc/DIAGNOSTICS.md`](doc/DIAGNOSTICS.md) | what each residual check computes, its threshold, what to do about a warning, and where the checks are wrong |
 | [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md) | the full language comparison, the ten-million-row measurements, the extrapolation, and the machine they came from |
-| [`doc/INTERNALS.md`](doc/INTERNALS.md) | the source layout, the style rules, every `make` target and what each gate catches, the build ceilings and stack figures, Windows, and how to cut a release |
+| [`doc/INTERNALS.md`](doc/INTERNALS.md) | the source layout, the style rules, every `make` target and what each check catches, the build ceilings and stack figures, Windows, and how to cut a release |
 | [`CHANGELOG.md`](CHANGELOG.md) | what shipped in each version |
 
 Every transcript in all of them is run and diffed by `make readme`, so a stale

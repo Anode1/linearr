@@ -77,7 +77,7 @@ public final class Csv {
          * accepts the 0x1p4 form, and a CSV field written that way is a
          * mis-export or an identifier in a numeric column, not the number 16.
          * The two implementations are diffed against each other by
-         * scripts/java-check.sh, so a difference here is a failing gate.
+         * scripts/java-check.sh, so a difference here is a failing check.
          * The scan first skips what parseDouble trims (every char at or below
          * space): the bounds above trimmed spaces only, so a field reading
          * <tab>0x1p4 sailed past a check at `from` and parsed as 16 anyway. */
