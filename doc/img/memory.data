@@ -1,0 +1,17 @@
+# Peak memory fitting 8 terms over 50 groups, from scripts/bench.sh on the
+# machine doc/BENCHMARKS.md names. Kilobytes of 1024 bytes, as /usr/bin/time
+# -f %M reports them. Refresh both rows together or the figure compares two
+# machines:
+#
+#   sh scripts/bench.sh 8 50 500000
+#   sh scripts/bench.sh 8 50 5000000
+#
+# rows       implementation   peak_kb
+500000       linearr          2560
+5000000      linearr          2432
+500000       R                128744
+5000000      R                959356
+#
+# R's frame grows at 196 bytes per row at 5,000,000 rows; that rate, and
+# nothing else, is what the dashed continuation to 50,000,000 draws.
+r_bytes_per_row 196

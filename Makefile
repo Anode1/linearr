@@ -182,6 +182,15 @@ r: $(BIN)
 # check: all five gates. Run it before a commit.
 check: ut cliut readme java r
 
+# figs: redraw the two figures in doc/img. The lm() one is drawn from the same
+# output r-check.sh prints, so it cannot claim an agreement the gate does not
+# see; the memory one is drawn from doc/img/memory.data, whose header says
+# which bench.sh runs produced it. Not part of check: it needs R and rewrites
+# tracked files.
+figs: $(BIN)
+	@sh scripts/r-check.sh | python3 scripts/fig-lm.py doc/img/lm-agreement.svg
+	@python3 scripts/fig-memory.py doc/img/memory.data doc/img/memory-scaling.svg
+
 # ut-asan / ut-ubsan: the same tests under AddressSanitizer and under
 # UndefinedBehaviorSanitizer. A leak, an overflow, or UB aborts with a file:line
 # report instead of passing silently under -O2. Run both before tagging; the

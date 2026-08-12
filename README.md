@@ -259,6 +259,10 @@ and the answer is `1 + 2*x1 + 3*x2`:
 Five correct digits against ten. The fit summary reports `cond=`; when it is
 large, `--qr` is the one to use.
 
+![Both solvers against R's lm(), one row per example file: seven files identical
+under both, and three where the normal equations fall behind
+`--qr`](doc/img/lm-agreement.svg)
+
 **Checked against answers computed elsewhere.** Norris and Longley come back to
 eleven digits against the NIST certified values. Against `lm()`, which solves
 by a different method, `--qr` agrees to 1e-11 on most examples and 1e-6 on all
@@ -299,6 +303,9 @@ trust a sentence:
 At 4.1 million rows a second, a billion rows is four minutes and ten trillion
 is 28 days; R stops at about 340 million because the frame runs out of memory,
 not the clock.
+
+![Peak memory against rows: linearr flat at 2.5 MB and 2.4 MB over a tenfold
+increase, R's frame rising from 126 MB to 937 MB](doc/img/memory-scaling.svg)
 
 Read next in [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md): the full extrapolation
 beside a streaming Python and R, and the machine every timing came from. A
