@@ -215,7 +215,7 @@ is refused with the row and the term named, rather than filled in or quietly
 dropped, which is a refusal and not a treatment of missing data. The residual
 standard deviation is reported, as `resid SD=` in the fit summary: `sqrt(rss/df)`,
 in the response's own units. Under a correctly specified model that estimates
-the error SD, and it is the honest thing to quote — but it carries none of the
+the error SD, and it is the figure to quote — but it carries none of the
 uncertainty in the coefficients themselves, so the error on a new row is larger
 on average, and under the wrong shape it estimates nothing at all. R2 is a ratio
 and does not give it either. The worked example involves a modelling choice that
