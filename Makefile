@@ -116,7 +116,7 @@ endif
 %.o: %.c
 	$(CC) $(PROJ) $(CPPFLAGS) $(CFLAGS) -MMD -c $< -o $@
 
-.PHONY: all release debug pedantic check ut cliut readme java r ut-asan ut-ubsan hooks \
+.PHONY: all release debug pedantic check ut cliut readme java r ut-asan ut-ubsan fuzz hooks \
         install uninstall clean modeclean
 
 PREFIX ?= /usr/local
@@ -196,6 +196,17 @@ ut-ubsan: $(SOURCES.c) $(HEADERS.h) .build-flags
 	$(CC) $(PROJ) -g -DUNIT_TEST -fsanitize=undefined -fno-sanitize-recover=undefined \
 		-fno-omit-frame-pointer $(CPPFLAGS) $(SOURCES.c) -o $(TESTBIN)_ubsan $(LDLIBS) $(LIBM)
 	./$(TESTBIN)_ubsan
+
+# fuzz: hostile input through all three readers, under a sanitizer build. What
+# it proves is memory safety and output sanity -- no crash, no sanitizer report,
+# and no nan/inf published with exit 0. What it CANNOT prove is a right answer:
+# it has no reference to compare against, and a plausible wrong number looks
+# exactly like a right one. Run against the commit before the NUL fix it stayed
+# clean for 300 rounds while the defect was live. The differential gates (java,
+# r) and the NIST sets are what cover correctness.
+ROUNDS ?= 5000
+fuzz: ut-asan
+	@sh tests/fuzz.sh $(ROUNDS)
 
 # hooks: point git at scripts/hooks, so pre-push runs the sanitizers locally
 # before anything reaches the remote. Bypass once with `git push --no-verify`.
