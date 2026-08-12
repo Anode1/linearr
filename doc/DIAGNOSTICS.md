@@ -36,6 +36,42 @@ The fit succeeds and the check names the term. The sign is the direction of the
 curve, and 9999 is a cap meaning the relation is exact rather than merely
 strong.
 
+**How the curvature figure is computed.** One streaming pass, eleven numbers per
+term: a shift `c`, then `n` and the sums of `u`, `u^2`, `u^3`, `u^4`, `u^5`,
+`u^6`, `r*u`, `r*u^2`, `r*u^3`, where `u = x - c` and `r` is the row's residual.
+No row is stored, so the probe costs the same on a file larger than memory.
+
+Correlating `r` with raw `x^2` measures the wrong thing. Least squares has
+already made `r` orthogonal to `x`, and raw `x^2` is mostly `x`, so the figure
+collapses as soon as a column carries an offset. On one quadratic, moving the
+origin of `x`:
+
+| offset | corr(r, x^2) | partialled |
+| --- | --- | --- |
+| 0 | 0.204 | 0.794 |
+| 1 | 0.069 | 0.794 |
+| 10 | 0.0099 | 0.794 |
+| 1000 | 0.0001 | 0.794 |
+
+So the part of `u^2` that `1` and `u` explain is removed first: regress `u^2` on
+`u` for the slope `bs = <u,u^2>/<u,u>`, take `z = u^2 - bs*u`, and report
+`cov(r,z) / sqrt(var(z) * var(r))`. Every quantity comes out of those eleven
+sums.
+
+The cube is partialled on `u` AND `u^2`, which is a 2x2 solve and needs the
+sixth moment. `u^3` about a shifted origin carries a `3c*u^2` term that `[1, u]`
+cannot absorb, leaving an even component orthogonal to the odd residual the
+probe exists to find.
+
+The correlation becomes `t = corr * sqrt(df / (1 - corr^2))` with `df = n - p -
+2`, clamped at 9999. Each term reports the larger of its square and cube
+probes; the summary names the worst term in the file.
+
+The sums are shifted because raw powers to the sixth, with variances recovered
+by subtraction, have no significant digits left at `u` near 1e5 -- the
+cancellation `regress.c` refuses to commit. Years, prices and temperatures in
+Kelvin all sit at those magnitudes.
+
 **On the fitted value.** The same probe against the prediction itself, which is
 how an interaction between two terms shows up when no single term looks bent.
 
