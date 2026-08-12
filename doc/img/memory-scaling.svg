@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" font-family="Inter,Segoe UI,Helvetica,Arial,sans-serif">
 <rect width="1200" height="700" fill="#fcfcfb"/>
 <text x="56" y="62" font-size="31" font-weight="600" fill="#0b0b0b">Memory is decided by the model, not by the data</text>
-<text x="56" y="96" font-size="18" fill="#52514e">Peak RSS fitting the same 8-term model over 50 groups. Both produce the same coefficients, agreeing to 1e-12.</text>
+<text x="56" y="96" font-size="18" fill="#52514e">Peak RSS fitting the same 8-term model over 50 groups. All three produce the same coefficients, two of them exactly.</text>
 <line x1="130" y1="559.2" x2="1050" y2="559.2" stroke="#e4e3df" stroke-width="1"/>
 <text x="116" y="564.2" font-size="14" fill="#52514e" text-anchor="end">1 MB</text>
 <line x1="130" y1="477.8" x2="1050" y2="477.8" stroke="#e4e3df" stroke-width="1"/>
@@ -16,22 +16,31 @@
 <text x="604.7" y="594.0" font-size="14" fill="#52514e" text-anchor="middle">5M</text>
 <text x="993.2" y="594.0" font-size="14" fill="#52514e" text-anchor="middle">50M</text>
 <line x1="130" y1="560" x2="1050" y2="560" stroke="#52514e" stroke-width="1"/>
+<line x1="130" y1="419.6" x2="1050" y2="419.6" stroke="#6b6a67" stroke-width="1.5" stroke-dasharray="2 4"/>
+<text x="1050" y="409.6" font-size="13" fill="#6b6a67" text-anchor="end">an Rscript process that fits nothing: 51.9 MB</text>
 <line x1="216.2" y1="388.3" x2="604.7" y2="317.3" stroke="#eb6834" stroke-width="3"/>
 <line x1="604.7" y1="317.3" x2="993.2" y2="236.0" stroke="#eb6834" stroke-width="3" stroke-dasharray="7 5" opacity="0.75"/>
+<circle cx="216.2" cy="388.3" r="7" fill="#eb6834" stroke="#fcfcfb" stroke-width="2.5"/>
+<text x="202.2" y="348.3" font-size="15" fill="#52514e" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">125.9 MB</text>
+<circle cx="604.7" cy="317.3" r="7" fill="#eb6834" stroke="#fcfcfb" stroke-width="2.5"/>
+<text x="590.7" y="277.3" font-size="15" fill="#52514e" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">936.8 MB</text>
+<text x="1005.2" y="241.0" font-size="16" fill="#eb6834" font-weight="600">R, read.csv + lm()</text>
+<line x1="216.2" y1="389.9" x2="604.7" y2="389.6" stroke="#6b6a67" stroke-width="3"/>
+<line x1="604.7" y1="389.6" x2="993.2" y2="389.6" stroke="#6b6a67" stroke-width="3" stroke-dasharray="7 5" opacity="0.75"/>
+<circle cx="216.2" cy="389.9" r="7" fill="#6b6a67" stroke="#fcfcfb" stroke-width="2.5"/>
+<text x="202.2" y="375.9" font-size="15" fill="#52514e" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">120.4 MB</text>
+<circle cx="604.7" cy="389.6" r="7" fill="#6b6a67" stroke="#fcfcfb" stroke-width="2.5"/>
+<text x="590.7" y="375.6" font-size="15" fill="#52514e" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">121.2 MB</text>
+<text x="1005.2" y="394.6" font-size="16" fill="#6b6a67" font-weight="600">R, streaming (chunked)</text>
 <line x1="216.2" y1="526.8" x2="604.7" y2="528.6" stroke="#2a78d6" stroke-width="3"/>
 <line x1="604.7" y1="528.6" x2="993.2" y2="528.6" stroke="#2a78d6" stroke-width="3" stroke-dasharray="7 5" opacity="0.75"/>
-<circle cx="216.2" cy="388.3" r="7" fill="#eb6834" stroke="#fcfcfb" stroke-width="2.5"/>
-<text x="202.2" y="372.3" font-size="15" fill="#52514e" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">125.7 MB</text>
-<circle cx="604.7" cy="317.3" r="7" fill="#eb6834" stroke="#fcfcfb" stroke-width="2.5"/>
-<text x="590.7" y="301.3" font-size="15" fill="#52514e" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">936.9 MB</text>
 <circle cx="216.2" cy="526.8" r="7" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2.5"/>
 <text x="202.2" y="510.8" font-size="15" fill="#52514e" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">2.5 MB</text>
 <circle cx="604.7" cy="528.6" r="7" fill="#2a78d6" stroke="#fcfcfb" stroke-width="2.5"/>
 <text x="590.7" y="512.6" font-size="15" fill="#52514e" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">2.4 MB</text>
-<text x="1005.2" y="241.0" font-size="16" fill="#eb6834" font-weight="600">R, read.csv + lm()</text>
 <text x="1005.2" y="533.6" font-size="16" fill="#2a78d6" font-weight="600">linearr, streaming</text>
 <text x="854.7" y="214.0" font-size="13" fill="#52514e" text-anchor="middle">extrapolated at its own 196 bytes/row</text>
-<text x="56" y="634" font-size="15" fill="#52514e">Measured with <tspan font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">/usr/bin/time -f %M</tspan> on one machine, at 500,000 and 5,000,000 rows. A row is folded into the cross-products and dropped, so</text>
-<text x="56" y="658" font-size="15" fill="#52514e">the accumulator is sized by the number of groups rather than the number of rows. The frame is R&#8217;s idiom, not a limit of the language: streaming Python holds</text>
-<text x="56" y="682" font-size="15" fill="#52514e">at 10 MB and awk at 5.5 MB across the same tenfold increase. Streaming is the property that matters, not the language.</text>
+<text x="56" y="634" font-size="15" fill="#52514e">Measured with <tspan font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">/usr/bin/time -f %M</tspan> on one machine, at 500,000 and 5,000,000 rows. Streaming is a property of the loop, not of the language: R reading in</text>
+<text x="56" y="658" font-size="15" fill="#52514e">20,000-row chunks (<tspan font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">bench/fit-stream.R</tspan>) is as flat as the C and returns the identical coefficients. What it cannot put down is the interpreter:</text>
+<text x="56" y="682" font-size="15" fill="#52514e">at 500,000 rows the frame costs only about 5 MB more than the chunked read, and nearly all of both figures is R itself.</text>
 </svg>

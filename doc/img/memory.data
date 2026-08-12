@@ -1,7 +1,8 @@
 # Peak memory fitting 8 terms over 50 groups, from scripts/bench.sh on the
 # machine doc/BENCHMARKS.md names. Kilobytes of 1024 bytes, as /usr/bin/time
-# -f %M reports them. Refresh both rows together or the figure compares two
-# machines:
+# -f %M reports them. One pair of runs, so the three implementations are
+# comparable to each other; refresh all six rows together or the figure
+# compares two machines:
 #
 #   sh scripts/bench.sh 8 50 500000
 #   sh scripts/bench.sh 8 50 5000000
@@ -9,9 +10,18 @@
 # rows       implementation   peak_kb
 500000       linearr          2560
 5000000      linearr          2432
-500000       R                128744
-5000000      R                959356
+500000       R-stream         123284
+5000000      R-stream         124152
+500000       R                128900
+5000000      R                959240
 #
 # R's frame grows at 196 bytes per row at 5,000,000 rows; that rate, and
-# nothing else, is what the dashed continuation to 50,000,000 draws.
+# nothing else, is what the dashed continuation to 50,000,000 draws. The other
+# two moved by under 1% over the same tenfold increase and continue flat.
 r_bytes_per_row 196
+#
+# What an Rscript process costs before it reads anything:
+#   /usr/bin/time -f %M Rscript -e 'invisible(1)'
+# The streaming R cannot go below this, and it is most of what the 500,000-row
+# figure measures. Python's equivalent floor is 9,728 KB.
+r_baseline_kb 53112

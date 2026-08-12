@@ -332,6 +332,13 @@ the streaming figures flat and multiplies the in-memory ones, which is
 where the difference stops being about speed: at a billion rows R needs about
 180 GB and linearr holds 2.4 MB.
 
+The R row is `read.csv` plus `lm()` because that is what people write, not
+because R cannot stream. `bench/fit-stream.R` reads the same file in chunks,
+returns identical coefficients, and holds 120 MB at 500,000 rows and 121 MB at
+5,000,000: flat, like the others, and 50 MB of it is an interpreter that has
+read nothing yet. Both R rows are measured in
+[`doc/BENCHMARKS.md`](doc/BENCHMARKS.md).
+
 Full tables, the ten-million-row measurements, the extrapolation to 10 trillion
 and the machine they were taken on: [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md).
 

@@ -5,9 +5,10 @@
 # lm() fits per group. That is not a strawman, it is the idiom, and it is why
 # R's memory column is large while the others are flat.
 #
-# The number below is therefore about R's DATA FRAME, not about R the language:
-# a streaming R using readLines and a manual accumulator would look like the
-# others. Read the memory figure as the cost of the idiom people actually write.
+# The number below is therefore about R's DATA FRAME, not about R the language.
+# bench/fit-stream.R is the same language streaming, and it is flat in the rows
+# like the others: that comparison is measured in doc/BENCHMARKS.md rather than
+# asserted here. Read the number below as the cost of the idiom people write.
 args <- commandArgs(trailingOnly = TRUE)
 d <- read.csv(args[1], comment.char = "#", check.names = FALSE)
 terms <- names(d)[3:ncol(d)]

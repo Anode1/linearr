@@ -40,8 +40,56 @@ the same speed:
 
 `bench/fit.R` is the ecosystem case, and it says so in its own header: `read.csv`
 reads the whole file into a frame because that is R's idiom, so its memory figure is the
-cost of the idiom rather than a statement about the language. A streaming R
-using `readLines` and a manual accumulator would sit with the others.
+cost of the idiom rather than a statement about the language.
+
+`bench/fit-stream.R` is the same language doing what the others do: 20,000-row
+chunks through one connection, folded into a cross-product matrix per group and
+dropped. It returns coefficients identical to linearr's and its memory does not
+move with the rows. What it cannot put down is the interpreter, and that is
+most of what its figure measures:
+
+    /usr/bin/time -f %M Rscript -e 'invisible(1)'      53112 KB
+    /usr/bin/time -f %M python3 -c pass                 9728 KB
+
+So at 500,000 rows the frame costs about 5 MB more than the chunked read, and
+the gap only opens up with the file: at 5,000,000 the streaming R is unchanged
+while the frame is at 937 MB. Streaming is a property of the loop, and every
+language here permits it. The 50 MB floor under R and the 2.5 MB under linearr
+are a separate question, and the one that decides what can be installed on the
+machine the model has to run on.
+
+Both runs below came later than the tables above and on a machine that was not
+idle, so every time is slower than its counterpart there. They are printed
+whole rather than folded into those tables, because a table assembled from two
+runs is a table about two machines. Read the memory column:
+
+    $ sh scripts/bench.sh 8 50 500000
+
+    implementation   shape        time     peak memory  check
+    linearr (C)      streaming    0.15s    2560 KB    agrees to 0
+    Java             streaming    0.50s    105324 KB  agrees to 0
+    Python           streaming    4.37s    10368 KB   agrees to 0
+    awk              streaming    13.88s   5632 KB    agrees to 0
+    R                streaming    1.81s    123284 KB  agrees to 0
+    Python           frame        4.16s    315776 KB  agrees to 0
+    R                frame        1.60s    128900 KB  agrees to 1e-12
+
+    $ sh scripts/bench.sh 8 50 5000000
+
+    implementation   shape        time     peak memory  check
+    linearr (C)      streaming    1.60s    2432 KB    agrees to 0
+    Java             streaming    2.26s    418816 KB  agrees to 0
+    Python           streaming    29.85s   10368 KB   agrees to 0
+    awk              streaming    132.80s  5632 KB    agrees to 0
+    R                streaming    10.56s   124152 KB  agrees to 0
+    Python           frame        38.58s   3068544 KB agrees to 0
+    R                frame        13.30s   959240 KB  agrees to 1.7e-11
+
+The streaming R agrees to 0: not close to linearr's coefficients, identical to
+the printed digit. It is also the fastest thing here after the C and the Java,
+which is worth saying plainly, since the memory chart is easy to misread as a
+speed claim. [`doc/img/memory-scaling.svg`](img/memory-scaling.svg) draws these
+six figures.
 
 ### The Java baseline
 

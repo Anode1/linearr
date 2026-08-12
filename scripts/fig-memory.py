@@ -10,7 +10,7 @@ import math
 import sys
 
 BG, INK, MUTED, GRID = "#fcfcfb", "#0b0b0b", "#52514e", "#e4e3df"
-BLUE, ORANGE = "#2a78d6", "#eb6834"
+BLUE, ORANGE, GREY = "#2a78d6", "#eb6834", "#6b6a67"
 SANS = "Inter,Segoe UI,Helvetica,Arial,sans-serif"
 MONO = "ui-monospace,SFMono-Regular,Menlo,Consolas,monospace"
 W, H = 1200, 700
@@ -21,19 +21,19 @@ EXTRAP_TO = 50_000_000
 
 
 def read_data(path):
-    series, rate = {}, None
+    series, scalars = {}, {}
     for line in open(path):
         line = line.split("#", 1)[0].split()
         if not line:
             continue
-        if line[0] == "r_bytes_per_row":
-            rate = float(line[1])
+        if not line[0].isdigit():
+            scalars[line[0]] = float(line[1])
             continue
         rows, impl, kb = int(line[0]), line[1], float(line[2])
         series.setdefault(impl, []).append((rows, kb))
     for pts in series.values():
         pts.sort()
-    return series, rate
+    return series, scalars
 
 
 def px(rows):
@@ -55,7 +55,7 @@ def line(a, b, colour, dashed=False):
 
 
 def main(data_path, out):
-    series, rate = read_data(data_path)
+    series, scalars = read_data(data_path)
     for impl in ("linearr", "R"):
         if len(series.get(impl, [])) < 2:
             sys.exit(f"fig-memory: {data_path} needs two points for {impl}")
@@ -66,7 +66,7 @@ def main(data_path, out):
          f'<text x="56" y="62" font-size="31" font-weight="600" fill="{INK}">'
          'Memory is decided by the model, not by the data</text>',
          f'<text x="56" y="96" font-size="18" fill="{MUTED}">Peak RSS fitting the same 8-term model over 50 '
-         'groups. Both produce the same coefficients, agreeing to 1e-12.</text>']
+         'groups. All three produce the same coefficients, two of them exactly.</text>']
 
     for kb, lab in [(1024, "1 MB"), (10240, "10 MB"), (102400, "100 MB"),
                     (1048576, "1 GB"), (10485760, "10 GB")]:
@@ -78,35 +78,49 @@ def main(data_path, out):
                  f'text-anchor="middle">{lab}</text>')
     o.append(f'<line x1="{X0}" y1="{Y1}" x2="{X1}" y2="{Y1}" stroke="{MUTED}" stroke-width="1"/>')
 
-    r_pts, l_pts = series["R"], series["linearr"]
-    ext_kb = EXTRAP_TO * rate / 1024
-    o.append(line(r_pts[0], r_pts[1], ORANGE))
-    o.append(line(r_pts[1], (EXTRAP_TO, ext_kb), ORANGE, dashed=True))
-    o.append(line(l_pts[0], l_pts[1], BLUE))
-    o.append(line(l_pts[1], (EXTRAP_TO, l_pts[1][1]), BLUE, dashed=True))
+    rate = scalars["r_bytes_per_row"]
+    baseline = scalars.get("r_baseline_kb")
+    if baseline:
+        o.append(f'<line x1="{X0}" y1="{py(baseline):.1f}" x2="{X1}" y2="{py(baseline):.1f}" '
+                 f'stroke="{GREY}" stroke-width="1.5" stroke-dasharray="2 4"/>')
+        o.append(f'<text x="{X1}" y="{py(baseline) - 10:.1f}" font-size="13" fill="{GREY}" '
+                 f'text-anchor="end">an Rscript process that fits nothing: {mem(baseline)}</text>')
 
-    for pts, colour in ((r_pts, ORANGE), (l_pts, BLUE)):
+    # Each series ends where its own measurements say it goes: the frame at its
+    # measured bytes per row, the streaming pair flat, since neither moved over
+    # a tenfold increase.
+    # dy: the two R series are 5 MB apart at 500,000 rows, so their labels sit
+    # on opposite sides of the point or they overprint each other.
+    plots = [("R", ORANGE, "R, read.csv + lm()", EXTRAP_TO * rate / 1024, -40),
+             ("R-stream", GREY, "R, streaming (chunked)", None, -14),
+             ("linearr", BLUE, "linearr, streaming", None, -16)]
+    for impl, colour, label, ext, dy in plots:
+        pts = series.get(impl)
+        if not pts:
+            continue
+        end_kb = ext if ext else pts[-1][1]
+        o.append(line(pts[0], pts[1], colour))
+        o.append(line(pts[1], (EXTRAP_TO, end_kb), colour, dashed=True))
         for rows, kb in pts:
             o.append(f'<circle cx="{px(rows):.1f}" cy="{py(kb):.1f}" r="7" fill="{colour}" '
                      f'stroke="{BG}" stroke-width="2.5"/>')
-            o.append(f'<text x="{px(rows) - 14:.1f}" y="{py(kb) - 16:.1f}" font-size="15" fill="{MUTED}" '
+            o.append(f'<text x="{px(rows) - 14:.1f}" y="{py(kb) + dy:.1f}" font-size="15" fill="{MUTED}" '
                      f'text-anchor="end" font-family="{MONO}">{mem(kb)}</text>')
+        o.append(f'<text x="{px(EXTRAP_TO) + 12:.1f}" y="{py(end_kb) + 5:.1f}" font-size="16" fill="{colour}" '
+                 f'font-weight="600">{label}</text>')
 
-    o.append(f'<text x="{px(EXTRAP_TO) + 12:.1f}" y="{py(ext_kb) + 5:.1f}" font-size="16" fill="{ORANGE}" '
-             'font-weight="600">R, read.csv + lm()</text>')
-    o.append(f'<text x="{px(EXTRAP_TO) + 12:.1f}" y="{py(l_pts[1][1]) + 5:.1f}" font-size="16" fill="{BLUE}" '
-             'font-weight="600">linearr, streaming</text>')
+    ext_kb = EXTRAP_TO * rate / 1024
     o.append(f'<text x="{px(2.2e7):.1f}" y="{py(ext_kb) - 22:.1f}" font-size="13" fill="{MUTED}" '
              f'text-anchor="middle">extrapolated at its own {rate:g} bytes/row</text>')
 
     o.append(f'<text x="56" y="{H - 66}" font-size="15" fill="{MUTED}">Measured with '
              '<tspan font-family="' + MONO + '">/usr/bin/time -f %M</tspan> on one machine, at 500,000 and '
-             '5,000,000 rows. A row is folded into the cross-products and dropped, so</text>')
-    o.append(f'<text x="56" y="{H - 42}" font-size="15" fill="{MUTED}">the accumulator is sized by the number of '
-             'groups rather than the number of rows. The frame is R&#8217;s idiom, not a limit of the language: '
-             'streaming Python holds</text>')
-    o.append(f'<text x="56" y="{H - 18}" font-size="15" fill="{MUTED}">at 10 MB and awk at 5.5 MB across the same '
-             'tenfold increase. Streaming is the property that matters, not the language.</text>')
+             '5,000,000 rows. Streaming is a property of the loop, not of the language: R reading in</text>')
+    o.append(f'<text x="56" y="{H - 42}" font-size="15" fill="{MUTED}">20,000-row chunks '
+             '(<tspan font-family="' + MONO + '">bench/fit-stream.R</tspan>) is as flat as the C and returns '
+             'the identical coefficients. What it cannot put down is the interpreter:</text>')
+    o.append(f'<text x="56" y="{H - 18}" font-size="15" fill="{MUTED}">at 500,000 rows the frame costs only about '
+             '5 MB more than the chunked read, and nearly all of both figures is R itself.</text>')
     o.append('</svg>')
 
     with open(out, "w") as fh:

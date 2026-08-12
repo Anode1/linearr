@@ -12,7 +12,10 @@
 #
 # fit.R is the deliberate exception: read.csv reads the whole file into a frame because
 # that is R's idiom. Its memory figure is the cost of the idiom, and the table
-# labels it so nobody reads it as a statement about R the language.
+# labels it so nobody reads it as a statement about R the language. fit-stream.R
+# is the same language streaming, so the two R rows answer the reader who says
+# the comparison pits a frame against a stream: it does, and here is the other
+# one.
 #
 # Every implementation's coefficients are checked against linearr's before any
 # time is printed. A speed number nobody checked is a speed number for a
@@ -114,6 +117,7 @@ else
 fi
 run "Python"       "streaming"  python3 "$bench/fit.py" "$train"
 run "awk"          "streaming"  awk -f "$bench/fit.awk" "$train"
+run "R"            "streaming"  Rscript "$bench/fit-stream.R" "$train"
 run "Python"       "frame"      python3 "$bench/fit-frame.py" "$train"
 run "R"            "frame"      Rscript "$bench/fit.R" "$train"
 echo
