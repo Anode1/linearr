@@ -270,8 +270,9 @@ gates the `--qr` column. [Details](doc/NUMERICS.md).
 
 **Memory is bounded by the model, not by the data.** A row is folded into the
 cross-products and dropped, so the tenth row and the ten-billionth cost the
-same space. Measured: 2,000,000 rows by 8 terms in 0.42 s using 2.4 MB, and
-10,000,000 in 2.04 s using the same 2.4 MB.
+same space. Measured on an idle machine, best of five: 2,000,000 rows by 8
+terms over 200 groups in 0.50 s using 2.7 MB, and 10,000,000 in 2.45 s using
+the same 2.7 MB.
 
 What memory does scale with is the number of GROUPS, one accumulator each, and
 `--footprint` prints the figure for a given shape rather than leaving you to
@@ -295,9 +296,9 @@ trust a sentence:
     Neither depends on the number of ROWS, which is the point:
     the same figures cover a thousand rows and a trillion.
 
-At 4.9 million rows a second, a billion rows is three and a half minutes and
-ten trillion is 24 days; R stops at about 340 million because the frame runs
-out of memory, not the clock.
+At 4.1 million rows a second, a billion rows is four minutes and ten trillion
+is 28 days; R stops at about 340 million because the frame runs out of memory,
+not the clock.
 
 Read next in [`doc/BENCHMARKS.md`](doc/BENCHMARKS.md): the full extrapolation
 beside a streaming Python and R, and the machine every timing came from. A

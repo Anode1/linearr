@@ -39,7 +39,7 @@ or plain Java, the author will only be glad to help:
 ## The limitations of that, stated
 
 One core and one stream: no threading, no sharding, no restart from a partial
-fit, and at 4.9 million rows a second the cost is reading text rather than the
+fit, and at 4.1 million rows a second the cost is reading text rather than the
 arithmetic, so a second core would buy more than a faster solver.
 `--residuals` reads the file a second time and needs a real file rather than a
 pipe.
