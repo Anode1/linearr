@@ -1,4 +1,4 @@
-# File formats, groups, and what the reader refuses
+# File formats, groups and refusals
 
 The three files this program reads and writes, what a group is, and every input
 it will not accept. The README has the one-paragraph version.
@@ -47,7 +47,7 @@ So a training header of `group,minutes,km,stops` says: predict `minutes` from
 reads position, not the word), but the ORDER is fixed, and the goal is the
 second column, not the first.
 
-**A file written in another column order does not fail.** It fits, it reports a
+A file written in another column order does not fail. It fits, it reports a
 good R2, and it answers a question you did not ask: with `group,km,minutes,stops` it predicts distance
 from time and stops, which is arithmetic about the same rows and not the model
 you wanted. There is no way for the program to notice. What it can do is say
@@ -115,7 +115,7 @@ this shape, and doing it there keeps the decisions where you can see them.
 
 ## Rounding
 
-**Coefficients are written to 12 significant digits**, so an exact 5 prints as
+Coefficients are written to 12 significant digits, so an exact 5 prints as
 `5`. That is far below the residual standard deviation of any fit that produced
 them, and it is significant digits rather than decimal places: four decimals
 would write every coefficient below 5e-5 as `0.0000`. `--scale` governs the
@@ -193,7 +193,7 @@ with the remedy, so the mistake is visible on the first run rather than in the
 numbers.
 
 The rest of this section uses `example/coefficients.csv`, which is the 24-term
-model described under [The example data](#the-example-data-and-what-each-file-is-for):
+model described under [The example data](#the-example-data):
 the shape of something that ran in production, rather than a book exercise. It
 is here because scoring is where width shows. Two terms can be typed; twenty-four
 is where naming them matters, where a trim table exists, and where `--terms` stops
@@ -230,7 +230,7 @@ Files named with `-c`, `--trim` and `-t` are looked for in the current
 directory first, then beside the program, so an installed `linearr` finds the
 example data from anywhere and your own file still wins where you have one.
 
-**`-c` is named, never found by convention**: the same command in two
+`-c` is named, never found by convention, so the same command in two
 directories cannot quietly answer from two different models.
 
 When something is wrong, the message says what:
@@ -240,7 +240,7 @@ When something is wrong, the message says what:
 
 `./linearr -h` prints the options; `-d` traces to stderr.
 
-## The example data, and what each file is for
+## The example data
 
 `example/` holds three kinds of file with three different purposes, and they are
 not interchangeable.

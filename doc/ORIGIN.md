@@ -1,4 +1,4 @@
-# Where this came from, and what it will not do
+# Origin and limits
 
 The longer version of the README's Origin section.
 

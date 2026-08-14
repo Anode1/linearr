@@ -69,8 +69,11 @@ refactor:
 
 ## A claim is not only prose
 
-**Makefile comments, header comments, source comments and the usage text the
-binary prints are CLAIMS, and they go stale exactly like a README.** When you
+How the claims are phrased, as opposed to whether they are true, is in
+[`doc/PROSE.md`](doc/PROSE.md).
+
+Makefile comments, header comments, source comments and the usage text the
+binary prints are CLAIMS, and they go stale exactly like a README. When you
 change behaviour, they move with the code; when you audit, they are in scope.
 
 **A claim, and nothing else.** Write the constraint, the unit, the bound, or the
@@ -101,7 +104,7 @@ found by reading a claim against the code rather than by running anything:
   **When you correct a claim, grep for the other places that make it**: a
   fixed sentence in one file is not a fixed claim.
 
-## Nullable returns, and the segfault this project already had
+## Nullable returns
 
 `los_var_name`, `process_term_name`, `hash_get`, `los_model_get`
 and `resolve_program_dir` are documented as possibly returning NULL, and that is
@@ -115,7 +118,7 @@ failing meant dying. Two things came out of it, and both are rules now:
 
 - **In tests, never pass a nullable return straight to a string function.** Use
   `streq()`. A wrong return value must produce a FAIL naming the check, not a
-  core dump that tells you nothing about the other 144 tests.
+  core dump that tells you nothing about the rest of the suite.
 - **In the sources, a guard must be visible above the use.** `main.c`'s
   `--terms` loop is bounded by `process_nterms()` so the index is always in
   range, and the line after it is written `n > 0 ? process_term_name(0) : "TERM"`
@@ -132,7 +135,7 @@ lying, and `process_train` clears the flag because it repurposes the schema.
 Note what did work: `make ut-asan` located it at a file and line on the first
 run. The sanitizers are not a formality.
 
-## What 145 green tests did not catch
+## What a green suite did not catch
 
 Three independent reviewers (statistics, safety, adversarial) were turned on
 this project after it looked finished. Memory safety survived: ~5,000 fuzz
@@ -154,8 +157,8 @@ designs. Under those conditions every defect below is invisible:
   model from the fitted one whenever an effect was below 5e-5.
 - `nan` and `inf` parsed fine, propagated into every coefficient, and scored.
 
-**So: a test whose inputs are all the same order of magnitude is not a test of
-numerics.** When you add one, ask what it would look like if the data were
+So: a test whose inputs are all the same order of magnitude is not a test of
+numerics. When you add one, ask what it would look like if the data were
 scaled by 1e6, offset by 1e8, or nearly collinear, and add that case too.
 There are now tests named `units:`, `offset:` and `conditioning:` for exactly
 this, and they should grow rather than be trimmed.
@@ -181,10 +184,10 @@ Tests are the objective check. Never trust output you have not verified.
 4. **Verify.** `make check` green, `make pedantic` warning-free, then the two
    sanitizers.
 
-**Some behaviour has no unit test, by construction.** `make ut` runs with a pipe
+Some behaviour has no unit test, by construction. `make ut` runs with a pipe
 on stdin, never a terminal; it sees a return value, never an exit code; it calls
 `process()`, never the binary. A bare `./linearr` sat reading stdin and looked
-hung, printing its usage only after a Ctrl-C, while all 118 unit tests were
+hung, printing its usage only after a Ctrl-C, while every unit test was
 green, because none of them could have been the one to notice. That class of
 behaviour goes in `tests/cli.sh`. When you fix something a user hit and no test
 failed, the first question is which check could not have caught it.
@@ -200,7 +203,7 @@ those assertions fails, the fitter is wrong; do not adjust the expectation to
 match the output. If you regenerate the example data, regenerate the expected
 values with it and say so in the commit.
 
-## The data is synthetic, and stays that way
+## The example data is synthetic
 
 Everything in `example/` is generated. No real data belongs in this
 repository: not as a fixture, not as an example, not "temporarily". A user

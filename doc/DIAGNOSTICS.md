@@ -88,7 +88,7 @@ symmetrically about the middle of the range, which is the textbook picture of
 the thing. Measured on 200 correctly specified fits it produces no warning, and
 it now catches both the monotone and the symmetric case.
 
-**It cannot separate a spread from a wrong mean**, and nothing on one pass can.
+It cannot separate a spread from a wrong mean, and nothing on one pass can.
 A missing interaction leaves residuals whose size tracks the fitted value, so
 this probe fires on data of perfectly constant variance: 167 times in 200 on
 one such design, alongside 155 shape warnings. When both are reported, the mean
@@ -102,7 +102,7 @@ convenience of presentation and not an equal standard of evidence, since the
 same printed value is a stiffer requirement for the spread check than for the
 other two.
 
-**The bound is not a fixed 3.5.** It is `sqrt(3.5^2 + 2*ln m)`, where `m` is
+The bound is not a fixed 3.5. It is `sqrt(3.5^2 + 2*ln m)`, where `m` is
 how many probes the file will run: `(2*terms + 2) * groups`. That is 3.87 for
 one term in one group, 4.22 on Anscombe's quartet, and about 6.8 at 24 terms
 over 400,000 groups. The multiple testing this program does is therefore
@@ -141,7 +141,7 @@ the same subject — read a curvature warning as a reason to look at the residua
 file, not as a conclusion. On data whose columns have nothing to do with the
 row order, correlated noise costs nothing here.
 
-**Per-group figures, not just the worst of each.** The summary reports the
+Per-group figures: the summary reports the
 least df, the worst residual SD and the worst conditioning over the whole file,
 which for 580 groups is three numbers and no way to tell which group they came
 from. `--stats` writes the table:
@@ -162,7 +162,7 @@ from. `--stats` writes the table:
 R gets this from `broom::glance` over a `split`; here it is one flag and one
 pass.
 
-**Two passes, and the second one is why the checks are trustworthy.**
+The checks take a second pass.
 `--residuals` reads the training file again rather than keeping a copy: the fit
 forgets each row as it reads it, so the rows have to be read a second time to
 be subtracted from. Memory stays a function of the model, and a pipe is refused

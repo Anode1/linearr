@@ -157,7 +157,7 @@ get slower; the frame ones stop. At a billion rows R would need about 180 GB and
 the in-memory Python about 590 GB, while linearr holds 2.7 MB and takes about
 four minutes.
 
-**The in-memory Python figures do not describe pandas.** `bench/fit-frame.py` is hand-written Python holding
+The in-memory Python figures do not describe pandas. `bench/fit-frame.py` is hand-written Python holding
 the file as a list of tuples, and it is the control for STYLE: same language,
 same machine, same algorithm as `bench/fit.py`, with one variable changed.
 Real pandas is faster and lighter than it and is not measured here. Measured
@@ -178,7 +178,7 @@ different figures, and a server core will beat a laptop one. Read the ratios
 between the rows, which hold, rather than the seconds, which do not. `sh
 scripts/bench.sh` and `sh scripts/scale.sh` produce your own.
 
-**These timings are not validated.** Every other transcript in this file is run and
+These timings are not validated. Every other transcript in this file is run and
 diffed by `make readme`; this one cannot be, because a wall-clock figure differs
 between machines and between runs. Read the ratios, not the digits, and run
 `sh scripts/bench.sh` yourself if the ratios matter to you.
@@ -193,11 +193,11 @@ accumulated into centered cross-products one at a time and then forgotten, and
 nothing on the row path allocates.
 
 
-**2,000,000 rows by 8 terms over 200 groups, a 50 MB file, fitted in 0.50 s
-using 2.7 MB**, and the same through a pipe rather than a file. Nothing lands
+2,000,000 rows by 8 terms over 200 groups, a 50 MB file, fitted in 0.50 s
+using 2.7 MB, and the same through a pipe rather than a file. Nothing lands
 on disk.
 
-**The row count is bounded by time, not by memory.** At 10,000,000 rows, a
+The row count is bounded by time, not by memory. At 10,000,000 rows, a
 248 MB file: 2.45 s and the same 2.7 MB. That is 4.1 million rows a second, and
 the memory did not move.
 
@@ -232,8 +232,8 @@ streaming columns only get slower. `bench/fit.R` is also the slow variant: it
 rescans the whole frame per group and rebuilds the formula in the loop, so a
 `scan()` plus `.lm.fit()` version is roughly twice as fast at 580 groups.
 
-**Where the residual SD is only a bound, the summary prints `<` instead of
-`=`.** The default solver recovers the residual as `Cyy - b'Cxy`, a
+Where the residual SD is only a bound, the summary prints `<` instead of
+`=`. The default solver recovers the residual as `Cyy - b'Cxy`, a
 subtraction of two nearly equal numbers, and below a floor of about
 `|mean(y)| * eps * sqrt(n * Cyy)` the difference has no digits left. Where
 that happens the figure comes out as `resid SD<0.0005`: an upper bound that
@@ -245,7 +245,7 @@ pay this at all.
 What a long run costs in accuracy, measured against the same accumulation
 carried in long double, is in [`NUMERICS.md`](NUMERICS.md).
 
-**A long run says where it has got to.** After the first minute, and once a
+A long run says where it has got to. After the first minute, and once a
 minute after that, a line goes to stderr:
 
     fitting: 314572800 rows in 1m 4s, 4.91M rows/s

@@ -161,15 +161,17 @@ So the quartet exercises all three parts at once: groups fit in one pass, a
 summary that cannot tell the four apart, and a residual check that separates the
 one case it is built for and says plainly that it does not catch the other two.
 
-## Two solvers, and how accurate each one is
+## Two solvers
 
 What each solver does, where each one loses digits, and what the answers were
 checked against. The short version is in the README; this is the arithmetic
 behind it.
 
-The default solves `X'X`, and that squaring is where the digits go: the loss is
-governed by the squared condition number of the design, roughly twice the
-digits the problem needs. `--qr`'s per-row rotations are Givens rotations, and
+The default accumulates centered co-moments and equilibrates them before
+solving, and that squaring is where the digits go: the loss is governed by the
+squared condition number of the *centered, column-scaled* design, roughly twice
+the digits the problem needs. On Longley that number is 110, not the raw
+design's 4.9e9, which is why eleven digits still come back. `--qr`'s per-row rotations are Givens rotations, and
 nothing of the design is squared (the response's spread still is, by both
 solvers, so a response near 1e160 overflows either one and is refused).
 Its factor is `p^2 + 7p + 6` doubles against the

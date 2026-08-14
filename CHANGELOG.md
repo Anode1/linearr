@@ -44,7 +44,7 @@ found, and what the example files in this repository said when asked.
 - `process.c` had a second copy of the number parser, and the two had drifted
   apart: `2<tab>` was refused in a file and accepted as `a=2<tab>`.
 
-**The documentation was wrong in three places, and the example data proved it.**
+The documentation was wrong in three places, and the example data proved it.
 The default solver does not accumulate `X'X`; it accumulates centered
 co-moments, so what gets squared is the condition number of the centered,
 scaled design — 110 on Longley, not 4.9e9, which is the whole reason eleven
