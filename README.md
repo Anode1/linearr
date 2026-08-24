@@ -51,9 +51,9 @@ coefficient unchecked.
 In three situations the fit succeeds and the answer is not what it looks like:
 the data cannot tell two columns apart, no residual freedom is left, or the
 arithmetic has run out of digits. The program reports all three. They are not
-the only ways a regression misleads -- leverage, an omitted variable, rows that
+the only ways a regression misleads (leverage, an omitted variable, rows that
 are not independent and a prediction outside the range the data covers are all
-real and none of them is checked here -- but these three the program can see
+real and none of them is checked here), but these three the program can see
 from what it holds, so it says them.
 [`doc/NUMERICS.md`](doc/NUMERICS.md) works through each with the example data.
 
@@ -177,18 +177,18 @@ a neural network on the same data. It is the step most people skip.
 **2. If it says the residuals depend on the prediction itself, some pair of terms interacts and
 the check cannot say which.** With p terms there are p(p−1)/2 candidate pairs: one at two terms,
 276 at twenty-four. If a domain expert can name the pair, add the product as a column and you are
-back in closed form — measured on a length-of-stay shape, that reached 1.07 against a noise floor
+back in closed form. Measured on a length-of-stay shape, that reached 1.07 against a noise floor
 of 1.0, where the line alone scored 1.75.
 
 **3. Only if nobody can name it, fit a curve.**
 [bpnn](https://github.com/Anode1/bpnn) is the companion for that: same CSV layout, same per-group
 fitting, same fit-then-score split, a backpropagation network in place of the line. It reports
-what it cannot tell you — the spread over refits, whether a case is outside the range it was
+what it cannot tell you: the spread over refits, whether a case is outside the range it was
 fitted on, and how much of the variance it explains. `scripts/escalate.sh` in that repository runs
 this program first and escalates only on this program's own diagnostic.
 
 **Where this leaves you with nothing, stated plainly.** On a table of many binary indicators, a
-pairwise interaction can be present and this program's residual check stays *silent* — the effect
+pairwise interaction can be present and this program's residual check stays *silent*: the effect
 lives in the few rows carrying both indicators and is too small for the check to see. Measured: 24
 procedure indicators at 18% prevalence, an interaction worth 9 days, and neither the check here
 nor a network found it, while the line handed the pair reached the floor at once. If you suspect
@@ -240,7 +240,7 @@ is refused with the row and the term named, rather than filled in or quietly
 dropped, which is a refusal and not a treatment of missing data. The residual
 standard deviation is reported, as `resid SD=` in the fit summary: `sqrt(rss/df)`,
 in the response's own units. Under a correctly specified model that estimates
-the error SD, and it is the figure to quote — but it carries none of the
+the error SD, and it is the figure to quote, but it carries none of the
 uncertainty in the coefficients themselves, so the error on a new row is larger
 on average, and under the wrong shape it estimates nothing at all. R2 is a ratio
 and does not give it either. The worked example involves a modelling choice that
@@ -251,7 +251,7 @@ constant-variance assumption, the support (nothing stops this tool predicting a
 negative stay), and any inference. A Gamma GLM with a log link is the usual
 answer. A log transform is the other one, and it has a trap this tool cannot
 help with: `exp(fitted)` is a median, not a mean, so publishing an expected
-length of stay from a log fit needs a smearing correction — which matters here,
+length of stay from a log fit needs a smearing correction, which matters here,
 because the case this program is built for is a coefficient somebody else's
 process consumes as an expected value. `scikit-learn` and `statsmodels` do all of it well, and GSL
 (`gsl_multifit_linear`) or LAPACK (`dgels`) give you a fitted line in C with more
